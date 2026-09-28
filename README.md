@@ -30,3 +30,7 @@ JDK 17~21, Android SDK 35. 경로에 한글이 있으면 빌드가 실패하므�
 gradlew testDebugUnitTest assembleRelease
 ```
 결과: `app/build/outputs/apk/release/app-release.apk`
+
+배포용 서명 키는 레포에 없습니다. `~/.android/tmcalc-keystore.properties`
+(storeFile, storePassword, keyAlias, keyPassword) 가 있으면 그 키로, 없으면 디버그 키로 서명합니다.
+배포 APK 서명 SHA-256: `C8:8C:CC:30:EF:95:10:0B:9B:B0:89:FE:97:79:ED:AA:CB:4F:B6:4F:8C:03:65:1D:9F:6C:DA:4D:AD:32:F7:5F`
