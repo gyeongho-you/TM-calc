@@ -1,0 +1,265 @@
+package net.g1project.tmcalc
+
+import java.math.BigDecimal
+import java.math.MathContext
+import java.math.RoundingMode
+
+/**
+ * "골로스 성장률 계산기 Ver 1.3" 시트(성장률계산기 + 숨김 시트 '등급')의 수식을 그대로 옮긴 것.
+ * 주석의 셀 주소는 원본 시트 기준.
+ */
+object Calculator {
+
+    /** '등급'!B2:B14 배율, 열 G..T 순서. index 8 은 S(100) = 도감값 그대로. */
+    val MULTS = doubleArrayOf(0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05, 1.07, 1.09)
+    val LABELS = listOf("C++", "B", "B+", "B++", "A", "A+", "A++", "S", "S(100)", "S+", "S++", "SS", "SS+", "SS++")
+
+    /** 성장률 등급 IF 체인 (성장률계산기!B20). 시트의 라벨을 그대로 따른다. */
+    private val STAT_CHAIN = listOf(13 to "SS++", 12 to "SS+", 11 to "SS", 10 to "S++", 9 to "S+", 7 to "S",
+        6 to "A++", 5 to "A+", 4 to "A", 3 to "B+", 2 to "B", 1 to "C")
+
+    /** 총성 등급 판정에 쓰이는 열 (성장률계산기!C26). */
+    private val TOTAL_CHAIN = listOf(13, 12, 11, 10, 9, 7, 6)
+
+    class Input(
+        val pet: Pet,
+        val level: Int,
+        /** 현재 능력치 (공, 방, 순, 체) = 만렙S + 증감율 */
+        val stats: IntArray,
+        val breaks: Int,
+    ) {
+        /** 시트 입력칸 (3)~(6) 증감율 */
+        val deltas: IntArray get() = IntArray(4) { stats[it] - pet.maxS[it] }
+    }
+
+    class BreakRow(val n: Int, val stats: IntArray, val growth: DoubleArray, val grades: List<String>, val total: Double)
+
+    class Result(
+        val growth: DoubleArray,        // F13:F16
+        val statGrades: List<String>,   // B20:B23
+        val percentile: DoubleArray,    // C20:C23
+        val realTotal: Double,          // F20
+        val realTotalGrade: String,     // F21
+        val gameTotal: Double,          // F22
+        val gameTotalGrade: String,     // F23
+        val myTotal: Double,            // D25
+        val curGrade: String,           // C26
+        val curGradeTotal: Double?,     // D26
+        val nextGrowthPct: Double,      // C27
+        val nextGrowthTotal: Double?,   // D27
+        val nextGrade: String,          // C28
+        val nextGradeTotal: Double?,    // D28
+        val toNextGrowth: Double?,      // D29
+        val toNextGrade: Double?,       // D30
+        val breakRows: List<BreakRow>,  // B34:F47
+    )
+
+    /** 성장률 부분만: 도감 값만 있으면 되므로 도감에 없는 소환수도 계산 가능 */
+    class Total(val percentile: DoubleArray, val realTotal: Double, val realTotalGrade: String,
+                val gameTotal: Double, val gameTotalGrade: String)
+
+    /** 성장률계산기!C20:C23, F20:F23. base = 도감 값(= 현재 능력치 - 도감 대비). */
+    fun total(stats: IntArray, base: IntArray): Total {
+        val ratio3 = DoubleArray(4) { roundDown(stats[it].toDouble() / base[it], 3) } // '등급'!B19:B22
+        val ratio2 = DoubleArray(4) { roundDown(stats[it].toDouble() / base[it], 2) } // '등급'!C19:C22
+        val real = fix(ratio3.average() * 100)
+        val game = fix(roundDown(ratio2.average(), 2) * 100)
+        return Total(DoubleArray(4) { fix(ratio3[it] * 100) }, real, totalGrade(real), game, totalGrade(game))
+    }
+
+    /** 실제 총 성장률(%)이 들어갈 수 있는 범위 */
+    class TotalRange(val min: Double, val max: Double)
+
+    /**
+     * 화면의 인게임 총 성장 점수 [game]% 와 맞는 실제 총 성장률 범위.
+     *
+     * 게임은 도감값을 소수로 들고 있고 화면에는 반올림한 정수만 보여 준다("도감 대비"도 그 정수 기준).
+     * 그래서 [base] 로 계산한 인게임 값이 게임 표시와 1% 어긋날 수 있다 (능력치마다 1% 단위로 버리기 때문).
+     * 진짜 도감값을 base-0.5 ~ base+0.5 로 보고, 능력치별로 나올 수 있는 (ROUNDDOWN 3자리, 2자리) 값을 모두 따져
+     * 인게임 값이 [game] 이 되는 경우만 남긴다. 맞는 경우가 없으면 null (숫자를 잘못 읽었거나 입력이 틀림).
+     */
+    fun realRangeForGame(stats: IntArray, base: IntArray, game: Int): TotalRange? {
+        // 인게임 값 합(% 정수) → 실제 값 합(‰ 정수)의 (최소, 최대)
+        var dp = mapOf(0 to (0 to 0))
+        for (i in 0..3) {
+            val opts = HashMap<Int, Pair<Int, Int>>() // 인게임 %(2자리) → 실제 ‰(3자리) 최소, 최대
+            for (k in 0 until RANGE_STEPS) {
+                val x = base[i] - 0.5 + k / RANGE_STEPS.toDouble()
+                if (x <= 0) continue
+                val q = stats[i] / x
+                val r3 = Math.round(roundDown(q, 3) * 1000).toInt()
+                val r2 = Math.round(roundDown(q, 2) * 100).toInt()
+                val o = opts[r2]
+                opts[r2] = if (o == null) r3 to r3 else minOf(o.first, r3) to maxOf(o.second, r3)
+            }
+            val next = HashMap<Int, Pair<Int, Int>>()
+            for ((sum, mm) in dp) for ((r2, rr) in opts) {
+                val key = sum + r2
+                val lo = mm.first + rr.first; val hi = mm.second + rr.second
+                val o = next[key]
+                next[key] = if (o == null) lo to hi else minOf(o.first, lo) to maxOf(o.second, hi)
+            }
+            dp = next
+        }
+        // 인게임 = ROUNDDOWN(평균, 2) × 100 = 합 ÷ 4 버림
+        val ok = dp.filterKeys { Math.floorDiv(it, 4) == game }.values
+        if (ok.isEmpty()) return null
+        return TotalRange(fix(ok.minOf { it.first } / 40.0), fix(ok.maxOf { it.second } / 40.0))
+    }
+
+    fun compute(input: Input): Result {
+        val p = input.pet
+        val lv1 = (input.level - 1).coerceAtLeast(1).toDouble()
+        val cur = input.stats
+
+        val growth = DoubleArray(4) { (cur[it] - p.init[it]) / lv1 }
+        val statGrades = statGrades(p, input.level, cur, roundGrowth = false)
+
+        val t = total(cur, p.maxS)
+
+        val myTotal = totalOf(cur)
+        val baseTotal = totalOf(p.maxS) // '등급'!O15
+        val tot = DoubleArray(MULTS.size) { k -> if (k == 8) baseTotal else round(baseTotal * MULTS[k], 1) }
+
+        val curIdx = TOTAL_CHAIN.firstOrNull { myTotal >= tot[it] }
+        val curGradeTotal = curIdx?.let { tot[it] }
+        val nextIdx: Int? = when {
+            curIdx == null -> null
+            curIdx == 13 -> -1 // MAX
+            else -> TOTAL_CHAIN[TOTAL_CHAIN.indexOf(curIdx) - 1]
+        }
+        val nextGradeTotal = nextIdx?.takeIf { it >= 0 }?.let { tot[it] }
+        val nextGrowthTotal = curGradeTotal?.let { round(it * 1.01, 1) }
+
+        val breakRows = (1..5).map { n ->
+            val s = statsAtBreaks(cur, input.breaks, input.breaks + n)
+            val g = DoubleArray(4) { i -> round((s[i] - p.init[i]) / lv1, 2) }
+            BreakRow(n, s, g, statGrades(p, input.level, s, roundGrowth = true), totalOf(s))
+        }
+
+        return Result(
+            growth = growth,
+            statGrades = statGrades,
+            percentile = t.percentile,
+            realTotal = t.realTotal,
+            realTotalGrade = t.realTotalGrade,
+            gameTotal = t.gameTotal,
+            gameTotalGrade = t.gameTotalGrade,
+            myTotal = myTotal,
+            curGrade = curIdx?.let { LABELS[it] } ?: "X",
+            curGradeTotal = curGradeTotal,
+            nextGrowthPct = t.gameTotal + 1,
+            nextGrowthTotal = nextGrowthTotal,
+            nextGrade = when (nextIdx) { null -> "X"; -1 -> "MAX"; else -> LABELS[nextIdx] },
+            nextGradeTotal = nextGradeTotal,
+            toNextGrowth = if (curGradeTotal != null && nextGrowthTotal != null && nextGrowthTotal != curGradeTotal)
+                (myTotal - curGradeTotal) / (nextGrowthTotal - curGradeTotal) else null,
+            toNextGrade = if (curGradeTotal != null && nextGradeTotal != null)
+                (myTotal - curGradeTotal) / (nextGradeTotal - curGradeTotal) else null,
+            breakRows = breakRows,
+        )
+    }
+
+    /**
+     * 지금 [breaks]강인 소환수를 [target]강까지 했을 때 능력치 (시트의 돌파 추정식, '등급'!G47 / I47).
+     * 미돌파 능치 = ROUND(현재 - 현재*0.95%*현재강), 목표 = ROUND(미돌파*0.95%*(목표-현재강) + 현재).
+     */
+    fun statsAtBreaks(cur: IntArray, breaks: Int, target: Int): IntArray = IntArray(4) { i ->
+        val unbroken = round(cur[i] - cur[i] * 0.0095 * breaks, 0)
+        round(unbroken * 0.0095 * (target - breaks) + cur[i], 0).toInt()
+    }
+
+    /** 게임의 "총 능력치 점수" = 공 + 방 + 순 + 체/10 */
+    fun abilityScore(s: IntArray): Double = totalOf(s)
+
+    /**
+     * 능력치별 성장 등급 (도감에 있는 소환수만 가능). 기준값은 '등급'!G11:T14 = ROUND(S성장률 × 배율, 2).
+     * 현재 능력치(성장률계산기!B20)는 성장률을 그대로, 돌파 추정표('등급'!G55)는 소수 둘째 자리로 반올림해 비교한다.
+     */
+    fun statGrades(pet: Pet, level: Int, stats: IntArray, roundGrowth: Boolean): List<String> {
+        val lv1 = (level - 1).coerceAtLeast(1).toDouble()
+        return List(4) { i ->
+            val thr = DoubleArray(MULTS.size) { k -> round(pet.sGrowth[i] * MULTS[k], 2) }
+            val g = (stats[i] - pet.init[i]) / lv1
+            statGrade(if (roundGrowth) round(g, 2) else g, thr)
+        }
+    }
+
+    /** 화면에서 읽은 능력치 한 줄: 현재 능력치, (도감 대비), 성장 평균 숫자, 성장 평균 등급 */
+    class ScreenStat(val cur: Int, val delta: Int, val growthAvg: Double, val grade: String?)
+
+    /**
+     * 도감에 없는 소환수의 강화 후 능력치 등급 추정 (만렙 150 전용).
+     *
+     * 등급 기준값 = ROUND(S성장률 × 배율, 2) 인데 S성장률은 화면에 없으므로
+     *   S성장률 ≈ 성장평균 − (도감 대비) / 149
+     * 로 역산한다. 성장평균(소수 둘째 자리 반올림), 도감값(정수) 반올림, 시트 S성장률과의 차이(±0.01)까지 오차 범위를 따져서,
+     * 화면에 보이는 현재 등급과 맞는 경우만 남긴 뒤 목표 강의 등급 후보를 모은다.
+     * 후보가 하나면 "SS+", 여러 개면 "SS~SS+" 처럼 범위로 돌려준다.
+     */
+    fun estimateGrades(stats: List<ScreenStat>, breaks: Int, target: Int): List<String> {
+        val lv1 = (MAX_LEVEL - 1).toDouble()
+        val cur = IntArray(4) { stats[it].cur }
+        val s = statsAtBreaks(cur, breaks, target)
+        return List(4) { i ->
+            val st = stats[i]
+            val pairs = ArrayList<Pair<Double, Double>>() // (실제 성장평균, S성장률)
+            for (gi in -5..4) {
+                val gExact = st.growthAvg + gi * 0.001
+                val sMid = gExact - st.delta / lv1
+                // 시트의 S성장률은 (만렙S-초기치)/149 와 최대 ±0.01 정도 다르므로 그만큼 넓게 본다
+                for (si in -12..12) pairs += gExact to (sMid + si * 0.001)
+            }
+            val ordered = listOf("D") + STAT_CHAIN.map { it.second }.reversed() // 낮은 등급 → 높은 등급
+            fun gradeAt(g: Double, sg: Double) =
+                statGrade(g, DoubleArray(MULTS.size) { k -> round(sg * MULTS[k], 2) })
+            val fit = pairs.filter { (g, sg) -> st.grade == null || gradeAt(g, sg) == st.grade }.ifEmpty { pairs }
+            val cands = fit.map { (g, sg) ->
+                val gk = g + (s[i] - cur[i]) / lv1
+                gradeAt(if (target == breaks) gk else round(gk, 2), sg)
+            }.toSet()
+            val sorted = cands.sortedBy { c -> ordered.indexOf(c).let { if (it < 0) 99 else it } }
+            if (sorted.size == 1) sorted[0] else "${sorted.first()}~${sorted.last()}"
+        }
+    }
+
+    /** 시트 도감(만렙S)과 강화가 기준으로 하는 레벨 */
+    const val MAX_LEVEL = 150
+
+    /** realRangeForGame 에서 도감값 ±0.5 구간을 나누는 칸 수 (도감값이 작은 저레벨도 놓치지 않을 만큼) */
+    private const val RANGE_STEPS = 1000
+
+    private fun statGrade(g: Double, thr: DoubleArray): String =
+        STAT_CHAIN.firstOrNull { g >= thr[it.first] }?.second ?: "D"
+
+    /**
+     * 성장률계산기!F21 / F23. 원본은 91% 미만에서 '등급'!I11(성장률 값, 3 안팎)과 비교하므로
+     * 사실상 91% 미만은 모두 "B+" 가 된다. 시트와 같은 결과를 내도록 그대로 따른다.
+     */
+    fun totalGrade(v: Double): String = when {
+        v >= 109 -> "SS++"
+        v >= 107 -> "SS+"
+        v >= 105 -> "SS"
+        v >= 103 -> "S++"
+        v >= 101 -> "S+"
+        v >= 99 -> "S"
+        v >= 97 -> "A++"
+        v >= 95 -> "A+"
+        v >= 93 -> "A"
+        v >= 91 -> "B++"
+        else -> "B+"
+    }
+
+    private fun totalOf(s: IntArray): Double = fix(s[0] + s[1] + s[2] + s[3] / 10.0)
+
+    /** 엑셀처럼 15자리 유효숫자로 정리해 부동소수 오차를 없앤다. */
+    private fun bd(x: Double): BigDecimal = BigDecimal(x).round(MathContext(15, RoundingMode.HALF_EVEN))
+
+    private fun fix(x: Double): Double = bd(x).toDouble()
+
+    /** 엑셀 ROUND (0에서 먼 쪽으로 반올림) */
+    fun round(x: Double, digits: Int): Double = bd(x).setScale(digits, RoundingMode.HALF_UP).toDouble()
+
+    /** 엑셀 ROUNDDOWN (0 쪽으로 버림) */
+    fun roundDown(x: Double, digits: Int): Double = bd(x).setScale(digits, RoundingMode.DOWN).toDouble()
+}

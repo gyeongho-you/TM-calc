@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 스크린샷만 찍는다. 화면 내용·입력 이벤트는 받지 않는다. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:canTakeScreenshot="true"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/a11y_description" />

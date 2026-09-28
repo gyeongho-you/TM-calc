@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">테이밍 계산 레이어</string>
+    <string name="a11y_description">\'계산\' 버튼을 누를 때만 화면을 한 장 찍어 소환수 능력치를 읽습니다. 화면 내용은 폰 안에서만 처리되며 다른 기능(입력, 화면 읽기)은 사용하지 않습니다.</string>
+</resources>
