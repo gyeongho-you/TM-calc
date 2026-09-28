@@ -33,6 +33,8 @@ class ScreenshotService : AccessibilityService() {
 
     /** 현재 화면을 찍어 메인 스레드로 돌려준다. 실패하면 bitmap 은 null, errorCode 는 ERROR_TAKE_SCREENSHOT_* */
     fun capture(onResult: (bitmap: Bitmap?, errorCode: Int) -> Unit) {
+        // 계산 레이어가 켜져 있을 때만 찍는다 (접근성이 켜져 있어도 레이어를 끄면 캡처는 절대 일어나지 않음)
+        if (!OverlayService.running) return onResult(null, -1)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 val hb = result.hardwareBuffer

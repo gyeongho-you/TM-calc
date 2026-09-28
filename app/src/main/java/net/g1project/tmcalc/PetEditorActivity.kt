@@ -252,7 +252,18 @@ class PetEditorActivity : Activity() {
         runCatching {
             when (requestCode) {
                 REQ_IMPORT -> {
-                    val json = contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                    // 도감 파일은 수십 KB. 엉뚱한 큰 파일을 골라 앱이 멈추지 않도록 1MB 까지만 읽는다
+                    val out = java.io.ByteArrayOutputStream()
+                    contentResolver.openInputStream(uri)!!.use { input ->
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            require(out.size() <= MAX_IMPORT_BYTES) { "파일이 너무 큽니다 (1MB 이하만 올릴 수 있습니다)" }
+                        }
+                    }
+                    val json = out.toString("UTF-8")
                     val r = PetStore.import(this, json)
                     AlertDialog.Builder(this)
                         .setTitle("JSON 올리기 완료")
@@ -296,6 +307,7 @@ class PetEditorActivity : Activity() {
         const val EXTRA_MAXS = "maxS"
         private const val REQ_IMPORT = 1
         private const val REQ_EXPORT = 2
+        private const val MAX_IMPORT_BYTES = 1 shl 20
 
         fun intent(ctx: Context, name: String?, maxS: IntArray?) = Intent(ctx, PetEditorActivity::class.java).apply {
             if (name != null) putExtra(EXTRA_NAME, name)
