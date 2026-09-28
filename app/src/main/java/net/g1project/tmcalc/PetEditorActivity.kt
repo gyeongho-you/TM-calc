@@ -195,6 +195,8 @@ class PetEditorActivity : Activity() {
                     val sv = sE[i].text.toString().trim().toDoubleOrNull()
                     val mv = mE[i].text.toString().trim().toIntOrNull()
                     if (sv == null && mv == null) return@setOnClickListener toast("${stats[i]}: 성장률(S) 또는 만렙S 를 적어 주세요.")
+                    // 자동 계산 전에 막는다 (너무 큰 값이면 계산 중 무한대가 되어 앱이 죽음)
+                    if (sv != null && (!sv.isFinite() || sv <= 0 || sv > 10_000)) return@setOnClickListener toast("${stats[i]} 성장률 값을 확인해 주세요.")
                     init[i] = iv
                     // 시트: 계산성장 = (만렙S - 초기치) / 149, 만렙S = 초기치 + S성장률 × 149
                     s[i] = sv ?: Calculator.round((mv!! - iv) / (Calculator.MAX_LEVEL - 1.0), 2)
@@ -202,6 +204,7 @@ class PetEditorActivity : Activity() {
                     if (m[i] <= 0 || s[i] <= 0) return@setOnClickListener toast("${stats[i]} 값을 확인해 주세요.")
                 }
                 val p = Pet(n, gradeE.text.toString().trim(), elemE.text.toString().trim(), typeE.text.toString().trim(), init, s, m)
+                PetDb.check(p)?.let { return@setOnClickListener toast(it) }
                 PetStore.put(this, p, oldName = pet?.name)
                 toast("${p.name} 저장했습니다.")
                 dlg.dismiss()

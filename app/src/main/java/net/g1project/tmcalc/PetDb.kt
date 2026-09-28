@@ -73,9 +73,28 @@ class PetDb(val pets: List<Pet>) {
                     sGrowth = DoubleArray(4) { s.getDouble(it) },
                     maxS = IntArray(4) { m.getInt(it) },
                 )
+                check(list.last())?.let { throw IllegalArgumentException("${i + 1}번째 소환수: $it") }
             }
             return PetDb(list)
         }
+
+        /**
+         * 계산이 깨지지 않는 값인지 검사한다 (JSON 올리기로 들어온 파일은 믿을 수 없으므로).
+         * 0/음수/NaN/엄청 큰 값이 들어가면 나눗셈이 무한대가 되어 앱이 죽을 수 있다. 문제가 없으면 null.
+         */
+        fun check(p: Pet): String? = when {
+            PetDb.key(p.name).isEmpty() -> "이름이 비어 있습니다"
+            p.name.length > MAX_TEXT -> "이름이 너무 깁니다"
+            listOf(p.grade, p.element, p.type).any { it.length > MAX_TEXT } -> "등급/속성/타입이 너무 깁니다"
+            p.init.any { it !in 0..MAX_STAT } -> "초기치는 0 ~ $MAX_STAT 사이여야 합니다"
+            p.maxS.any { it !in 1..MAX_STAT } -> "만렙S는 1 ~ $MAX_STAT 사이여야 합니다"
+            p.sGrowth.any { !it.isFinite() || it <= 0 || it > MAX_GROWTH } -> "S성장률은 0 ~ $MAX_GROWTH 사이여야 합니다"
+            else -> null
+        }
+
+        private const val MAX_TEXT = 40
+        private const val MAX_STAT = 1_000_000
+        private const val MAX_GROWTH = 10_000.0
 
         /** 한글/영문/숫자만 남겨 비교용 키로 만든다 (공백, 괄호, 돌파 표기 제거). */
         fun key(s: String): String =

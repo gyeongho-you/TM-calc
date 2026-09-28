@@ -79,6 +79,9 @@ object Calculator {
      * 인게임 값이 [game] 이 되는 경우만 남긴다. 맞는 경우가 없으면 null (숫자를 잘못 읽었거나 입력이 틀림).
      */
     fun realRangeForGame(stats: IntArray, base: IntArray, game: Int): TotalRange? {
+        // 성장률(현재/도감)은 실제로 0.8~1.2 안팎. 채팅 글자 등을 잘못 읽어 말도 안 되는 숫자가 들어오면
+        // 경우의 수가 폭발해 앱이 멈출 수 있으므로 계산하지 않는다
+        if ((0..3).any { base[it] < 1 || stats[it].toDouble() / base[it] !in 0.3..3.0 }) return null
         // 인게임 값 합(% 정수) → 실제 값 합(‰ 정수)의 (최소, 최대)
         var dp = mapOf(0 to (0 to 0))
         for (i in 0..3) {

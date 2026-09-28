@@ -2,6 +2,8 @@ package net.g1project.tmcalc
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -24,6 +26,32 @@ class PetStoreTest {
         assertArrayEquals(intArrayOf(5, 6, 7, 8), db.find("티거")!!.maxS)
         // 이름 비교는 공백/괄호를 무시한다
         assertEquals(base.size, PetStore.merge(base, listOf(pet("하프드래곤 주디", intArrayOf(1, 1, 1, 1)))).size)
+    }
+
+    /** 악의적/잘못된 JSON 은 계산에 들어가기 전에 거부 (0, NaN, 무한대, 너무 긴 이름) */
+    @Test
+    fun rejectsBrokenValues() {
+        val bad = listOf(
+            """[{"이름":"x","초기치":[1,1,1,1],"S성장률":[1,1,1,1],"만렙S":[0,1,1,1]}]""",
+            """[{"이름":"x","초기치":[1,1,1,1],"S성장률":["NaN",1,1,1],"만렙S":[1,1,1,1]}]""",
+            """[{"이름":"x","초기치":[1,1,1,1],"S성장률":[1e400,1,1,1],"만렙S":[1,1,1,1]}]""",
+            """[{"이름":"x","초기치":[-5,1,1,1],"S성장률":[1,1,1,1],"만렙S":[1,1,1,1]}]""",
+            """[{"이름":"${"가".repeat(100)}","초기치":[1,1,1,1],"S성장률":[1,1,1,1],"만렙S":[1,1,1,1]}]""",
+            """[{"이름":"","초기치":[1,1,1,1],"S성장률":[1,1,1,1],"만렙S":[1,1,1,1]}]""",
+        )
+        for (json in bad) {
+            val r = runCatching { PetDb.parse(json) }
+            assertTrue("거부되어야 함: $json", r.isFailure)
+        }
+        // 정상 값은 통과
+        PetDb.parse("""[{"이름":"x","초기치":[1,1,1,1],"S성장률":[1,1,1,1],"만렙S":[1,1,1,1]}]""")
+    }
+
+    /** 채팅 글자 등을 잘못 읽은 말도 안 되는 숫자로 범위 계산이 멈추지 않는지 */
+    @Test(timeout = 2000)
+    fun absurdScreenNumbersDoNotHang() {
+        assertNull(Calculator.realRangeForGame(intArrayOf(99999, 99999, 99999, 99999), intArrayOf(1, 1, 1, 1), 100))
+        assertNull(Calculator.realRangeForGame(intArrayOf(5, 5, 5, 5), intArrayOf(0, 5, 5, 5), 100))
     }
 
     @Test
