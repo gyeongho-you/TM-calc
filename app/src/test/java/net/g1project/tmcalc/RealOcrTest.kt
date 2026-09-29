@@ -41,6 +41,24 @@ class RealOcrTest {
         assertEquals(99, p.gameTotal)
     }
 
+    /**
+     * 거래소 "청랑": 짧은 이름이 Lv. 보다 왼쪽에 있어 세로줄이 안 겹치고, 같은 세로줄엔
+     * "총 성장 점수 총 능력치 점수" 라벨만 있어 그걸 이름으로 넣던 문제.
+     * (사용자 캡처 인식못함.jpg 의 글자 위치를 옮겨 적은 자료 — ML Kit 원본 출력은 아님)
+     */
+    @Test
+    fun market_cheongrang_shortNameLeftOfLevel() {
+        val p = OcrParser.parse(load("cheongrang"), db)
+        assertEquals("청랑", p.pet?.name)
+        assertEquals(150, p.level)
+        assertArrayEquals(arrayOf<Int?>(566, 289, 483, 4094), p.stats)
+        assertArrayEquals(arrayOf<Int?>(0, 3, 6, 23), p.deltas)
+        assertEquals(100, p.gameTotal)
+        // "[청랑]을 구매하시겠습니까?" 줄이 없어도 (다른 화면) 왼쪽의 짧은 이름을 찾는다
+        val noBuy = OcrParser.parse(load("cheongrang").filterNot { it.text.contains("구매하시") }, db)
+        assertEquals("청랑", noBuy.pet?.name)
+    }
+
     @Test
     fun infoCard_hwahonrang_4breaks() {
         val p = OcrParser.parse(load("hwa"), db)

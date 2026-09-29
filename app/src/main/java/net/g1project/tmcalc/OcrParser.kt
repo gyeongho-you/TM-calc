@@ -58,9 +58,19 @@ object OcrParser {
         "잠재력", "성장등급", "총성장점수", "총능력치점수", "기본능력치", "전투능력치", "거래소", "소환수",
     )
 
+    /**
+     * 이 글자가 들어 있으면 이름이 아니다. OCR이 옆 라벨과 붙여 읽는 경우가 있어서
+     * ("총 성장 점수 총 능력치 점수") 통째로 비교하지 않고 포함 여부로 본다.
+     */
+    private val UI_WORDS = listOf("점수", "능력치", "잠재력", "성장등급", "거래소", "시세", "구매", "환생")
+
+    /** 거래소 화면의 "[청랑]을 구매하시겠습니까?" — 이름이 가장 확실하게 적힌 곳 */
+    private val BUY = Regex("""\[\s*([^\]]+?)\s*]\s*[을를]?\s*구매""")
+
     private fun isNameLike(text: String): Boolean {
         val k = PetDb.key(text)
-        return k.any { it in '가'..'힣' } && k !in NOT_NAME && !LEVEL.containsMatchIn(text)
+        return k.any { it in '가'..'힣' } && k !in NOT_NAME && UI_WORDS.none { k.contains(it) } &&
+            !LEVEL.containsMatchIn(text)
     }
 
     fun parse(lines: List<OcrLine>, db: PetDb): ParsedScreen {
@@ -111,26 +121,36 @@ object OcrParser {
         val level = levelLine?.let { LEVEL.find(it.text)!!.groupValues[1].toIntOrNull() }
             ?.takeIf { it in 1..300 }
 
-        // 3) 이름: "Lv." 줄보다 위에 있고 같은 세로줄에 겹치는 글자 중, UI 문구가 아닌 가장 가까운 줄.
+        // 3) 이름: "Lv." 줄보다 위에 있고 Lv. 이 끝나는 곳보다 왼쪽에서 시작하는 글자 중, UI 문구가 아닌 가장 가까운 줄.
+        //    (짧은 이름은 Lv. 보다 왼쪽에 있어 세로줄이 안 겹칠 수 있다 — 거래소 "청랑")
         //    도감에 거의 같은 이름이 있으면(전설) 그걸 우선한다.
         val nameCandidates = above.filter { l ->
             levelLine != null && l !== levelLine && l.bottom <= levelLine.top + levelLine.height / 2 &&
-                l.right > levelLine.left && l.left < levelLine.right && isNameLike(l.text)
+                l.left < levelLine.right && isNameLike(l.text)
         }.sortedByDescending { it.cy }
         var pet: Pet? = null
         var nameScore = 0.0
         var nameLine: OcrLine? = null
-        for (l in nameCandidates) {
-            val (p, score) = db.bestMatch(l.text) ?: continue
-            if (score >= 0.8 && score > nameScore) { pet = p; nameScore = score; nameLine = l }
-        }
-        if (nameLine == null) {
-            nameLine = nameCandidates.firstOrNull()
-            nameLine?.let { l ->
-                db.bestMatch(l.text)?.let { (p, score) -> if (score >= 0.6) { pet = p; nameScore = score } }
+        var nameRaw: String? = null
+        // 3-0) 거래소 화면이면 "[이름]을 구매하시겠습니까?" 의 이름을 먼저 쓴다
+        val bought = lines.firstNotNullOfOrNull { l -> BUY.find(l.text)?.groupValues?.get(1)?.takeIf { isNameLike(it) } }
+        if (bought != null) {
+            nameRaw = bought
+            nameLine = nameCandidates.firstOrNull { PetDb.key(it.text) == PetDb.key(bought) }
+            db.bestMatch(bought)?.let { (p, score) -> if (score >= 0.6) { pet = p; nameScore = score } }
+        } else {
+            for (l in nameCandidates) {
+                val (p, score) = db.bestMatch(l.text) ?: continue
+                if (score >= 0.8 && score > nameScore) { pet = p; nameScore = score; nameLine = l }
             }
+            if (nameLine == null) {
+                nameLine = nameCandidates.firstOrNull()
+                nameLine?.let { l ->
+                    db.bestMatch(l.text)?.let { (p, score) -> if (score >= 0.6) { pet = p; nameScore = score } }
+                }
+            }
+            nameRaw = nameLine?.text
         }
-        val nameRaw = nameLine?.text
 
         // 4) 돌파 "(+4)" 는 이름과 같은 줄에만 있다 (능력치의 "(+7)" 과 헷갈리지 않도록)
         val nameRow = nameLine?.let { n ->
