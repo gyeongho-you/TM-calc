@@ -33,13 +33,14 @@ class CalculatorTest {
         assertEquals(1.329545455, r.toNextGrowth!!, 1e-8)
         assertEquals(0.6724137931, r.toNextGrade!!, 1e-8)
 
+        // 강화 표는 시트(0.95%) 대신 게임 강화 화면에 맞춘 1% 식 (GameEnhanceTest 참고)
         val b = r.breakRows
-        assertArrayEquals(intArrayOf(610, 615, 621, 627, 633), b.map { it.stats[0] }.toIntArray())
-        assertArrayEquals(intArrayOf(4521, 4563, 4606, 4648, 4691), b.map { it.stats[3] }.toIntArray())
-        assertArrayEquals(doubleArrayOf(2.67, 2.7, 2.72, 2.74, 2.77), b.map { it.growth[1] }.toDoubleArray(), 1e-9)
+        assertArrayEquals(intArrayOf(610, 616, 622, 628, 634), b.map { it.stats[0] }.toIntArray())
+        assertArrayEquals(intArrayOf(4523, 4568, 4612, 4657, 4702), b.map { it.stats[3] }.toIntArray())
+        assertArrayEquals(doubleArrayOf(2.67, 2.7, 2.72, 2.75, 2.78), b.map { it.growth[1] }.toDoubleArray(), 1e-9)
         assertEquals(listOf("S++", "SS", "SS", "SS+", "SS+"), b.map { it.grades[0] })
         assertEquals(listOf("S", "S+", "S+", "S++", "S++"), b.map { it.grades[3] })
-        assertArrayEquals(doubleArrayOf(1798.1, 1814.3, 1831.6, 1847.8, 1865.1), b.map { it.total }.toDoubleArray(), 1e-9)
+        assertArrayEquals(doubleArrayOf(1798.3, 1816.8, 1834.2, 1851.7, 1869.2), b.map { it.total }.toDoubleArray(), 1e-9)
     }
 
     /** 시트에 첨부된 게임 캡처: 화혼랑(+4) Lv.150, 게임 표기 105% / 1,860.8 / SS++ S++ SS SS */
@@ -135,7 +136,7 @@ class CalculatorTest {
         assertEquals(99.9, fromScreen.realTotal, 1e-9)
     }
 
-    /** 기본(도감) 총 능력치 점수 = 시트 E10 / 도감 Q열, 목표 강 = 시트 추가돌파 표 */
+    /** 기본(도감) 총 능력치 점수 = 시트 E10 / 도감 Q열, 목표 강 = 1% 식 */
     @Test
     fun abilityScoreAndTargetBreaks() {
         val pet = db.find("플루스타")!!
@@ -143,13 +144,12 @@ class CalculatorTest {
         assertEquals(1743.4, Calculator.abilityScore(db.find("화혼랑")!!.maxS), 1e-9)
 
         val cur = IntArray(4) { pet.maxS[it] + intArrayOf(18, 13, 10, -2)[it] }
-        assertArrayEquals(intArrayOf(621, 416, 334, 4606), Calculator.statsAtBreaks(cur, 0, 3)) // 시트 D35:D38
+        assertArrayEquals(intArrayOf(622, 416, 335, 4612), Calculator.statsAtBreaks(cur, 0, 3)) // 시트는 621/416/334/4606
         assertArrayEquals(cur, Calculator.statsAtBreaks(cur, 2, 2))
 
-        // 강화별 등급 = 시트 추가돌파 표(B43:F46)와 현재 등급(B20:B23)
-        assertEquals(listOf("S++", "S++", "S++", "S"), Calculator.statGrades(pet, 150, cur, roundGrowth = false))
-        assertEquals(listOf("SS", "SS", "SS", "S+"),
-            Calculator.statGrades(pet, 150, Calculator.statsAtBreaks(cur, 0, 3), roundGrowth = true)) // 시트 D43:D46
+        // 등급 = 능력치 ÷ 도감값 (이 예시에서는 시트 B20:B23, D43:D46 과 같은 결과)
+        assertEquals(listOf("S++", "S++", "S++", "S"), Calculator.statGrades(cur, pet.maxS))
+        assertEquals(listOf("SS", "SS", "SS", "S+"), Calculator.statGrades(Calculator.statsAtBreaks(cur, 0, 3), pet.maxS))
     }
 
     @Test

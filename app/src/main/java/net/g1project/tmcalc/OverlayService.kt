@@ -347,59 +347,44 @@ class OverlayService : Service() {
                 "아래 '도감에 추가/수정'으로 넣으면 정확하게 계산됩니다."))
             level == null || level < 2 -> results.addView(note("상세 계산에는 레벨(2 이상)이 필요합니다."))
             stats.any { it == null } -> {}
-            else -> renderResult(pet, Calculator.compute(Calculator.Input(pet, level, IntArray(4) { stats[it]!! }, breaks)), screenGame)
+            else -> {
+                // 등급 기준 도감값: 화면에서 읽은 값(현재 - 도감 대비)이 있으면 그걸 쓴다
+                val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, IntArray(4) { stats[it]!! }, breaks, b)), screenGame)
+            }
         }
         warnView.text = warns.joinToString("\n")
         warnView.visibility = if (warns.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /**
-     * 현재 강부터 최대 +5강까지 능력치·등급·총 성장률 (시트의 돌파 추정식). 강화는 150레벨부터라 150일 때만 표시.
-     * 능력치 등급: 시트 도감에 있는 소환수는 정확히 계산, 없는 소환수는 화면의 성장 평균 숫자로 추정(≈).
+     * 현재 강부터 최대 +5강까지 능력치·등급·총 성장률 (강화 1번당 1%, 게임 강화 화면 기준). 강화는 150레벨부터라 150일 때만 표시.
+     * 능력치 등급: 능력치 ÷ 도감값. 도감값은 화면(현재 - 도감 대비)으로 알 수 있어 도감에 없는 소환수도 같은 방식.
      */
     private fun renderEnhance(cur: IntArray, base: IntArray, breaks: Int, pet: Pet?, level: Int?,
                               curReal: Double, curGrade: String) {
         enhanceTable.removeAllViews()
         if (level != MAX_LEVEL) {
             enhanceTable.addView(sectionTitle("강화별"))
-            enhanceTable.addView(note("강화는 ${MAX_LEVEL}레벨부터라 강화 추정은 ${MAX_LEVEL}레벨일 때만 표시됩니다."))
+            enhanceTable.addView(note("강화는 ${MAX_LEVEL}레벨부터라 강화 예상은 ${MAX_LEVEL}레벨일 때만 표시됩니다."))
             return
         }
-        // 도감에 없으면 화면의 성장 평균 숫자/등급으로 추정
-        val lp = lastParsed
-        val screen = if (pet == null && lp != null && lp.growthAvgs.all { it != null }) {
-            List(4) { Calculator.ScreenStat(cur[it], cur[it] - base[it], lp.growthAvgs[it]!!, lp.screenGrades[it]) }
-        } else null
-
-        enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, 추정)"))
+        enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
         enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", "총점", "성장률"), header = true))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
-            val grades: List<String>? = when {
-                pet != null -> Calculator.statGrades(pet, level, s, roundGrowth = k != breaks)
-                screen != null -> Calculator.estimateGrades(screen, breaks, k).mapIndexed { i, g ->
-                    // 현재 강은 화면에 적힌 등급을 그대로, 나머지는 추정 표시
-                    if (k == breaks && screen[i].grade != null) screen[i].grade!!
-                    else if (g.contains('~')) g else "≈$g"
-                }
-                else -> null
-            }
+            // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
+            val grades = Calculator.statGrades(s, base)
             val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
-                (0..3).map { i -> if (grades != null) "${s[i]}\n${grades[i]}" else "${s[i]}" } +
+                (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
                 fmt(Calculator.abilityScore(s), 1) +
                 // 현재 강은 위의 총 성장률(화면 인게임 값으로 맞춘 값)과 같게
                 if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}"
             enhanceTable.addView(row(cells, small = true))
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
-        when {
-            pet != null -> {}
-            screen != null -> enhanceTable.addView(note("도감에 없는 소환수라 능력치 등급은 화면 숫자로 추정했습니다. " +
-                "≈ 는 추정, \"SS~SS+\" 는 두 등급 중 하나라는 뜻입니다."))
-            else -> enhanceTable.addView(note("도감에 없는 소환수이고 화면에 성장 평균 숫자가 없어 능력치 등급은 표시하지 않습니다. " +
-                "(소환수 정보 화면에서 읽으면 추정 등급이 나옵니다)"))
-        }
+        else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
     }
 
     private fun num(e: EditText) = e.text.toString().replace(",", "").replace("+", "").trim().toIntOrNull()

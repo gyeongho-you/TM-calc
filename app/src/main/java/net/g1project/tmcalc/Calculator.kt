@@ -27,6 +27,8 @@ object Calculator {
         /** 현재 능력치 (공, 방, 순, 체) = 만렙S + 증감율 */
         val stats: IntArray,
         val breaks: Int,
+        /** 등급·총 성장률의 기준 도감값. 화면에서 읽은 값(현재 - 도감 대비)이 있으면 그걸, 없으면 시트 만렙S */
+        val base: IntArray = pet.maxS,
     ) {
         /** 시트 입력칸 (3)~(6) 증감율 */
         val deltas: IntArray get() = IntArray(4) { stats[it] - pet.maxS[it] }
@@ -116,9 +118,9 @@ object Calculator {
         val cur = input.stats
 
         val growth = DoubleArray(4) { (cur[it] - p.init[it]) / lv1 }
-        val statGrades = statGrades(p, input.level, cur, roundGrowth = false)
+        val statGrades = statGrades(cur, input.base)
 
-        val t = total(cur, p.maxS)
+        val t = total(cur, input.base)
 
         val myTotal = totalOf(cur)
         val baseTotal = totalOf(p.maxS) // '등급'!O15
@@ -137,7 +139,7 @@ object Calculator {
         val breakRows = (1..5).map { n ->
             val s = statsAtBreaks(cur, input.breaks, input.breaks + n)
             val g = DoubleArray(4) { i -> round((s[i] - p.init[i]) / lv1, 2) }
-            BreakRow(n, s, g, statGrades(p, input.level, s, roundGrowth = true), totalOf(s))
+            BreakRow(n, s, g, statGrades(s, input.base), totalOf(s))
         }
 
         return Result(
@@ -164,76 +166,39 @@ object Calculator {
     }
 
     /**
-     * 지금 [breaks]강인 소환수를 [target]강까지 했을 때 능력치 (시트의 돌파 추정식, '등급'!G47 / I47).
-     * 미돌파 능치 = ROUND(현재 - 현재*0.95%*현재강), 목표 = ROUND(미돌파*0.95%*(목표-현재강) + 현재).
+     * 지금 [breaks]강인 소환수를 [target]강까지 했을 때 능력치.
+     * 게임 강화 화면(5마리 20칸)과 맞춘 식: 강화 1번마다 강화 안 한 능력치의 1%.
+     *   목표 = ROUND(현재 ÷ (1 + 1%×현재강) × (1 + 1%×목표강))
+     * 원래 시트는 0.95% 에 뺄셈 근사(현재 - 현재×0.95%×현재강)라 1~3 씩 낮게 나왔다.
+     * 게임은 소수까지 들고 있고 화면엔 정수만 보여서, 이 식도 게임과 1 차이 날 수 있다 (20칸 중 13칸 정확).
      */
     fun statsAtBreaks(cur: IntArray, breaks: Int, target: Int): IntArray = IntArray(4) { i ->
-        val unbroken = round(cur[i] - cur[i] * 0.0095 * breaks, 0)
-        round(unbroken * 0.0095 * (target - breaks) + cur[i], 0).toInt()
+        if (target == breaks) cur[i]
+        else round(cur[i] / (1 + BREAK_RATE * breaks) * (1 + BREAK_RATE * target), 0).toInt()
     }
 
     /** 게임의 "총 능력치 점수" = 공 + 방 + 순 + 체/10 */
     fun abilityScore(s: IntArray): Double = totalOf(s)
 
     /**
-     * 능력치별 성장 등급 (도감에 있는 소환수만 가능). 기준값은 '등급'!G11:T14 = ROUND(S성장률 × 배율, 2).
-     * 현재 능력치(성장률계산기!B20)는 성장률을 그대로, 돌파 추정표('등급'!G55)는 소수 둘째 자리로 반올림해 비교한다.
+     * 능력치별 등급 = 현재 능력치 ÷ 도감값 을 배율(S+ 1.01, S++ 1.03, SS 1.05 ...)과 비교.
+     * 게임 화면 등급 40칸(강화 전·후)과 모두 일치. 원래 시트는 성장률 (현재-초기치)/149 로 비교해서
+     * 경계선 근처에서 한 칸씩 어긋났다 (예: 로얄 가드 유니 방어력 686 → 시트 SS++, 게임 SS+).
+     * 도감값은 화면의 "현재 - 도감 대비"로도 알 수 있어서 도감에 없는 소환수도 똑같이 계산된다.
      */
-    fun statGrades(pet: Pet, level: Int, stats: IntArray, roundGrowth: Boolean): List<String> {
-        val lv1 = (level - 1).coerceAtLeast(1).toDouble()
-        return List(4) { i ->
-            val thr = DoubleArray(MULTS.size) { k -> round(pet.sGrowth[i] * MULTS[k], 2) }
-            val g = (stats[i] - pet.init[i]) / lv1
-            statGrade(if (roundGrowth) round(g, 2) else g, thr)
-        }
-    }
-
-    /** 화면에서 읽은 능력치 한 줄: 현재 능력치, (도감 대비), 성장 평균 숫자, 성장 평균 등급 */
-    class ScreenStat(val cur: Int, val delta: Int, val growthAvg: Double, val grade: String?)
-
-    /**
-     * 도감에 없는 소환수의 강화 후 능력치 등급 추정 (만렙 150 전용).
-     *
-     * 등급 기준값 = ROUND(S성장률 × 배율, 2) 인데 S성장률은 화면에 없으므로
-     *   S성장률 ≈ 성장평균 − (도감 대비) / 149
-     * 로 역산한다. 성장평균(소수 둘째 자리 반올림), 도감값(정수) 반올림, 시트 S성장률과의 차이(±0.01)까지 오차 범위를 따져서,
-     * 화면에 보이는 현재 등급과 맞는 경우만 남긴 뒤 목표 강의 등급 후보를 모은다.
-     * 후보가 하나면 "SS+", 여러 개면 "SS~SS+" 처럼 범위로 돌려준다.
-     */
-    fun estimateGrades(stats: List<ScreenStat>, breaks: Int, target: Int): List<String> {
-        val lv1 = (MAX_LEVEL - 1).toDouble()
-        val cur = IntArray(4) { stats[it].cur }
-        val s = statsAtBreaks(cur, breaks, target)
-        return List(4) { i ->
-            val st = stats[i]
-            val pairs = ArrayList<Pair<Double, Double>>() // (실제 성장평균, S성장률)
-            for (gi in -5..4) {
-                val gExact = st.growthAvg + gi * 0.001
-                val sMid = gExact - st.delta / lv1
-                // 시트의 S성장률은 (만렙S-초기치)/149 와 최대 ±0.01 정도 다르므로 그만큼 넓게 본다
-                for (si in -12..12) pairs += gExact to (sMid + si * 0.001)
-            }
-            val ordered = listOf("D") + STAT_CHAIN.map { it.second }.reversed() // 낮은 등급 → 높은 등급
-            fun gradeAt(g: Double, sg: Double) =
-                statGrade(g, DoubleArray(MULTS.size) { k -> round(sg * MULTS[k], 2) })
-            val fit = pairs.filter { (g, sg) -> st.grade == null || gradeAt(g, sg) == st.grade }.ifEmpty { pairs }
-            val cands = fit.map { (g, sg) ->
-                val gk = g + (s[i] - cur[i]) / lv1
-                gradeAt(if (target == breaks) gk else round(gk, 2), sg)
-            }.toSet()
-            val sorted = cands.sortedBy { c -> ordered.indexOf(c).let { if (it < 0) 99 else it } }
-            if (sorted.size == 1) sorted[0] else "${sorted.first()}~${sorted.last()}"
-        }
+    fun statGrades(stats: IntArray, base: IntArray): List<String> = List(4) { i ->
+        val q = fix(stats[i].toDouble() / base[i])
+        STAT_CHAIN.firstOrNull { q >= MULTS[it.first] }?.second ?: "D"
     }
 
     /** 시트 도감(만렙S)과 강화가 기준으로 하는 레벨 */
     const val MAX_LEVEL = 150
 
+    /** 강화 1번당 오르는 비율 (게임 강화 화면 기준) */
+    private const val BREAK_RATE = 0.01
+
     /** realRangeForGame 에서 도감값 ±0.5 구간을 나누는 칸 수 (도감값이 작은 저레벨도 놓치지 않을 만큼) */
     private const val RANGE_STEPS = 1000
-
-    private fun statGrade(g: Double, thr: DoubleArray): String =
-        STAT_CHAIN.firstOrNull { g >= thr[it.first] }?.second ?: "D"
 
     /**
      * 성장률계산기!F21 / F23. 원본은 91% 미만에서 '등급'!I11(성장률 값, 3 안팎)과 비교하므로
