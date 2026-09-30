@@ -6,3 +6,5 @@ local.properties
 *.xlsx
 *.jpg
 .idea/
+# PC 앱: OCR 모델은 빌드 때 받는다 (용량이 커서 레포에 넣지 않음)
+desktop/models/
