@@ -86,6 +86,8 @@ class PetDb(val pets: List<Pet>) {
             PetDb.key(p.name).isEmpty() -> "이름이 비어 있습니다"
             p.name.length > MAX_TEXT -> "이름이 너무 깁니다"
             listOf(p.grade, p.element, p.type).any { it.length > MAX_TEXT } -> "등급/속성/타입이 너무 깁니다"
+            // PC 화면(Swing)은 "<html>" 로 시작하는 글자를 HTML 로 그려서 <img src=http://...> 로 외부 접속을 시킬 수 있다
+            listOf(p.name, p.grade, p.element, p.type).any { t -> t.any { it == '<' || it == '>' } } -> "이름/등급/속성/타입에 < > 는 쓸 수 없습니다"
             p.init.any { it !in 0..MAX_STAT } -> "초기치는 0 ~ $MAX_STAT 사이여야 합니다"
             p.maxS.any { it !in 1..MAX_STAT } -> "만렙S는 1 ~ $MAX_STAT 사이여야 합니다"
             p.sGrowth.any { !it.isFinite() || it <= 0 || it > MAX_GROWTH } -> "S성장률은 0 ~ $MAX_GROWTH 사이여야 합니다"
