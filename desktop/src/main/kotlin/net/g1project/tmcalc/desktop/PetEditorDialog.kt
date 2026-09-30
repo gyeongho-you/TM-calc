@@ -49,7 +49,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
             override fun getListCellRendererComponent(l: JList<*>, v: Any?, i: Int, sel: Boolean, focus: Boolean): Component {
                 val p = v as Pet
                 val tag = when { !pets.isMine(p.name) -> ""; pets.inBase(p.name) -> "  [수정함]"; else -> "  [추가함]" }
-                val info = listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
+                val info = esc(listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/"))
                 val c = super.getListCellRendererComponent(l, "<html><b>${esc(p.name)}</b>$tag<br>" +
                     "<font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")}</font></html>", i, sel, focus)
                 (c as JLabel).apply {
@@ -71,7 +71,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
             border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
             add(vbox().apply {
                 add(row(label("<html><div style='width:350px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
-                    "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다.</div></html>", 11f, MainWindow.MUTED)))
+                    "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다.</div></html>", 11f, MainWindow.MUTED, allowHtml = true)))
                 add(JPanel(GridLayout(1, 3, 6, 0)).apply {
                     isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
                     add(button("+ 추가") { edit(null, null, null) })
@@ -133,7 +133,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                 })
             }
             add(row(label("<html>· 초기치는 꼭 필요합니다.<br>· 성장률(S)과 만렙S 중 하나만 적으면 나머지는 자동으로 채웁니다.<br>" +
-                "· 150레벨 화면에서 열면 만렙S 칸에 화면의 도감값(현재 − 도감 대비)이 들어갑니다.</html>", 11f, MainWindow.MUTED)
+                "· 150레벨 화면에서 열면 만렙S 칸에 화면의 도감값(현재 − 도감 대비)이 들어갑니다.</html>", 11f, MainWindow.MUTED, allowHtml = true)
                 .apply { border = BorderFactory.createEmptyBorder(8, 0, 0, 0) }))
         }
 
@@ -225,14 +225,20 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
     private fun warn(parent: Component, msg: String) = JOptionPane.showMessageDialog(parent, msg, "확인", JOptionPane.WARNING_MESSAGE)
     private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    private fun label(t: String, size: Float, color: Color) = JLabel(t).apply { font = MainWindow.UI_FONT.deriveFont(size); foreground = color }
+    /** 기본은 HTML 끔 (MainWindow.label 설명 참고). 고정 안내문만 [allowHtml] */
+    private fun label(t: String, size: Float, color: Color, allowHtml: Boolean = false) = JLabel().apply {
+        putClientProperty("html.disable", !allowHtml)
+        text = t; font = MainWindow.UI_FONT.deriveFont(size); foreground = color
+    }
 
     private fun field(text: String = "") = JTextField(text).apply {
         font = MainWindow.UI_FONT.deriveFont(14f); foreground = Color.WHITE; background = MainWindow.FIELD; caretColor = Color.WHITE
         border = BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, MainWindow.MUTED), BorderFactory.createEmptyBorder(3, 4, 3, 4))
     }
 
-    private fun button(t: String, onClick: () -> Unit) = JButton(t).apply {
+    private fun button(t: String, onClick: () -> Unit) = JButton().apply {
+        putClientProperty("html.disable", true)
+        text = t
         font = MainWindow.UI_FONT.deriveFont(12f); foreground = Color.WHITE; background = MainWindow.CHIP
         isFocusPainted = false; isFocusable = false; border = BorderFactory.createEmptyBorder(6, 12, 6, 12)
         addActionListener { onClick() }

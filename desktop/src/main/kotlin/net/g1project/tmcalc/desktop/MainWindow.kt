@@ -49,7 +49,11 @@ class MainWindow(
 
     var ocr: PaddleOcr? = null
 
-    private val targets = JComboBox<WindowCapture.Target>().apply { font = UI_FONT.deriveFont(12f) }
+    private val targets = JComboBox<WindowCapture.Target>().apply {
+        font = UI_FONT.deriveFont(12f)
+        // 창 제목은 다른 프로그램이 정한다 → "<html><img src=http://…>" 같은 제목을 HTML 로 그리지 않게
+        renderer = javax.swing.DefaultListCellRenderer().apply { putClientProperty("html.disable", true) }
+    }
     private val scanBtn = button("계산").apply { font = font.deriveFont(Font.BOLD, 15f) }
     private val hotkey = GlobalHotkey()
     private var hotkeyKey = GlobalHotkey.Key(prefs.getInt("hotkeyMods", GlobalHotkey.DEFAULT.mods), prefs.getInt("hotkeyVk", GlobalHotkey.DEFAULT.vk))
@@ -57,9 +61,9 @@ class MainWindow(
 
     private val totalLbl = label("-", 30f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
     private val gradeLbl = label("", 18f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
-    private val subLbl = label("앱플레이어에서 소환수 정보 화면을 띄우고 [계산] 또는 단축키", 11f, SUB)
+    private val subLbl = label("앱플레이어에서 소환수 정보 화면을 띄우고 [계산] 또는 단축키", 11f, SUB, allowHtml = true)
     private val scoreLbl = label("", 12f, Color.WHITE)
-    private val warnLbl = label("", 12f, WARN)
+    private val warnLbl = label("", 12f, WARN, allowHtml = true)
     private val suggestBox = FitPanel(GridLayout(0, 2, 6, 6)).apply { isOpaque = false; isVisible = false }
     private val suggestHint = row(label("혹시 이 소환수인가요? (눌러서 선택)", 11f, MUTED))
 
@@ -147,6 +151,7 @@ class MainWindow(
         setLocationByPlatform(true)
         refreshTargets()
         applyHotkey(hotkeyKey)
+        if (!prefs.getBoolean("saveLastScan", false)) clearLastScan()
     }
 
     fun setStatus(t: String) { status.text = t }
@@ -183,7 +188,7 @@ class MainWindow(
                 val img = WindowCapture.capture(t) ?: error("창을 캡처하지 못했습니다 (최소화돼 있거나 닫힘)")
                 val lines = engine.recognize(img)
                 val parsed = OcrParser.parse(lines, pets.db)
-                saveLastScan(img, lines, parsed)
+                if (prefs.getBoolean("saveLastScan", false)) saveLastScan(img, lines, parsed)
                 // 괄호 숫자의 +/- 는 글자색(빨강/초록)으로 한 번 더 확인 (폰 앱과 같음)
                 val deltas = Array(4) { i ->
                     val d = parsed.deltas[i] ?: return@Array null
@@ -209,6 +214,11 @@ class MainWindow(
      * 문제가 생겼을 때 원인을 볼 수 있게, 마지막 계산 한 번의 캡처와 글자 인식 결과를 PC 안에 남긴다 (매번 덮어씀, 어디에도 보내지 않음).
      * %APPDATA%\TM-calc\마지막계산\캡처.png, 인식결과.txt
      */
+    /** 저장해 둔 마지막 계산 화면 지우기 (저장을 끄면, 그리고 꺼진 채로 켜질 때) */
+    private fun clearLastScan() {
+        java.io.File(pets.dir, "마지막계산").listFiles()?.forEach { it.delete() }
+    }
+
     private fun saveLastScan(img: BufferedImage, lines: List<net.g1project.tmcalc.OcrLine>, p: ParsedScreen) {
         runCatching {
             val dir = java.io.File(pets.dir, "마지막계산").apply { mkdirs() }
@@ -312,7 +322,8 @@ class MainWindow(
                 renderResult(pet, Calculator.compute(Calculator.Input(pet, level, IntArray(4) { stats[it]!! }, breaks, b)), screenGame)
             }
         }
-        warnLbl.text = html(warns.joinToString("<br>"))
+        // 경고에는 화면에서 읽은 글자(OCR)와 도감 이름이 들어가므로 이스케이프
+        warnLbl.text = html(warns.joinToString("<br>") { esc(it) })
         revalidate(); repaint()
     }
 
@@ -369,6 +380,13 @@ class MainWindow(
             add(JMenuItem("계산 단축키 바꾸기…").apply { addActionListener { showHotkeyDialog() } })
         })
         add(JMenu("도움말").apply {
+            add(javax.swing.JCheckBoxMenuItem("문제 확인용: 마지막 계산 화면 저장", prefs.getBoolean("saveLastScan", false)).apply {
+                addActionListener {
+                    prefs.putBoolean("saveLastScan", isSelected)
+                    if (!isSelected) clearLastScan()
+                    setStatus(if (isSelected) "다음 계산부터 마지막 화면을 저장합니다 (PC 안에만)" else "저장한 화면을 지웠습니다")
+                }
+            })
             add(JMenuItem("마지막 계산 화면 폴더 열기").apply {
                 addActionListener { java.io.File(pets.dir, "마지막계산").apply { mkdirs() }.let { Desktop.getDesktop().open(it) } }
             })
@@ -404,7 +422,7 @@ class MainWindow(
         val dlg = javax.swing.JDialog(this, "계산 단축키", true)
         var picked: GlobalHotkey.Key = hotkeyKey
         val shown = label(hotkeyKey.toString(), 20f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
-        val msg = label(" ", 11f, WARN)
+        val msg = label(" ", 11f, WARN, allowHtml = true)
         // 설정하는 동안은 지금 단축키를 풀어 둔다 (안 그러면 그 키를 눌러도 여기로 안 온다)
         hotkey.stop()
         val catcher = JTextField("여기를 누르고 원하는 키 조합을 누르세요").apply {
@@ -414,7 +432,7 @@ class MainWindow(
                 override fun keyPressed(e: java.awt.event.KeyEvent) {
                     e.consume()
                     val (k, err) = GlobalHotkey.fromKeyEvent(e)
-                    if (k != null) { picked = k; shown.text = k.toString(); msg.text = " " } else if (err != null) msg.text = html(err)
+                    if (k != null) { picked = k; shown.text = k.toString(); msg.text = " " } else if (err != null) msg.text = html(esc(err))
                 }
                 override fun keyReleased(e: java.awt.event.KeyEvent) = e.consume()
             })
@@ -432,7 +450,7 @@ class MainWindow(
         dlg.contentPane = vbox().apply {
             isOpaque = true; background = BG
             border = BorderFactory.createEmptyBorder(12, 14, 12, 14)
-            add(row(label("<html>F1~F24 는 그대로 쓸 수 있고, 문자·숫자·숫자패드는<br>Ctrl / Alt / Shift 와 같이 눌러야 합니다.</html>", 11f, SUB)))
+            add(row(label("<html>F1~F24 는 그대로 쓸 수 있고, 문자·숫자·숫자패드는<br>Ctrl / Alt / Shift 와 같이 눌러야 합니다.</html>", 11f, SUB, allowHtml = true)))
             add(Box.createVerticalStrut(8)); add(catcher.apply { alignmentX = Component.LEFT_ALIGNMENT })
             add(Box.createVerticalStrut(8)); add(row(label("선택한 단축키: ", 12f, MUTED), shown)); add(row(msg))
             add(Box.createVerticalStrut(8))
@@ -469,15 +487,24 @@ class MainWindow(
 
     private fun num(f: JTextField) = f.text.replace(",", "").replace("+", "").trim().toIntOrNull()
 
-    private fun label(t: String, size: Float, color: Color) = JLabel(t).apply { font = UI_FONT.deriveFont(size); foreground = color }
+    /**
+     * Swing 은 "<html>" 로 시작하는 글자를 HTML 로 그리고, HTML 의 <img src=http://…> 는 인터넷에서 그림을 받아 온다.
+     * 그래서 기본은 HTML 을 끄고, 일부러 HTML 을 쓰는 곳만 [allowHtml] 로 켠다 (그때 바깥 글자는 [esc] 로 넣는다).
+     */
+    private fun label(t: String, size: Float, color: Color, allowHtml: Boolean = false) = JLabel().apply {
+        putClientProperty("html.disable", !allowHtml)
+        text = t; font = UI_FONT.deriveFont(size); foreground = color
+    }
 
-    private fun note(t: String) = row(label(html(t), 11f, MUTED))
+    private fun note(t: String) = row(label(html(esc(t)), 11f, MUTED, allowHtml = true))
 
     private fun section(t: String) = row(label(t, 13f, Color.WHITE).apply {
         font = font.deriveFont(Font.BOLD); border = BorderFactory.createEmptyBorder(10, 0, 4, 0)
     })
 
-    private fun button(t: String, onClick: (() -> Unit)? = null) = JButton(t).apply {
+    private fun button(t: String, onClick: (() -> Unit)? = null) = JButton().apply {
+        putClientProperty("html.disable", true) // 추천 버튼에는 도감 이름이 들어간다
+        text = t
         font = UI_FONT.deriveFont(12f); foreground = Color.WHITE; background = CHIP
         isFocusPainted = false; border = BorderFactory.createEmptyBorder(6, 10, 6, 10)
         isFocusable = false // 키보드 입력으로 눌리지 않게 (마우스로만)
@@ -517,7 +544,7 @@ class MainWindow(
             cells.forEachIndexed { c, v ->
                 val header = r == 0
                 val parts = v.split("\n")
-                val text = if (parts.size == 2) html("${parts[0]}<br><font color='${hex(gradeColor(parts[1]))}'>${parts[1]}</font>")
+                val text = if (parts.size == 2) html("${esc(parts[0])}<br><font color='${hex(gradeColor(parts[1]))}'>${esc(parts[1])}</font>")
                     else v
                 add(label(text, if (small) 11f else 13f, when {
                     header -> MUTED; c == 0 -> SUB; parts.size == 1 -> gradeColor(v); else -> Color.WHITE
@@ -545,6 +572,7 @@ class MainWindow(
 
     private fun hex(c: Color) = String.format("#%02X%02X%02X", c.red, c.green, c.blue)
     private fun html(t: String) = if (t.isEmpty()) "" else "<html>$t</html>"
+    private fun esc(t: String) = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     private fun fmt(v: Double, digits: Int) = String.format(Locale.US, "%.${digits}f", v)
 
     companion object {
