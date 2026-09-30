@@ -34,7 +34,6 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -76,7 +75,8 @@ class OverlayService : Service() {
     private lateinit var totalSubView: TextView
     private lateinit var scoreView: TextView
     private lateinit var enhanceTable: LinearLayout
-    private lateinit var suggestRow: LinearLayout
+    /** 이름 추천 버튼들 (2개씩 줄). 스크롤 안에 가로 스크롤을 또 넣으면 터치가 스크롤로 먹혀서 눌리지 않았다 */
+    private lateinit var suggestBox: LinearLayout
     private lateinit var warnView: TextView
     private lateinit var results: LinearLayout
 
@@ -426,20 +426,40 @@ class OverlayService : Service() {
             r.toNextGrade?.let { "${fmt(it * 100, 1)}%" } ?: "-")))
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun updateSuggestions(exact: Pet?) {
-        suggestRow.removeAllViews()
+        suggestBox.removeAllViews()
         val q = nameEdit.text.toString()
-        (suggestRow.parent as View).visibility = if (exact != null || q.isBlank()) View.GONE else View.VISIBLE
-        if (exact != null) return
-        for (p in db.suggest(q)) {
-            suggestRow.addView(TextView(ui).apply {
-                text = p.name
-                textSize = 13f
-                setTextColor(Color.WHITE)
-                setPadding(dp(10), dp(4), dp(10), dp(4))
-                background = round(0xFF3A3D44.toInt(), 12)
-                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
-                setOnClickListener { nameEdit.setText(p.name) }
+        val list = if (exact != null || q.isBlank()) emptyList() else db.suggest(q, limit = 4)
+        suggestBox.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+        if (list.isEmpty()) return
+        suggestBox.addView(TextView(ui).apply {
+            text = "혹시 이 소환수인가요? (눌러서 선택)"
+            textSize = 11f
+            setTextColor(Color.parseColor("#9A9DA3"))
+        })
+        for (pair in list.chunked(2)) {
+            suggestBox.addView(LinearLayout(ui).apply {
+                orientation = LinearLayout.HORIZONTAL
+                for (p in pair) addView(TextView(ui).apply {
+                    text = p.name
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    minHeight = dp(40) // 손가락으로 누르기 쉬운 크기
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    background = round(0xFF3A3D44.toInt(), 10)
+                    // 누르는 동안 바깥 스크롤이 터치를 가져가지 않게
+                    setOnTouchListener { v, ev ->
+                        if (ev.action == MotionEvent.ACTION_DOWN) v.parent.requestDisallowInterceptTouchEvent(true)
+                        false
+                    }
+                    setOnClickListener {
+                        nameEdit.setText(p.name)
+                        setPanelFocusable(false) // 키보드 닫기
+                    }
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                if (pair.size == 1) addView(View(ui), LinearLayout.LayoutParams(0, 0, 1f))
             })
         }
     }
@@ -571,10 +591,41 @@ class OverlayService : Service() {
             addView(totalView)
             addView(totalGradeView)
         })
-        totalSubView = TextView(ui).apply { textSize = 11f; setTextColor(Color.parseColor("#C9CBD0")); setPadding(0, 0, 0, dp(6)) }
+        totalSubView = TextView(ui).apply { textSize = 11f; setTextColor(Color.parseColor("#C9CBD0")) }
         body.addView(totalSubView)
+        scoreView = TextView(ui).apply { textSize = 12f; setTextColor(Color.WHITE); setPadding(0, dp(2), 0, dp(2)) }
+        body.addView(scoreView)
+        warnView = TextView(ui).apply {
+            textSize = 12f
+            setTextColor(Color.parseColor("#FFD479"))
+            setPadding(0, dp(4), 0, dp(4))
+            visibility = View.GONE
+        }
+        body.addView(warnView)
 
-        // 능력치 / (도감 대비) 입력칸 — 잘못 읽혔으면 여기서 고친다
+        // ---- 입력칸: 결과 아래. 잘못 읽혔으면 여기서 고친다 (이름 / 레벨 / 강 → 능력치 → 인게임 %)
+        body.addView(View(ui).apply { setBackgroundColor(Color.parseColor("#3A3D44")) },
+            LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(6); bottomMargin = dp(2) })
+
+        // 이름 추천은 입력칸 위에 둔다 (아래에 두면 키보드에 가려짐)
+        suggestBox = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(4), 0, 0)
+        }
+        body.addView(suggestBox)
+        nameEdit = input("이름", InputType.TYPE_CLASS_TEXT)
+        levelEdit = input("레벨", InputType.TYPE_CLASS_NUMBER)
+        breakEdit = input("0", InputType.TYPE_CLASS_NUMBER)
+        body.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, 0)
+            addView(labeled("이름", nameEdit), LinearLayout.LayoutParams(0, -2, 2.2f))
+            addView(labeled("레벨", levelEdit), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(labeled("현재 강", breakEdit), LinearLayout.LayoutParams(0, -2, 1f))
+        })
+
+        // 능력치 / (도감 대비)
         val statRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
         for (i in 0..3) {
             val e = input(STAT_NAMES[i], InputType.TYPE_CLASS_NUMBER)
@@ -600,19 +651,7 @@ class OverlayService : Service() {
             addView(View(ui), LinearLayout.LayoutParams(0, 0, 1f))
         })
 
-        scoreView = TextView(ui).apply { textSize = 12f; setTextColor(Color.WHITE); setPadding(0, dp(4), 0, dp(2)) }
-        body.addView(scoreView)
-
-
-        warnView = TextView(ui).apply {
-            textSize = 12f
-            setTextColor(Color.parseColor("#FFD479"))
-            setPadding(0, dp(4), 0, dp(4))
-            visibility = View.GONE
-        }
-        body.addView(warnView)
-
-        // 자세히: 시트의 나머지 결과 (이름/레벨/돌파 필요)
+        // 자세히: 능력치별 성장률·등급, 다음 등급까지, 도감 추가, 강화별 표
         val detail = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         body.addView(headerButton("자세히 ▾") {}.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) }
@@ -625,22 +664,6 @@ class OverlayService : Service() {
         })
         body.addView(detail)
 
-        nameEdit = input("(1) 이름", InputType.TYPE_CLASS_TEXT)
-        levelEdit = input("(2) 레벨", InputType.TYPE_CLASS_NUMBER)
-        breakEdit = input("0", InputType.TYPE_CLASS_NUMBER)
-        detail.addView(LinearLayout(ui).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(6), 0, 0)
-            addView(labeled("(1) 이름", nameEdit), LinearLayout.LayoutParams(0, -2, 2.2f))
-            addView(labeled("(2) 레벨", levelEdit), LinearLayout.LayoutParams(0, -2, 1f))
-            addView(labeled("(7) 현재 강", breakEdit), LinearLayout.LayoutParams(0, -2, 1f))
-        })
-        suggestRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
-        detail.addView(HorizontalScrollView(ui).apply {
-            addView(suggestRow)
-            visibility = View.GONE
-            setPadding(0, dp(2), 0, dp(4))
-        })
         results = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
         detail.addView(results)
 
