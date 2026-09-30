@@ -47,8 +47,8 @@ object OcrParser {
     private val GROWTH = Regex("""(?<![\d.])(\d{1,3}\.\d{2})(?!\d)""")
     /** 성장 평균 등급: 글자 그대로 읽혔을 때만 인정 ("S+t" 처럼 애매하면 버림) */
     private val GRADE = Regex("""^\s*(SS|S|A|B|C|D)(\+{0,2})\s*$""")
-    /** 총 성장 점수 "96%" */
-    private val PERCENT = Regex("""^\s*(\d{2,3})\s*%\s*$""")
+    /** 총 성장 점수 "96%". 옆 글자와 붙어 읽혀도("100% 1,747.4", "총 성장 점수 100%") 첫 번째 % 숫자를 쓴다 */
+    private val PERCENT = Regex("""(?<![\d.,])(\d{2,3})\s*%""")
 
     /** 정보 카드에 있지만 이름이 아닌 문구 (등급/속성/타입 태그, 항목 제목) */
     private val NOT_NAME = setOf(
@@ -161,18 +161,27 @@ object OcrParser {
         }
 
         return ParsedScreen(pet, nameRaw, nameScore, level, breaks, stats, deltas, deltaBoxes, growthAvgs, screenGrades,
-            gameTotal(lines))
+            gameTotal(lines, levelLine, nameLine))
     }
 
-    /** "총 성장 점수" 라벨(OCR이 "충/층 성장 점수"로 읽기도 함) 바로 아래, 왼쪽이 겹치는 "96%" */
-    private fun gameTotal(lines: List<OcrLine>): Int? {
+    /**
+     * "총 성장 점수" 라벨(OCR이 "충/층 성장 점수"로 읽기도 함) 바로 아래, 왼쪽이 겹치는 "96%".
+     * 화면이 작게 찍히면(예: PC 사진 보기 28% 확대) 작은 라벨 글자는 못 읽고 큰 "99%" 만 읽히는 경우가 있어서,
+     * 라벨을 못 찾으면 이름 줄과 "Lv." 줄 사이에 있는 % 를 쓴다 (정보 카드에서 그 사이 % 는 총 성장 점수뿐).
+     */
+    private fun gameTotal(lines: List<OcrLine>, levelLine: OcrLine?, nameLine: OcrLine?): Int? {
         // 채팅에 "성장점수" 글자가 있을 수 있으므로, 라벨 후보마다 바로 아래 % 를 찾아 가장 가까운 짝을 고른다
         val percents = lines.mapNotNull { l ->
             PERCENT.find(l.text)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 50..150 }?.let { l to it }
         }
-        return lines.filter { it.text.replace(" ", "").contains("성장점수") }.flatMap { label ->
-            percents.filter { (l, _) -> l.top >= label.top && l.left <= label.left + (label.right - label.left) / 2 }
-                .map { (l, v) -> (l.cy - label.cy) to v }
+        val byLabel = lines.filter { it.text.replace(" ", "").contains("성장점수") }.flatMap { label ->
+            // 라벨과 같은 줄이거나 그 아래, 왼쪽이 라벨 앞쪽 절반 안에서 시작하는 % (라벨 줄 자체도 포함)
+            percents.filter { (l, _) -> l.bottom > label.top && l.left <= label.left + (label.right - label.left) / 2 }
+                .map { (l, v) -> Math.abs(l.cy - label.cy) to v }
         }.minByOrNull { it.first }?.second
+        if (byLabel != null || levelLine == null) return byLabel
+        return percents.filter { (l, _) ->
+            l.bottom <= levelLine.top && (nameLine == null || l.top >= nameLine.top) && l.left < levelLine.right
+        }.maxByOrNull { it.first.top }?.second
     }
 }

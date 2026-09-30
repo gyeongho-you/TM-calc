@@ -37,8 +37,8 @@ android {
             isMinifyEnabled = false
             // 배포용 키가 있으면 그걸로, 없으면 디버그 키로 서명 (다른 사람이 만든 APK로 덮어쓰기 방지)
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
-            // 폰(ARM) + 앱플레이어(PC, x86_64). 기기는 자기 CPU용 하나만 불러오므로 속도/메모리는 그대로, 용량만 약 11MB 증가
-            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+            // 폰용 CPU만 포함해 용량을 줄인다 (디버그 빌드는 에뮬레이터용 x86_64 포함). 앱플레이어는 PC 프로그램(desktop)으로 지원
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
     }
     compileOptions {
