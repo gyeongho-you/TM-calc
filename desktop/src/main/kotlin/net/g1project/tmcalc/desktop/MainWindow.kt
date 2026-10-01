@@ -311,7 +311,7 @@ class MainWindow(
             val combat = Calculator.combat(cur, b)
             combatLbl.isVisible = combat != null
             if (combat != null) {
-                combatLbl.text = "종 대비 전투 ${combatPct(combat.avg, combat.approx)}"
+                combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}"
                 combatLbl.foreground = if (combat.avg >= 0) GREEN else Color(0xF2, 0x8B, 0x82)
             }
             renderEnhance(cur, b, breaks, level, real, realGrade)
@@ -370,10 +370,10 @@ class MainWindow(
         }
         enhance.add(table(rows, small = true))
         enhance.add(note(if (breaks >= MAX_BREAKS) "이미 최대 강화(+${MAX_BREAKS}강)입니다." else "강화 수치는 게임과 1 정도 차이 날 수 있어요."))
-        enhance.add(note("전투 = 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+        enhance.add(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
     }
 
-    /** 종 대비 전투 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
+    /** 종 대비 전투 능력치 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
     private fun combatPct(v: Double, approx: Boolean): String {
         val n = Math.round(v)
         return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"

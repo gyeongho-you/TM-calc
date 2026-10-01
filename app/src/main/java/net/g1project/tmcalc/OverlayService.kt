@@ -335,7 +335,7 @@ class OverlayService : Service() {
                 "기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
             val combat = Calculator.combat(cur, b)
             if (combat != null) {
-                combatView.text = "종 대비 전투 ${combatPct(combat.avg, combat.approx)}"
+                combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}"
                 combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
                 combatView.visibility = View.VISIBLE
             } else combatView.visibility = View.GONE
@@ -395,10 +395,10 @@ class OverlayService : Service() {
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
         else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
-        enhanceTable.addView(note("전투 = 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+        enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
     }
 
-    /** 종 대비 전투 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
+    /** 종 대비 전투 능력치 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
     private fun combatPct(v: Double, approx: Boolean): String {
         val n = Math.round(v)
         return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"
