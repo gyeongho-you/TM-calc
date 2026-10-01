@@ -199,7 +199,8 @@ object Calculator {
         val a = amp.coerceIn(0.0, 1.0)
         val bonus = (1 + a * scoreFactor(s)) / (1 + a * scoreFactor(s0))
         val pct = DoubleArray(4) { (stats[it].toDouble() / base[it] * bonus - 1) * 100 }
-        val approx = s !in COMBAT_CHECKED || s0 !in COMBAT_CHECKED || kotlin.math.abs(s - s0) > 100
+        // 캐릭터마다 다르던 부분은 성장증폭으로 반영되므로, 실측한 총능 범위 밖일 때만 대략값
+        val approx = s !in COMBAT_CHECKED || s0 !in COMBAT_CHECKED
         return Combat(pct, pct.average(), approx)
     }
 

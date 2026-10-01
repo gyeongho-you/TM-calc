@@ -56,9 +56,10 @@ class CombatTest {
 
     @Test
     fun outsideCheckedRange() {
-        // +5강처럼 도감과 100점 넘게 차이 나면 대략값
-        val c = Calculator.combat(intArrayOf(629, 297, 513, 4189), intArrayOf(574, 294, 485, 3904))!!
-        assertTrue(c.approx)
+        // 화혼랑 +5 (총능 1857.9): 도감과 100점 넘게 차이 나도 실측 범위(~1882) 안이면 정확한 값
+        assertFalse(Calculator.combat(intArrayOf(629, 297, 513, 4189), intArrayOf(574, 294, 485, 3904))!!.approx)
+        // 실측 범위(1882) 밖이면 대략값
+        assertTrue(Calculator.combat(intArrayOf(640, 310, 530, 4300), intArrayOf(574, 294, 485, 3904))!!.approx)
         // 곡선을 믿기 어려운 점수는 계산하지 않음
         assertNull(Calculator.combat(intArrayOf(200, 100, 100, 1000), intArrayOf(601, 395, 291, 4336)))
     }
