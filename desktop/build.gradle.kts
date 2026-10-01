@@ -96,7 +96,7 @@ val prepareApp by tasks.registering(Sync::class) {
     from(modelDir) { into("models") }
     into(appInput)
 }
-val appVersion = "1.4.2"
+val appVersion = "1.4.3"
 fun jpackageArgs(type: String, dest: File) = listOf(
     File(System.getProperty("java.home"), "bin/jpackage").path,
     "--type", type, "--name", "TM-calc", "--app-version", appVersion,

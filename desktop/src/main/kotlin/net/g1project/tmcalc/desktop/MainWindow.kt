@@ -389,17 +389,11 @@ class MainWindow(
 
     /** 설정 > 내 성장증폭: 종 대비 전투 능력치를 내 캐릭터 기준으로 */
     private fun showGrowthAmpDialog() {
-        val cur = if (prefs.get("growthAmp", null) != null) ampText(growthAmp()) else ""
-        val msg = "캐릭터 능력치의 성장증폭(%)을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다.\n" +
-            "비워 두면 ${ampText(Calculator.DEFAULT_GROWTH_AMP)}% 로 계산합니다."
-        val input = JOptionPane.showInputDialog(this, msg, "내 성장증폭", JOptionPane.PLAIN_MESSAGE, null, null, cur) as String? ?: return
-        val v = input.trim().removeSuffix("%").trim()
-        if (v.isEmpty()) prefs.remove("growthAmp")
-        else {
-            val pct = v.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
-                ?: return JOptionPane.showMessageDialog(this, "0 ~ 100 사이 숫자를 넣어 주세요.", "내 성장증폭", JOptionPane.WARNING_MESSAGE)
-            prefs.putDouble("growthAmp", pct / 100)
-        }
+        val msg = "내 성장증폭 (%)\n캐릭터 능력치의 성장증폭을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다."
+        val input = JOptionPane.showInputDialog(this, msg, "설정", JOptionPane.PLAIN_MESSAGE, null, null, ampText(growthAmp())) as String? ?: return
+        val pct = input.trim().removeSuffix("%").trim().toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
+            ?: return JOptionPane.showMessageDialog(this, "0 ~ 100 사이 숫자를 넣어 주세요.", "설정", JOptionPane.WARNING_MESSAGE)
+        prefs.putDouble("growthAmp", pct / 100)
         setStatus("성장증폭 ${ampText(growthAmp())}% 기준으로 계산합니다")
         recompute()
     }

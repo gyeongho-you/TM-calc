@@ -10,9 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.Editable
 import android.text.InputType
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
@@ -60,46 +58,27 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
         }
-        root.addView(overlayBtn)
+        // 버튼 사이 간격
+        fun spaced() = LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * dp).toInt() }
+        root.addView(overlayBtn, spaced())
         a11yBtn = Button(this).apply {
             text = "2. 접근성에서 화면 캡처 켜기"
             setOnClickListener { openA11ySettings() }
         }
-        root.addView(a11yBtn)
+        root.addView(a11yBtn, spaced())
         startBtn = Button(this).apply {
             text = "3. 계산 레이어 시작"
             setOnClickListener { startOverlay() }
         }
-        root.addView(startBtn)
+        root.addView(startBtn, spaced())
         root.addView(Button(this).apply {
             text = "도감 관리 (추가/수정)"
             setOnClickListener { startActivity(Intent(this@MainActivity, PetEditorActivity::class.java)) }
-        })
-        root.addView(TextView(this).apply {
-            text = "\n내 성장증폭 (%)"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-        })
-        root.addView(TextView(this).apply {
-            text = "캐릭터 능력치의 성장증폭을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다. " +
-                "비워 두면 ${AppPrefs.pctText(Calculator.DEFAULT_GROWTH_AMP)}% 로 계산합니다."
-            textSize = 12f
-        })
-        root.addView(EditText(this).apply {
-            id = View.generateViewId()
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            hint = AppPrefs.pctText(Calculator.DEFAULT_GROWTH_AMP)
-            val saved = AppPrefs.growthAmp(this@MainActivity)
-            if (saved != Calculator.DEFAULT_GROWTH_AMP) setText(AppPrefs.pctText(saved))
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    val v = s?.toString()?.trim()?.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
-                    AppPrefs.setGrowthAmp(this@MainActivity, v)
-                }
-            })
-        })
+        }, spaced())
+        root.addView(Button(this).apply {
+            text = "설정"
+            setOnClickListener { openSettings() }
+        }, spaced())
         root.addView(Button(this).apply {
             text = "레이어 끄기"
             setOnClickListener {
@@ -107,7 +86,7 @@ class MainActivity : Activity() {
                 // 서비스 onDestroy 가 끝난 뒤에 상태 문구를 갱신한다
                 postDelayed({ refresh() }, 400)
             }
-        })
+        }, spaced())
         root.gravity = Gravity.TOP
 
         // Android 15부터는 앱이 상태바 뒤까지 그려진다(edge-to-edge). 모든 버전에서 똑같이 동작하도록
@@ -167,6 +146,42 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }
             .show()
+    }
+
+    /** 설정: 내 성장증폭 (종 대비 전투 능력치 계산에 씀) */
+    private fun openSettings() {
+        val dp = resources.displayMetrics.density
+        val input = EditText(this).apply {
+            id = View.generateViewId()
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(AppPrefs.pctText(AppPrefs.growthAmp(this@MainActivity)))
+            setSelectAllOnFocus(true)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            addView(TextView(context).apply { text = "내 성장증폭 (%)"; textSize = 15f })
+            addView(input)
+            addView(TextView(context).apply {
+                text = "캐릭터 능력치의 성장증폭을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다."
+                textSize = 12f
+            })
+        }
+        val dlg = AlertDialog.Builder(this)
+            .setTitle("설정")
+            .setView(box)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장", null)
+            .create()
+        dlg.setOnShowListener {
+            // 잘못된 값이면 창을 닫지 않고 알려 준다
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val v = input.text.toString().trim().removeSuffix("%").trim().toDoubleOrNull()
+                if (v == null || v !in 0.0..100.0) input.error = "0 ~ 100 사이 숫자를 넣어 주세요"
+                else { AppPrefs.setGrowthAmp(this, v); dlg.dismiss() }
+            }
+        }
+        dlg.show()
     }
 
     private fun startOverlay() {
