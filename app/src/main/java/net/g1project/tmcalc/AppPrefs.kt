@@ -19,6 +19,16 @@ object AppPrefs {
         }.apply()
     }
 
+    private const val SHOW_COMBAT = "showCombat"
+
+    /** 종 대비 전투 능력치를 보여 줄지 (기본 켜짐) */
+    fun showCombat(c: Context): Boolean =
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(SHOW_COMBAT, true)
+
+    fun setShowCombat(c: Context, on: Boolean) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_COMBAT, on).apply()
+    }
+
     /** 화면에 보일 % 글자 (8.0 → "8", 10.4 → "10.4") */
     fun pctText(amp: Double): String {
         val p = Math.round(amp * 1000) / 10.0

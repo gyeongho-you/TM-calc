@@ -333,7 +333,7 @@ class OverlayService : Service() {
                 warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다 (숫자를 확인해 주세요)"
             scoreView.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  " +
                 "기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
-            val combat = Calculator.combat(cur, b, growthAmp())
+            val combat = (if (showCombat()) Calculator.combat(cur, b, growthAmp()) else null)
             if (combat != null) {
                 combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)"
                 combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
@@ -359,7 +359,7 @@ class OverlayService : Service() {
                 // 등급 기준 도감값: 화면에서 읽은 값(현재 - 도감 대비)이 있으면 그걸 쓴다
                 val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
                 val cur = IntArray(4) { stats[it]!! }
-                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b, growthAmp()))
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, (if (showCombat()) Calculator.combat(cur, b, growthAmp()) else null))
             }
         }
         warnView.text = warns.joinToString("\n")
@@ -379,13 +379,13 @@ class OverlayService : Service() {
             return
         }
         enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
-        enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", "총점\n전투", "성장률"), header = true))
+        enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"), header = true))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
-            val combat = Calculator.combat(s, base, growthAmp())
+            val combat = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
             val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
@@ -395,8 +395,11 @@ class OverlayService : Service() {
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
         else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
-        enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+        if (showCombat()) enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
     }
+
+    /** 설정에서 끄면 종 대비 전투 능력치를 아예 보여 주지 않는다 */
+    private fun showCombat() = AppPrefs.showCombat(this)
 
     /** 종 대비 전투 능력치 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
     private fun combatPct(v: Double, approx: Boolean): String {
@@ -420,10 +423,10 @@ class OverlayService : Service() {
 
     private fun renderResult(pet: Pet, r: Calculator.Result, screenGame: Int?, combat: Calculator.Combat?) {
         results.addView(sectionTitle("${pet.name} · ${pet.element}/${pet.type}"))
-        results.addView(row(listOf("", "성장률", "등급", "분위", "전투"), header = true))
+        results.addView(row(listOf("", "성장률", "등급", "분위") + (if (combat != null) listOf("전투") else emptyList()), header = true))
         for (i in 0..3) {
-            results.addView(row(listOf(STAT_NAMES[i], fmt(r.growth[i], 2), r.statGrades[i], fmt(r.percentile[i], 1),
-                combat?.let { combatPct(it.pct[i], it.approx) } ?: "-")))
+            results.addView(row(listOf(STAT_NAMES[i], fmt(r.growth[i], 2), r.statGrades[i], fmt(r.percentile[i], 1)) +
+                (combat?.let { listOf(combatPct(it.pct[i], it.approx)) } ?: emptyList())))
         }
 
         results.addView(sectionTitle("총성 ${fmt(r.myTotal, 1)}"))

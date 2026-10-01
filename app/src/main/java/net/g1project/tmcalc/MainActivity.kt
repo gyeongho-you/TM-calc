@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -157,15 +158,30 @@ class MainActivity : Activity() {
             setText(AppPrefs.pctText(AppPrefs.growthAmp(this@MainActivity)))
             setSelectAllOnFocus(true)
         }
-        val box = LinearLayout(this).apply {
+        // 성장증폭 칸은 종 대비 전투 능력치를 켤 때만 보인다
+        val ampBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            setPadding(0, (12 * dp).toInt(), 0, 0)
             addView(TextView(context).apply { text = "내 성장증폭 (%)"; textSize = 15f })
             addView(input)
             addView(TextView(context).apply {
                 text = "캐릭터 능력치의 성장증폭을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다."
                 textSize = 12f
             })
+        }
+        val show = CheckBox(this).apply {
+            id = View.generateViewId()
+            text = "종 대비 전투 능력치 보기"
+            textSize = 15f
+            isChecked = AppPrefs.showCombat(this@MainActivity)
+            ampBox.visibility = if (isChecked) View.VISIBLE else View.GONE
+            setOnCheckedChangeListener { _, on -> ampBox.visibility = if (on) View.VISIBLE else View.GONE }
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            addView(show)
+            addView(ampBox)
         }
         val dlg = AlertDialog.Builder(this)
             .setTitle("설정")
@@ -176,6 +192,8 @@ class MainActivity : Activity() {
         dlg.setOnShowListener {
             // 잘못된 값이면 창을 닫지 않고 알려 준다
             dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                AppPrefs.setShowCombat(this, show.isChecked)
+                if (!show.isChecked) { dlg.dismiss(); return@setOnClickListener }
                 val v = input.text.toString().trim().removeSuffix("%").trim().toDoubleOrNull()
                 if (v == null || v !in 0.0..100.0) input.error = "0 ~ 100 사이 숫자를 넣어 주세요"
                 else { AppPrefs.setGrowthAmp(this, v); dlg.dismiss() }
