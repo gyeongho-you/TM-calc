@@ -28,9 +28,18 @@ class CombatTest {
     }
 
     @Test
+    fun growthAmpChange() {
+        // 같은 캐릭터 성장증폭 10.4% → 11.6%: 아루루(1500.9) +1.99%, 소르문(1718.4) +5.40%, 조세르+5(1877.0) +8.95%
+        fun rise(s: Double) = (1 + 0.116 * Calculator.scoreFactor(s)) / (1 + 0.104 * Calculator.scoreFactor(s)) - 1
+        assertEquals(0.0199, rise(1500.9), 0.0005)
+        assertEquals(0.0540, rise(1718.4), 0.0005)
+        assertEquals(0.0895, rise(1877.0), 0.0005)
+    }
+
+    @Test
     fun snakeVsSpecies() {
-        // 뱀뱀이 603 410 296 4381, 도감 601 395 291 4336 → 공 +12, 방 +16, 속 +14, 생 +13, 평균 +13.5
-        val c = Calculator.combat(intArrayOf(603, 410, 296, 4381), intArrayOf(601, 395, 291, 4336))!!
+        // 뱀뱀이 603 410 296 4381, 도감 601 395 291 4336, 성장증폭 10.4% → 공 +12, 방 +16, 속 +14, 생 +13, 평균 +13.5
+        val c = Calculator.combat(intArrayOf(603, 410, 296, 4381), intArrayOf(601, 395, 291, 4336), 0.104)!!
         assertEquals(11.9, c.pct[0], 0.1)
         assertEquals(15.8, c.pct[1], 0.1)
         assertEquals(13.5, c.pct[2], 0.1)

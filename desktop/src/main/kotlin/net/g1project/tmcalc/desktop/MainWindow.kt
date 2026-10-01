@@ -308,10 +308,10 @@ class MainWindow(
                 "<br>" + (0..3).joinToString("&nbsp;&nbsp;") { "${STAT_NAMES[it]} ${fmt(t.percentile[it], 1)}" })
             if (screenGame != null && range == null) warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다"
             scoreLbl.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
-            val combat = Calculator.combat(cur, b)
+            val combat = Calculator.combat(cur, b, growthAmp())
             combatLbl.isVisible = combat != null
             if (combat != null) {
-                combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}"
+                combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)"
                 combatLbl.foreground = if (combat.avg >= 0) GREEN else Color(0xF2, 0x8B, 0x82)
             }
             renderEnhance(cur, b, breaks, level, real, realGrade)
@@ -329,7 +329,7 @@ class MainWindow(
             else -> {
                 val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
                 val cur = IntArray(4) { stats[it]!! }
-                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b))
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b, growthAmp()))
             }
         }
         // 경고에는 화면에서 읽은 글자(OCR)와 도감 이름이 들어가므로 이스케이프
@@ -363,7 +363,7 @@ class MainWindow(
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
-            val c = Calculator.combat(s, base)
+            val c = Calculator.combat(s, base, growthAmp())
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
@@ -377,6 +377,31 @@ class MainWindow(
     private fun combatPct(v: Double, approx: Boolean): String {
         val n = Math.round(v)
         return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"
+    }
+
+    /** 설정에서 넣은 내 성장증폭 (안 넣었으면 기본값) */
+    private fun growthAmp() = prefs.getDouble("growthAmp", Calculator.DEFAULT_GROWTH_AMP)
+
+    private fun ampText(a: Double): String {
+        val p = Math.round(a * 1000) / 10.0
+        return if (p == Math.floor(p)) p.toLong().toString() else p.toString()
+    }
+
+    /** 설정 > 내 성장증폭: 종 대비 전투 능력치를 내 캐릭터 기준으로 */
+    private fun showGrowthAmpDialog() {
+        val cur = if (prefs.get("growthAmp", null) != null) ampText(growthAmp()) else ""
+        val msg = "캐릭터 능력치의 성장증폭(%)을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다.\n" +
+            "비워 두면 ${ampText(Calculator.DEFAULT_GROWTH_AMP)}% 로 계산합니다."
+        val input = JOptionPane.showInputDialog(this, msg, "내 성장증폭", JOptionPane.PLAIN_MESSAGE, null, null, cur) as String? ?: return
+        val v = input.trim().removeSuffix("%").trim()
+        if (v.isEmpty()) prefs.remove("growthAmp")
+        else {
+            val pct = v.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
+                ?: return JOptionPane.showMessageDialog(this, "0 ~ 100 사이 숫자를 넣어 주세요.", "내 성장증폭", JOptionPane.WARNING_MESSAGE)
+            prefs.putDouble("growthAmp", pct / 100)
+        }
+        setStatus("성장증폭 ${ampText(growthAmp())}% 기준으로 계산합니다")
+        recompute()
     }
 
     private fun updateSuggestions(exact: Pet?, db: PetDb) {
@@ -397,6 +422,7 @@ class MainWindow(
         })
         add(JMenu("설정").apply {
             add(JMenuItem("계산 단축키 바꾸기…").apply { addActionListener { showHotkeyDialog() } })
+            add(JMenuItem("내 성장증폭…").apply { addActionListener { showGrowthAmpDialog() } })
         })
         add(JMenu("도움말").apply {
             add(javax.swing.JCheckBoxMenuItem("문제 확인용: 마지막 계산 화면 저장", prefs.getBoolean("saveLastScan", false)).apply {

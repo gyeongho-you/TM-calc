@@ -187,25 +187,40 @@ object Calculator {
     class Combat(val pct: DoubleArray, val avg: Double, val approx: Boolean)
 
     /**
-     * 게임의 전투 능력치 = 기본 능력치 × 캐릭터 배율 × combatCurve(총 능력치 점수).
-     * 캐릭터 배율은 나눗셈에서 지워지므로 종 대비 % 는 소환수 화면 값만으로 나온다:
-     *   능력치별 = (능력치 ÷ 도감값) × curve(총능) ÷ curve(도감 총능) − 1
+     * 게임의 전투 능력치 = 기본 능력치 × 캐릭터 배율 × (1 + 성장증폭 × [scoreFactor](총 능력치 점수)).
+     * 성장증폭은 캐릭터 능력치라 사람마다 다르다 ([amp], 0.08 = 8%). 캐릭터 배율은 나눗셈에서 지워진다:
+     *   능력치별 = (능력치 ÷ 도감값) × (1 + 증폭·u(총능)) ÷ (1 + 증폭·u(도감 총능)) − 1
      * 총능이 곡선을 믿기 어려운 범위 밖이면 null.
      */
-    fun combat(stats: IntArray, base: IntArray): Combat? {
+    fun combat(stats: IntArray, base: IntArray, amp: Double = DEFAULT_GROWTH_AMP): Combat? {
         if (base.any { it < 1 }) return null
         val s = totalOf(stats); val s0 = totalOf(base)
         if (s !in COMBAT_LIMIT || s0 !in COMBAT_LIMIT) return null
-        val bonus = combatCurve(s) / combatCurve(s0)
+        val a = amp.coerceIn(0.0, 1.0)
+        val bonus = (1 + a * scoreFactor(s)) / (1 + a * scoreFactor(s0))
         val pct = DoubleArray(4) { (stats[it].toDouble() / base[it] * bonus - 1) * 100 }
         val approx = s !in COMBAT_CHECKED || s0 !in COMBAT_CHECKED || kotlin.math.abs(s - s0) > 100
         return Combat(pct, pct.average(), approx)
     }
 
+    /** 성장증폭을 모를 때 쓰는 값 (설정에서 바꿀 수 있음) */
+    const val DEFAULT_GROWTH_AMP = 0.08
+
     /**
-     * 총 능력치 점수에 따른 전투 배율 (크기는 의미 없고 비율만 쓴다).
+     * 성장증폭에 곱해지는 총능 값 u(총능). 1500 → 2.0, 1700 → 7.3, 1880 → 34.2.
+     * 성장증폭 9.4% 캐릭터 2개(15마리)와 10.4% 캐릭터(31마리)의 곡선 차이에서 구했고,
+     * 같은 캐릭터를 11.6% 로 올렸을 때 변화(+2.0%, +5.4%, +9.0%)를 0.02% 안으로 맞혔다.
+     */
+    fun scoreFactor(score: Double): Double = (combatCurve(score) / AMP_BASE - 1) / AMP_REF
+
+    /** combatCurve 는 성장증폭 [AMP_REF] 캐릭터 기준이고, 그 안의 '1' 부분이 [AMP_BASE] */
+    private const val AMP_REF = 0.104
+    private const val AMP_BASE = 9230.8
+
+    /**
+     * 성장증폭 10.4% 캐릭터의 총능별 전투 배율 (크기는 의미 없고 비율만 쓴다).
      * 2026-10 게임 화면 28마리(총능 1500.9~1881.2, 여러 종·강화·스킬 코어)로 맞춘 6차식, 오차 0.01% 이내.
-     * 종·잠재력·총 성장 %·강화 수와는 상관없고 총능만 따른다. 다른 캐릭터도 1점당 가치가 0.33~0.38% 로 비슷하다.
+     * 종·잠재력·총 성장 %·강화 수와는 상관없고 총능만 따른다.
      */
     fun combatCurve(score: Double): Double {
         val x = (score - 1700) / 100

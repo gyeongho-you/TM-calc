@@ -333,9 +333,9 @@ class OverlayService : Service() {
                 warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다 (숫자를 확인해 주세요)"
             scoreView.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  " +
                 "기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
-            val combat = Calculator.combat(cur, b)
+            val combat = Calculator.combat(cur, b, growthAmp())
             if (combat != null) {
-                combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}"
+                combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)"
                 combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
                 combatView.visibility = View.VISIBLE
             } else combatView.visibility = View.GONE
@@ -359,7 +359,7 @@ class OverlayService : Service() {
                 // 등급 기준 도감값: 화면에서 읽은 값(현재 - 도감 대비)이 있으면 그걸 쓴다
                 val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
                 val cur = IntArray(4) { stats[it]!! }
-                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b))
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b, growthAmp()))
             }
         }
         warnView.text = warns.joinToString("\n")
@@ -385,7 +385,7 @@ class OverlayService : Service() {
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
-            val combat = Calculator.combat(s, base)
+            val combat = Calculator.combat(s, base, growthAmp())
             val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
@@ -403,6 +403,11 @@ class OverlayService : Service() {
         val n = Math.round(v)
         return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"
     }
+
+    /** 앱 첫 화면에서 넣은 내 성장증폭 (안 넣었으면 기본값) */
+    private fun growthAmp() = AppPrefs.growthAmp(this)
+
+    private fun ampText(a: Double) = AppPrefs.pctText(a)
 
     private fun num(e: EditText) = e.text.toString().replace(",", "").replace("+", "").trim().toIntOrNull()
 
