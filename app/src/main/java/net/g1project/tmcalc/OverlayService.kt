@@ -74,6 +74,7 @@ class OverlayService : Service() {
     private lateinit var totalGradeView: TextView
     private lateinit var totalSubView: TextView
     private lateinit var scoreView: TextView
+    private lateinit var combatView: TextView
     private lateinit var enhanceTable: LinearLayout
     /** 이름 추천 버튼들 (2개씩 줄). 스크롤 안에 가로 스크롤을 또 넣으면 터치가 스크롤로 먹혀서 눌리지 않았다 */
     private lateinit var suggestBox: LinearLayout
@@ -332,12 +333,19 @@ class OverlayService : Service() {
                 warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다 (숫자를 확인해 주세요)"
             scoreView.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  " +
                 "기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
+            val combat = Calculator.combat(cur, b)
+            if (combat != null) {
+                combatView.text = "종 대비 전투 ${combatPct(combat.avg, combat.approx)}"
+                combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
+                combatView.visibility = View.VISIBLE
+            } else combatView.visibility = View.GONE
             renderEnhance(cur, b, breaks, pet, level, real, realGrade)
         } else {
             totalView.text = "-"
             totalGradeView.text = ""
             totalSubView.text = "능력치와 (도감 대비) 값을 확인해 주세요"
             scoreView.text = ""
+            combatView.visibility = View.GONE
             enhanceTable.removeAllViews()
         }
 
@@ -350,7 +358,8 @@ class OverlayService : Service() {
             else -> {
                 // 등급 기준 도감값: 화면에서 읽은 값(현재 - 도감 대비)이 있으면 그걸 쓴다
                 val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
-                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, IntArray(4) { stats[it]!! }, breaks, b)), screenGame)
+                val cur = IntArray(4) { stats[it]!! }
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b))
             }
         }
         warnView.text = warns.joinToString("\n")
@@ -370,21 +379,29 @@ class OverlayService : Service() {
             return
         }
         enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
-        enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", "총점", "성장률"), header = true))
+        enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", "총점\n전투", "성장률"), header = true))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
+            val combat = Calculator.combat(s, base)
             val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
-                fmt(Calculator.abilityScore(s), 1) +
+                (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 // 현재 강은 위의 총 성장률(화면 인게임 값으로 맞춘 값)과 같게
                 if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}"
             enhanceTable.addView(row(cells, small = true))
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
         else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
+        enhanceTable.addView(note("전투 = 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+    }
+
+    /** 종 대비 전투 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
+    private fun combatPct(v: Double, approx: Boolean): String {
+        val n = Math.round(v)
+        return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"
     }
 
     private fun num(e: EditText) = e.text.toString().replace(",", "").replace("+", "").trim().toIntOrNull()
@@ -396,11 +413,12 @@ class OverlayService : Service() {
         setPadding(0, dp(6), 0, dp(4))
     }
 
-    private fun renderResult(pet: Pet, r: Calculator.Result, screenGame: Int?) {
+    private fun renderResult(pet: Pet, r: Calculator.Result, screenGame: Int?, combat: Calculator.Combat?) {
         results.addView(sectionTitle("${pet.name} · ${pet.element}/${pet.type}"))
-        results.addView(row(listOf("", "성장률", "등급", "분위"), header = true))
+        results.addView(row(listOf("", "성장률", "등급", "분위", "전투"), header = true))
         for (i in 0..3) {
-            results.addView(row(listOf(STAT_NAMES[i], fmt(r.growth[i], 2), r.statGrades[i], fmt(r.percentile[i], 1))))
+            results.addView(row(listOf(STAT_NAMES[i], fmt(r.growth[i], 2), r.statGrades[i], fmt(r.percentile[i], 1),
+                combat?.let { combatPct(it.pct[i], it.approx) } ?: "-")))
         }
 
         results.addView(sectionTitle("총성 ${fmt(r.myTotal, 1)}"))
@@ -578,6 +596,14 @@ class OverlayService : Service() {
         })
         totalSubView = TextView(ui).apply { textSize = 11f; setTextColor(Color.parseColor("#C9CBD0")) }
         body.addView(totalSubView)
+        // 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지 (총 능력치 점수 보너스 포함)
+        combatView = TextView(ui).apply {
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(4), 0, 0)
+            visibility = View.GONE
+        }
+        body.addView(combatView)
         scoreView = TextView(ui).apply { textSize = 12f; setTextColor(Color.WHITE); setPadding(0, dp(2), 0, dp(2)) }
         body.addView(scoreView)
         warnView = TextView(ui).apply {

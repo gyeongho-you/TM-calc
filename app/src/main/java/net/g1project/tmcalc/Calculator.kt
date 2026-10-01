@@ -181,6 +181,48 @@ object Calculator {
     fun abilityScore(s: IntArray): Double = totalOf(s)
 
     /**
+     * 종 대비 전투: 이 개체의 전투 능력치가 같은 종 도감(S 100%) 개체보다 몇 % 높은지.
+     * [pct] 는 공·방·순·체, [avg] 는 그 평균. [approx] 면 곡선을 확인한 범위 밖이라 대략값.
+     */
+    class Combat(val pct: DoubleArray, val avg: Double, val approx: Boolean)
+
+    /**
+     * 게임의 전투 능력치 = 기본 능력치 × 캐릭터 배율 × combatCurve(총 능력치 점수).
+     * 캐릭터 배율은 나눗셈에서 지워지므로 종 대비 % 는 소환수 화면 값만으로 나온다:
+     *   능력치별 = (능력치 ÷ 도감값) × curve(총능) ÷ curve(도감 총능) − 1
+     * 총능이 곡선을 믿기 어려운 범위 밖이면 null.
+     */
+    fun combat(stats: IntArray, base: IntArray): Combat? {
+        if (base.any { it < 1 }) return null
+        val s = totalOf(stats); val s0 = totalOf(base)
+        if (s !in COMBAT_LIMIT || s0 !in COMBAT_LIMIT) return null
+        val bonus = combatCurve(s) / combatCurve(s0)
+        val pct = DoubleArray(4) { (stats[it].toDouble() / base[it] * bonus - 1) * 100 }
+        val approx = s !in COMBAT_CHECKED || s0 !in COMBAT_CHECKED || kotlin.math.abs(s - s0) > 100
+        return Combat(pct, pct.average(), approx)
+    }
+
+    /**
+     * 총 능력치 점수에 따른 전투 배율 (크기는 의미 없고 비율만 쓴다).
+     * 2026-10 게임 화면 28마리(총능 1500.9~1881.2, 여러 종·강화·스킬 코어)로 맞춘 6차식, 오차 0.01% 이내.
+     * 종·잠재력·총 성장 %·강화 수와는 상관없고 총능만 따른다. 다른 캐릭터도 1점당 가치가 0.33~0.38% 로 비슷하다.
+     */
+    fun combatCurve(score: Double): Double {
+        val x = (score - 1700) / 100
+        var y = 0.0
+        for (k in COMBAT_COEF.indices.reversed()) y = y * x + COMBAT_COEF[k]
+        return y
+    }
+
+    private val COMBAT_COEF = doubleArrayOf(16284.006, 5595.4323, 2576.5586, 781.85629, 180.95972, 38.188918, 5.5675793)
+
+    /** 실측으로 확인한 총능 범위 */
+    private val COMBAT_CHECKED = 1500.0..1882.0
+
+    /** 이 밖은 6차식이 엉뚱하게 휠 수 있어 계산하지 않는다 */
+    private val COMBAT_LIMIT = 1480.0..1920.0
+
+    /**
      * 능력치별 등급 = 현재 능력치 ÷ 도감값 을 배율(S+ 1.01, S++ 1.03, SS 1.05 ...)과 비교.
      * 게임 화면 등급 40칸(강화 전·후)과 모두 일치. 원래 시트는 성장률 (현재-초기치)/149 로 비교해서
      * 경계선 근처에서 한 칸씩 어긋났다 (예: 로얄 가드 유니 방어력 686 → 시트 SS++, 게임 SS+).

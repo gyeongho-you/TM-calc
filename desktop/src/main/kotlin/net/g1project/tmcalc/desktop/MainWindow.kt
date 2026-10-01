@@ -63,6 +63,8 @@ class MainWindow(
     private val gradeLbl = label("", 18f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
     private val subLbl = label("앱플레이어에서 소환수 정보 화면을 띄우고 [계산] 또는 단축키", 11f, SUB, allowHtml = true)
     private val scoreLbl = label("", 12f, Color.WHITE)
+    /** 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지 (총 능력치 점수 보너스 포함) */
+    private val combatLbl = label("", 15f, GREEN).apply { font = font.deriveFont(Font.BOLD); isVisible = false }
     private val warnLbl = label("", 12f, WARN, allowHtml = true)
     private val suggestBox = FitPanel(GridLayout(0, 2, 6, 6)).apply { isOpaque = false; isVisible = false }
     private val suggestHint = row(label("혹시 이 소환수인가요? (눌러서 선택)", 11f, MUTED))
@@ -112,7 +114,7 @@ class MainWindow(
             border = BorderFactory.createEmptyBorder(4, 12, 12, 12)
             add(row(label("총 성장률 (계산기)", 11f, MUTED)))
             add(row(totalLbl, gradeLbl))
-            add(row(subLbl)); add(row(scoreLbl)); add(row(warnLbl))
+            add(row(subLbl)); add(row(combatLbl)); add(row(scoreLbl)); add(row(warnLbl))
             add(JSeparator().apply { foreground = CHIP; maximumSize = Dimension(Int.MAX_VALUE, 2) })
             add(Box.createVerticalStrut(4))
             add(suggestHint.apply { isVisible = false })
@@ -306,8 +308,15 @@ class MainWindow(
                 "<br>" + (0..3).joinToString("&nbsp;&nbsp;") { "${STAT_NAMES[it]} ${fmt(t.percentile[it], 1)}" })
             if (screenGame != null && range == null) warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다"
             scoreLbl.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
+            val combat = Calculator.combat(cur, b)
+            combatLbl.isVisible = combat != null
+            if (combat != null) {
+                combatLbl.text = "종 대비 전투 ${combatPct(combat.avg, combat.approx)}"
+                combatLbl.foreground = if (combat.avg >= 0) GREEN else Color(0xF2, 0x8B, 0x82)
+            }
             renderEnhance(cur, b, breaks, level, real, realGrade)
         } else {
+            combatLbl.isVisible = false
             totalLbl.text = "-"; gradeLbl.text = ""
             subLbl.text = "능력치와 (도감 대비) 값을 확인해 주세요"
             scoreLbl.text = ""
@@ -319,7 +328,8 @@ class MainWindow(
             stats.any { it == null } -> {}
             else -> {
                 val b = if (base.all { it != null && it > 0 }) IntArray(4) { base[it]!! } else pet.maxS
-                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, IntArray(4) { stats[it]!! }, breaks, b)), screenGame)
+                val cur = IntArray(4) { stats[it]!! }
+                renderResult(pet, Calculator.compute(Calculator.Input(pet, level, cur, breaks, b)), screenGame, Calculator.combat(cur, b))
             }
         }
         // 경고에는 화면에서 읽은 글자(OCR)와 도감 이름이 들어가므로 이스케이프
@@ -327,10 +337,11 @@ class MainWindow(
         revalidate(); repaint()
     }
 
-    private fun renderResult(pet: Pet, r: Calculator.Result, screenGame: Int?) {
+    private fun renderResult(pet: Pet, r: Calculator.Result, screenGame: Int?, combat: Calculator.Combat?) {
         results.add(section("${pet.name} · ${pet.element}/${pet.type}"))
-        results.add(table(listOf(listOf("", "성장률", "등급", "분위")) +
-            (0..3).map { listOf(STAT_NAMES[it], fmt(r.growth[it], 2), r.statGrades[it], fmt(r.percentile[it], 1)) }))
+        results.add(table(listOf(listOf("", "성장률", "등급", "분위", "전투")) +
+            (0..3).map { listOf(STAT_NAMES[it], fmt(r.growth[it], 2), r.statGrades[it], fmt(r.percentile[it], 1),
+                combat?.let { c -> combatPct(c.pct[it], c.approx) } ?: "-") }))
         results.add(section("총성 ${fmt(r.myTotal, 1)}"))
         results.add(table(listOf(
             listOf("", "등급/%", "총성", "진행"),
@@ -347,17 +358,25 @@ class MainWindow(
             enhance.add(section("강화별")); enhance.add(note("강화 예상은 ${Calculator.MAX_LEVEL}레벨일 때만 표시됩니다.")); return
         }
         enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
-        val rows = mutableListOf(listOf("강", "공", "방", "순", "체", "총점", "성장률"))
+        val rows = mutableListOf(listOf("강", "공", "방", "순", "체", "총점\n전투", "성장률"))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
+            val c = Calculator.combat(s, base)
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
-                fmt(Calculator.abilityScore(s), 1) +
+                (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
         }
         enhance.add(table(rows, small = true))
         enhance.add(note(if (breaks >= MAX_BREAKS) "이미 최대 강화(+${MAX_BREAKS}강)입니다." else "강화 수치는 게임과 1 정도 차이 날 수 있어요."))
+        enhance.add(note("전투 = 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+    }
+
+    /** 종 대비 전투 % 표시. 곡선을 확인한 범위 밖이면 앞에 ≈ */
+    private fun combatPct(v: Double, approx: Boolean): String {
+        val n = Math.round(v)
+        return (if (approx) "≈" else "") + (if (n > 0) "+" else "") + "$n%"
     }
 
     private fun updateSuggestions(exact: Pet?, db: PetDb) {
