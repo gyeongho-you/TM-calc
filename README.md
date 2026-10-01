@@ -13,6 +13,11 @@
 
 화면은 버튼을 누를 때만 한 장 찍고 폰 안에서만 처리합니다 (인터넷 권한 없음).
 
+## PC (앱플레이어)
+[Releases](../../releases/latest) 에서 `TM-calc-PC-setup.exe` 를 받아 실행합니다 (Windows 10/11 64비트, 관리자 권한 필요 없음).
+앱플레이어(블루스택, LD플레이어, MuMu, 녹스 등) 창을 골라 [계산] 또는 단축키(기본 F9)를 누르면 폰 앱과 같은 계산을 합니다.
+글자 인식(PaddleOCR)은 PC 안에서만 하고, 게임에 입력을 보내거나 메모리를 읽지 않습니다.
+
 ## 도감
 - 기본 도감: `app/src/main/assets/pets.json` (엑셀 계산기의 '소환수S도감' 시트, `tools/update_pets.py` 로 생성)
 - 앱의 "도감 관리"에서 추가/수정하면 폰에 따로 저장되고, JSON 으로 저장/올리기 할 수 있습니다.
@@ -30,6 +35,9 @@ JDK 17~21, Android SDK 35. 경로에 한글이 있으면 빌드가 실패하므�
 gradlew testDebugUnitTest assembleRelease
 ```
 결과: `app/build/outputs/apk/release/app-release.apk`
+
+PC: `gradlew :desktop:test :desktop:packageInstaller` (WiX Toolset 3 필요, 기본 위치 `C:/dev/tools/wix`)
+결과: `desktop/build/installer/TM-calc-버전.exe`
 
 배포용 서명 키는 레포에 없습니다. `~/.android/tmcalc-keystore.properties`
 (storeFile, storePassword, keyAlias, keyPassword) 가 있으면 그 키로, 없으면 디버그 키로 서명합니다.
