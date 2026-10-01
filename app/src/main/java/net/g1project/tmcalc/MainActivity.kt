@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -15,7 +16,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
-import android.widget.CheckBox
+import android.widget.Switch
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -169,13 +170,23 @@ class MainActivity : Activity() {
                 textSize = 12f
             })
         }
-        val show = CheckBox(this).apply {
+        // 켜졌는지 한눈에 보이게: 밝은 색 스위치 + 글자로 켜짐/꺼짐
+        val on = Color.parseColor("#4FC3F7"); val off = Color.parseColor("#8A8D93")
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        val show = Switch(this).apply {
             id = View.generateViewId()
-            text = "종 대비 전투 능력치 보기"
             textSize = 15f
+            setPadding(0, (6 * dp).toInt(), 0, (6 * dp).toInt())
+            thumbTintList = ColorStateList(states, intArrayOf(on, Color.parseColor("#D0D2D6")))
+            trackTintList = ColorStateList(states, intArrayOf(Color.parseColor("#804FC3F7"), Color.parseColor("#80555960")))
             isChecked = AppPrefs.showCombat(this@MainActivity)
-            ampBox.visibility = if (isChecked) View.VISIBLE else View.GONE
-            setOnCheckedChangeListener { _, on -> ampBox.visibility = if (on) View.VISIBLE else View.GONE }
+            fun paint(checked: Boolean) {
+                text = "종 대비 전투 능력치 보기  " + if (checked) "켜짐" else "꺼짐"
+                setTextColor(if (checked) on else off)
+                ampBox.visibility = if (checked) View.VISIBLE else View.GONE
+            }
+            paint(isChecked)
+            setOnCheckedChangeListener { _, checked -> paint(checked) }
         }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
