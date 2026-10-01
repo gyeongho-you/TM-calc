@@ -64,7 +64,20 @@ class MainWindow(
     private val subLbl = label("앱플레이어에서 소환수 정보 화면을 띄우고 [계산] 또는 단축키", 11f, SUB, allowHtml = true)
     private val scoreLbl = label("", 12f, Color.WHITE)
     /** 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지 (총 능력치 점수 보너스 포함) */
-    private val combatLbl = label("", 15f, GREEN).apply { font = font.deriveFont(Font.BOLD); isVisible = false }
+    private val combatLbl = label("", 15f, GREEN).apply {
+        font = font.deriveFont(Font.BOLD); isVisible = false
+        // 누르면 설명 (앱만 받아 쓰는 사람도 뜻을 알 수 있게)
+        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+        toolTipText = "눌러서 설명 보기"
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                JOptionPane.showMessageDialog(this@MainWindow, javax.swing.JTextArea(Calculator.COMBAT_HELP).apply {
+                    isEditable = false; lineWrap = true; wrapStyleWord = true; columns = 34; isOpaque = false
+                    font = UI_FONT.deriveFont(13f); putClientProperty("html.disable", true)
+                }, "종 대비 전투 능력치", JOptionPane.INFORMATION_MESSAGE)
+            }
+        })
+    }
     private val warnLbl = label("", 12f, WARN, allowHtml = true)
     private val suggestBox = FitPanel(GridLayout(0, 2, 6, 6)).apply { isOpaque = false; isVisible = false }
     private val suggestHint = row(label("혹시 이 소환수인가요? (눌러서 선택)", 11f, MUTED))
@@ -311,7 +324,7 @@ class MainWindow(
             val combat = (if (showCombat()) Calculator.combat(cur, b, growthAmp()) else null)
             combatLbl.isVisible = combat != null
             if (combat != null) {
-                combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)"
+                combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)  (?)"
                 combatLbl.foreground = if (combat.avg >= 0) GREEN else Color(0xF2, 0x8B, 0x82)
             }
             renderEnhance(cur, b, breaks, level, real, realGrade)

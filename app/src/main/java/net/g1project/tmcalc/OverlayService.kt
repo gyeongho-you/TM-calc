@@ -75,6 +75,7 @@ class OverlayService : Service() {
     private lateinit var totalSubView: TextView
     private lateinit var scoreView: TextView
     private lateinit var combatView: TextView
+    private lateinit var combatHelp: TextView
     private lateinit var enhanceTable: LinearLayout
     /** 이름 추천 버튼들 (2개씩 줄). 스크롤 안에 가로 스크롤을 또 넣으면 터치가 스크롤로 먹혀서 눌리지 않았다 */
     private lateinit var suggestBox: LinearLayout
@@ -335,17 +336,17 @@ class OverlayService : Service() {
                 "기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
             val combat = (if (showCombat()) Calculator.combat(cur, b, growthAmp()) else null)
             if (combat != null) {
-                combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)"
+                combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)  ⓘ"
                 combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
                 combatView.visibility = View.VISIBLE
-            } else combatView.visibility = View.GONE
+            } else { combatView.visibility = View.GONE; combatHelp.visibility = View.GONE }
             renderEnhance(cur, b, breaks, pet, level, real, realGrade)
         } else {
             totalView.text = "-"
             totalGradeView.text = ""
             totalSubView.text = "능력치와 (도감 대비) 값을 확인해 주세요"
             scoreView.text = ""
-            combatView.visibility = View.GONE
+            combatView.visibility = View.GONE; combatHelp.visibility = View.GONE
             enhanceTable.removeAllViews()
         }
 
@@ -605,13 +606,24 @@ class OverlayService : Service() {
         totalSubView = TextView(ui).apply { textSize = 11f; setTextColor(Color.parseColor("#C9CBD0")) }
         body.addView(totalSubView)
         // 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지 (총 능력치 점수 보너스 포함)
+        // 누르면 아래에 설명이 펼쳐진다 (앱만 받아 쓰는 사람도 뜻을 알 수 있게)
+        combatHelp = TextView(ui).apply {
+            text = Calculator.COMBAT_HELP
+            textSize = 12f
+            setTextColor(Color.parseColor("#C9CBD0"))
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            background = round(0xFF2A2D33.toInt(), 8)
+            visibility = View.GONE
+        }
         combatView = TextView(ui).apply {
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, dp(4), 0, dp(2))
             visibility = View.GONE
+            setOnClickListener { combatHelp.visibility = if (combatHelp.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
         }
         body.addView(combatView)
+        body.addView(combatHelp)
         scoreView = TextView(ui).apply { textSize = 12f; setTextColor(Color.WHITE); setPadding(0, dp(2), 0, dp(2)) }
         body.addView(scoreView)
         warnView = TextView(ui).apply {
