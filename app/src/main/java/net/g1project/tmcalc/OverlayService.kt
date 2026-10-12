@@ -392,11 +392,24 @@ class OverlayService : Service() {
                 (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 // 현재 강은 위의 총 성장률(화면 인게임 값으로 맞춘 값)과 같게
                 if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}"
-            enhanceTable.addView(row(cells, small = true))
+            val line = row(cells, small = true)
+            enhanceTable.addView(line)
+            // 줄을 누르면 그 강의 능력치별 전투가 아래에 펼쳐진다
+            if (combat != null) {
+                val detail = TextView(ui).apply {
+                    text = "  └ 전투  " + (0..3).joinToString("   ") { "${STAT_NAMES[it]} ${combatPct(combat.pct[it], combat.approx)}" }
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor("#C9CBD0"))
+                    setPadding(0, 0, 0, dp(4))
+                    visibility = View.GONE
+                }
+                line.setOnClickListener { detail.visibility = if (detail.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+                enhanceTable.addView(detail)
+            }
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
         else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
-        if (showCombat()) enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+        if (showCombat()) enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다. 줄을 누르면 능력치별 전투가 나옵니다."))
     }
 
     /** 설정에서 끄면 종 대비 전투 능력치를 아예 보여 주지 않는다 */

@@ -372,6 +372,7 @@ class MainWindow(
         }
         enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
+        val details = mutableListOf<String?>() // 줄마다 능력치별 전투 (줄을 누르면 표 아래에)
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
@@ -380,10 +381,17 @@ class MainWindow(
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
+            details += c?.let { cb -> "${k}강 전투:  " + (0..3).joinToString("   ") { "${STAT_NAMES[it]} ${combatPct(cb.pct[it], cb.approx)}" } }
         }
-        enhance.add(table(rows, small = true))
+        val detailLbl = label(" ", 12f, SUB).apply { isVisible = details.any { it != null } }
+        enhance.add(table(rows, small = true) { r -> details.getOrNull(r)?.let { detailLbl.text = it } })
+        enhance.add(row(detailLbl))
         enhance.add(note(if (breaks >= MAX_BREAKS) "이미 최대 강화(+${MAX_BREAKS}강)입니다." else "강화 수치는 게임과 1 정도 차이 날 수 있어요."))
-        if (showCombat()) enhance.add(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다."))
+        // 한 줄이 길면 창이 옆으로 밀리므로 짧게 나눈다
+        if (showCombat()) {
+            enhance.add(note("전투 = 같은 종 도감(S 100%)보다 전투 능력치가 몇 % 높은지"))
+            enhance.add(note("줄을 누르면 그 강의 능력치별 전투가 표 아래에 나옵니다"))
+        }
     }
 
     /** 설정에서 끄면 종 대비 전투 능력치를 아예 보여 주지 않는다 */
@@ -602,7 +610,9 @@ class MainWindow(
     }
 
     /** 표: 셀 안의 "\n" 뒤는 등급으로 보고 색을 입힌다 */
-    private fun table(rows: List<List<String>>, small: Boolean = false) = FitPanel(GridLayout(rows.size, rows[0].size, 2, 2)).apply {
+    /** [onRowClick] 가 있으면 데이터 줄(머리줄 제외, 0부터)을 누를 때 불린다 */
+    private fun table(rows: List<List<String>>, small: Boolean = false, onRowClick: ((Int) -> Unit)? = null) =
+        FitPanel(GridLayout(rows.size, rows[0].size, 2, 2)).apply {
         isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
         rows.forEachIndexed { r, cells ->
             cells.forEachIndexed { c, v ->
@@ -612,7 +622,15 @@ class MainWindow(
                     else v
                 add(label(text, if (small) 11f else 13f, when {
                     header -> MUTED; c == 0 -> SUB; parts.size == 1 -> gradeColor(v); else -> Color.WHITE
-                }).apply { horizontalAlignment = if (c == 0) JLabel.LEFT else JLabel.CENTER })
+                }, allowHtml = parts.size == 2).apply {
+                    horizontalAlignment = if (c == 0) JLabel.LEFT else JLabel.CENTER
+                    if (onRowClick != null && !header) {
+                        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+                        addMouseListener(object : java.awt.event.MouseAdapter() {
+                            override fun mouseClicked(e: java.awt.event.MouseEvent) = onRowClick(r - 1)
+                        })
+                    }
+                })
             }
         }
     }
