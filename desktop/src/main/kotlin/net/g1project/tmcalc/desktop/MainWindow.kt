@@ -93,6 +93,8 @@ class MainWindow(
 
     private var filling = false
     @Volatile private var busy = false
+    /** 강화 표에서 눌러서 능력치별 전투를 펼친 강 */
+    private var expandedBreak: Int? = null
     private var lastParsed: ParsedScreen? = null
 
     init {
@@ -372,7 +374,7 @@ class MainWindow(
         }
         enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
-        val details = mutableListOf<String?>() // 줄마다 능력치별 전투 (줄을 누르면 표 아래에)
+        val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
             val s = Calculator.statsAtBreaks(cur, breaks, k)
             val t = Calculator.total(s, base)
@@ -381,16 +383,22 @@ class MainWindow(
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
-            details += c?.let { cb -> "${k}강 전투:  " + (0..3).joinToString("   ") { "${STAT_NAMES[it]} ${combatPct(cb.pct[it], cb.approx)}" } }
+            rowBreak += k
+            // 누른 줄 아래에 그 강의 능력치별 전투 (위 공·방·순·체 칸에 맞춰 숫자만)
+            if (c != null && expandedBreak == k) {
+                rows += listOf("전투") + (0..3).map { combatPct(c.pct[it], c.approx) } + listOf("", "")
+                rowBreak += null
+            }
         }
-        val detailLbl = label(" ", 12f, SUB).apply { isVisible = details.any { it != null } }
-        enhance.add(table(rows, small = true) { r -> details.getOrNull(r)?.let { detailLbl.text = it } })
-        enhance.add(row(detailLbl))
+        enhance.add(table(rows, small = true) { r ->
+            val k = rowBreak.getOrNull(r) ?: return@table
+            if (showCombat()) { expandedBreak = if (expandedBreak == k) null else k; recompute() }
+        })
         enhance.add(note(if (breaks >= MAX_BREAKS) "이미 최대 강화(+${MAX_BREAKS}강)입니다." else "강화 수치는 게임과 1 정도 차이 날 수 있어요."))
         // 한 줄이 길면 창이 옆으로 밀리므로 짧게 나눈다
         if (showCombat()) {
             enhance.add(note("전투 = 같은 종 도감(S 100%)보다 전투 능력치가 몇 % 높은지"))
-            enhance.add(note("줄을 누르면 그 강의 능력치별 전투가 표 아래에 나옵니다"))
+            enhance.add(note("줄을 누르면 그 강의 능력치별 전투가 아래에 나옵니다"))
         }
     }
 

@@ -396,13 +396,9 @@ class OverlayService : Service() {
             enhanceTable.addView(line)
             // 줄을 누르면 그 강의 능력치별 전투가 아래에 펼쳐진다
             if (combat != null) {
-                val detail = TextView(ui).apply {
-                    text = "  └ 전투  " + (0..3).joinToString("   ") { "${STAT_NAMES[it]} ${combatPct(combat.pct[it], combat.approx)}" }
-                    textSize = 11.5f
-                    setTextColor(Color.parseColor("#C9CBD0"))
-                    setPadding(0, 0, 0, dp(4))
-                    visibility = View.GONE
-                }
+                // 위 표의 공·방·순·체 칸에 맞춰 숫자만
+                val detail = row(listOf("전투") + (0..3).map { combatPct(combat.pct[it], combat.approx) } + listOf("", ""), small = true)
+                    .apply { visibility = View.GONE }
                 line.setOnClickListener { detail.visibility = if (detail.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
                 enhanceTable.addView(detail)
             }

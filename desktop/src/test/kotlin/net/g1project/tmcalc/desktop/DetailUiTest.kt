@@ -56,8 +56,15 @@ class DetailUiTest {
             val cell = labels.first { it.text == "2강" }
             cell.mouseListeners.forEach { it.mouseClicked(java.awt.event.MouseEvent(cell, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, 1, 1, 1, false)) }
         }
-        val shownDetail = labels.firstOrNull { (it.text ?: "").startsWith("2강 전투:") }?.text
-        org.junit.Assert.assertTrue("2강 능력치별 전투: $shownDetail", shownDetail != null && "공 +" in shownDetail && "체 " in shownDetail)
+        Thread.sleep(300)
+        // 2강 줄 바로 아래에 "전투" 줄이 끼어 들어가 공·방·순·체 칸에 숫자만 나온다
+        val after = mutableListOf<JLabel>()
+        fun walk3(c: Container) { for (x in c.components) { if (x is JLabel) after += x; if (x is Container) walk3(x) } }
+        SwingUtilities.invokeAndWait { walk3(win.contentPane as Container) }
+        val i = after.indexOfLast { it.text == "전투" } // 능력치 표 머리줄에도 "전투" 가 있어 마지막 것
+        org.junit.Assert.assertTrue("전투 줄", i > 0 && after[i + 1].text.endsWith("%") && after[i - 7].text.startsWith("2강"))
+        SwingUtilities.invokeAndWait { win.paint(img.graphics) }
+        ImageIO.write(img, "png", File("build/ui/detail-open.png"))
         SwingUtilities.invokeAndWait { win.dispose() }
         prefs.removeNode()
         // HTML 로 그려지는 칸은 html.disable 이 꺼져 있어야 한다 (켜져 있으면 "<html>" 글자가 그대로 보임)
