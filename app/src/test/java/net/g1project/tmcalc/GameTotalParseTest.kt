@@ -58,6 +58,23 @@ class GameTotalParseTest {
         assertEquals(103, p.gameTotal)
     }
 
+    /**
+     * 같은 화면을 2배로 찍은 경우 (PC 화면 배율 때문에 실제 캡처는 사진보다 크다). 뒤에 깔린 목록 카드의 "Lv.150" 을
+     * 레벨 줄로 골라 이름을 "배치중", 강화를 0 으로 읽던 문제. 생명력은 "생영력", 이름은 "화혼량" 으로 읽힌다
+     */
+    @Test
+    fun tinyAppPlayerWindowX2() {
+        val lines = File("src/test/resources/ocr/ldplayer_tiny_x2.txt").readLines().filter { it.isNotBlank() }.map { line ->
+            val p = line.split('|'); val n = p.size
+            OcrLine(p.subList(0, n - 4).joinToString("|"), p[n - 4].toInt(), p[n - 3].toInt(), p[n - 2].toInt(), p[n - 1].toInt())
+        }
+        val p = OcrParser.parse(lines, db)
+        assertEquals("화혼랑", p.pet?.name)
+        assertEquals(3, p.breaks)
+        assertEquals(listOf(593, 309, 481, 4231), p.stats.toList())
+        assertEquals(103, p.gameTotal)
+    }
+
     /** 강화 성공률 "35.00%", 채팅의 "성장점수가108" 은 총 성장 점수로 보지 않는다 */
     @Test
     fun ignoresOtherPercents() {

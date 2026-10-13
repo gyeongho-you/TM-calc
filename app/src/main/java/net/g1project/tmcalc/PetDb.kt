@@ -109,18 +109,30 @@ class PetDb(val pets: List<Pet>) {
             return 1.0 - d.toDouble() / maxOf(a.length, b.length)
         }
 
-        private fun levenshtein(a: String, b: String): Int {
-            var prev = IntArray(b.length + 1) { it }
-            var cur = IntArray(b.length + 1)
+        /** 편집 거리. 한글 두 글자가 다르면 초성·중성·종성 중 다른 만큼만 센다 (화"흔"량 ↔ 화"혼"랑: 모음만 달라 1/3씩) */
+        private fun levenshtein(a: String, b: String): Double {
+            var prev = DoubleArray(b.length + 1) { it.toDouble() }
+            var cur = DoubleArray(b.length + 1)
             for (i in 1..a.length) {
-                cur[0] = i
+                cur[0] = i.toDouble()
                 for (j in 1..b.length) {
-                    val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                    val cost = charCost(a[i - 1], b[j - 1])
                     cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
                 }
                 val t = prev; prev = cur; cur = t
             }
             return prev[b.length]
+        }
+
+        private fun charCost(x: Char, y: Char): Double {
+            if (x == y) return 0.0
+            if (x !in '가'..'힣' || y !in '가'..'힣') return 1.0
+            val p = x - '가'; val q = y - '가'
+            var diff = 0
+            if (p / 588 != q / 588) diff++              // 초성
+            if (p % 588 / 28 != q % 588 / 28) diff++    // 중성
+            if (p % 28 != q % 28) diff++                // 종성
+            return diff / 3.0
         }
     }
 }

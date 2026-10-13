@@ -35,7 +35,15 @@ class ParsedScreen(
  */
 object OcrParser {
 
-    private val STAT_LABELS = listOf("공격", "방어", "속도", "생명")
+    /**
+     * 이름이 도감과 정확히 안 맞을 때 가장 가까운 소환수로 볼 최소 비슷함.
+     * 비슷함은 자음·모음 단위라(PetDb.similarity) "블루 데비라"(도감에 없음)가 "블루 드래곤"과 0.6 이 되므로 0.7.
+     * "화흔량"(모음 둘 틀림) → 화혼랑 은 0.78.
+     */
+    private const val MIN_GUESS = 0.7
+
+    /** 능력치 줄 라벨. 화면이 작으면 한 글자씩 틀리게 읽힌다 (예: 생명력 → "생영력") */
+    private val STAT_LABELS = listOf(Regex("공격|공.력"), Regex("방어|방.력"), Regex("속도"), Regex("생명|생.력|명력"))
     private val LEVEL = Regex("""[Ll][Vv]\s*[.,·]?\s*(\d{1,3})""")
     private val BREAKS = Regex("""\(\s*\+\s*(\d{1,2})\s*\)?|\+\s*(\d{1,2})\s*\)""")
     private val PAREN = Regex("""\(\s*([+-]?\d+)\s*\)?""")
@@ -82,8 +90,9 @@ object OcrParser {
         val growthAvgs = arrayOfNulls<Double>(4)
         val screenGrades = arrayOfNulls<String>(4)
         var anchor: OcrLine? = null // 능력치 표의 첫 라벨 줄 (공격력)
+        var tableRight = Int.MIN_VALUE // 능력치 표 오른쪽 끝 (등급 글자까지)
         STAT_LABELS.forEachIndexed { i, label ->
-            for (labelLine in lines.filter { it.text.replace(" ", "").contains(label) }) {
+            for (labelLine in lines.filter { label.containsMatchIn(it.text.replace(" ", "")) }) {
                 val rowLines = lines
                     .filter { it === labelLine || (Math.abs(it.cy - labelLine.cy) < labelLine.height * 0.6 && it.left >= labelLine.left) }
                     .sortedBy { it.left }
@@ -93,6 +102,7 @@ object OcrParser {
                 val stat = INT.find(rest.substringBefore('('))?.value?.toIntOrNull() ?: continue
                 stats[i] = stat
                 if (anchor == null || labelLine.cy < anchor!!.cy) anchor = labelLine
+                tableRight = maxOf(tableRight, rowLines.maxOf { it.right })
                 deltas[i] = PAREN.find(rest)?.groupValues?.get(1)?.toIntOrNull()
                     ?: if (DASH_ZERO.containsMatchIn(rest)) 0 else null
                 deltaBoxes[i] = rowLines.firstOrNull { it.text.contains('(') }?.let { l ->
@@ -115,8 +125,12 @@ object OcrParser {
 
         val above = anchor?.let { a -> lines.filter { it.bottom <= a.top } } ?: lines
 
-        // 2) 레벨: 능력치 표 바로 위쪽에서 가장 가까운 "Lv. 30"
-        val levelLine = above.filter { LEVEL.containsMatchIn(it.text) }.maxByOrNull { it.cy }
+        // 2) 레벨: 능력치 표 바로 위쪽에서 가장 가까운 "Lv. 30".
+        //    정보 카드는 능력치 표와 같은 세로 띠에 있다. 화면이 작으면 뒤에 깔린 목록 카드의 "Lv.150"(카드 바깥 왼쪽/오른쪽)이
+        //    더 가깝게 읽혀 이름 대신 "배치중" 배지를 이름으로 고르는 일이 있어서, 표와 가로로 겹치는 줄만 본다
+        val inTable = { l: OcrLine -> anchor == null || ((l.left + l.right) / 2 in anchor!!.left..tableRight) }
+        val levelLine = above.filter { LEVEL.containsMatchIn(it.text) && inTable(it) }.maxByOrNull { it.cy }
+            ?: above.filter { LEVEL.containsMatchIn(it.text) }.maxByOrNull { it.cy }
             ?: lines.firstOrNull { LEVEL.containsMatchIn(it.text) }
         val level = levelLine?.let { LEVEL.find(it.text)!!.groupValues[1].toIntOrNull() }
             ?.takeIf { it in 1..300 }
@@ -137,7 +151,7 @@ object OcrParser {
         if (bought != null) {
             nameRaw = bought
             nameLine = nameCandidates.firstOrNull { PetDb.key(it.text) == PetDb.key(bought) }
-            db.bestMatch(bought)?.let { (p, score) -> if (score >= 0.6) { pet = p; nameScore = score } }
+            db.bestMatch(bought)?.let { (p, score) -> if (score >= MIN_GUESS) { pet = p; nameScore = score } }
         } else {
             for (l in nameCandidates) {
                 val (p, score) = db.bestMatch(l.text) ?: continue
@@ -146,7 +160,7 @@ object OcrParser {
             if (nameLine == null) {
                 nameLine = nameCandidates.firstOrNull()
                 nameLine?.let { l ->
-                    db.bestMatch(l.text)?.let { (p, score) -> if (score >= 0.6) { pet = p; nameScore = score } }
+                    db.bestMatch(l.text)?.let { (p, score) -> if (score >= MIN_GUESS) { pet = p; nameScore = score } }
                 }
             }
             nameRaw = nameLine?.text
