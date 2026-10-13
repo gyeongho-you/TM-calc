@@ -96,7 +96,7 @@ val prepareApp by tasks.registering(Sync::class) {
     from(modelDir) { into("models") }
     into(appInput)
 }
-val appVersion = "1.4.8"
+val appVersion = "1.4.9"
 fun jpackageArgs(type: String, dest: File) = listOf(
     File(System.getProperty("java.home"), "bin/jpackage").path,
     "--type", type, "--name", "TM-calc", "--app-version", appVersion,
@@ -130,8 +130,12 @@ val packageInstaller by tasks.registering(Exec::class) {
         out.deleteRecursively()
     }
     environment("PATH", wix.path + File.pathSeparator + System.getenv("PATH"))
+    // packaging/main.wxs: jpackage 기본 설치 설정에 "같은 버전 다시 실행하면 전부 다시 설치" 두 줄만 더한 것
+    // (그래야 지운 바로 가기가 다시 생긴다). --win-dir-chooser: 설치할 때 폴더를 고르는 화면 (기본 AppData\Local\TM-calc)
+    inputs.dir(layout.projectDirectory.dir("packaging"))
     commandLine(jpackageArgs("exe", out) + listOf(
         "--win-per-user-install", "--win-shortcut", "--win-menu", "--win-menu-group", "TM-calc",
+        "--win-dir-chooser", "--resource-dir", layout.projectDirectory.dir("packaging").asFile.path,
         "--win-upgrade-uuid", "0fea8b85-06f6-4a7b-9429-581130795201",
     ))
 }
