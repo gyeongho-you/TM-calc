@@ -180,8 +180,14 @@ object OcrParser {
                 .map { (l, v) -> Math.abs(l.cy - label.cy) to v }
         }.minByOrNull { it.first }?.second
         if (byLabel != null || levelLine == null) return byLabel
-        return percents.filter { (l, _) ->
+        percents.filter { (l, _) ->
             l.bottom <= levelLine.top && (nameLine == null || l.top >= nameLine.top) && l.left < levelLine.right
-        }.maxByOrNull { it.first.top }?.second
+        }.maxByOrNull { it.first.top }?.second?.let { return it }
+        // 정보 카드(잠재력/성장 등급/총 성장 점수/총 능력치 점수)에서도 라벨만 못 읽은 경우 (앱플레이어 창이 아주 작을 때):
+        // "Lv." 줄 아래 ~ 능력치 표("공격력") 위 사이에 있는 % 는 총 성장 점수뿐이다
+        val statTop = lines.filter { it.top > levelLine.bottom && it.text.replace(" ", "").contains("공격") }.minOfOrNull { it.top }
+            ?: (levelLine.bottom + levelLine.height * 12)
+        return percents.filter { (l, _) -> l.top >= levelLine.bottom && l.bottom <= statTop }
+            .minByOrNull { it.first.top }?.second
     }
 }

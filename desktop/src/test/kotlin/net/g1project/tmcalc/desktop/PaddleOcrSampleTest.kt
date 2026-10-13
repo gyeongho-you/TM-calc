@@ -25,7 +25,7 @@ class PaddleOcrSampleTest {
                 val lines = ocr.recognize(ImageIO.read(f))
                 val ms = System.currentTimeMillis() - t0
                 val p = OcrParser.parse(lines, db)
-                out.append("${f.nameWithoutExtension}\t이름=${p.pet?.name ?: "(${p.nameRaw})"}\tLv=${p.level}\t능력치=${p.stats.toList()}" +
+                out.append("${f.nameWithoutExtension}\t이름=${p.pet?.name ?: "(${p.nameRaw})"}\tLv=${p.level}\t강=${p.breaks}\t능력치=${p.stats.toList()}" +
                     "\t대비=${p.deltas.toList()}\t총성장=${p.gameTotal}\t${ms}ms\n")
                 File("build/ocr-lines").apply { mkdirs() }.resolve(f.nameWithoutExtension + ".txt")
                     .writeText(lines.joinToString("\n") { "${it.text}|${it.left}|${it.top}|${it.right}|${it.bottom}" })

@@ -40,6 +40,24 @@ class GameTotalParseTest {
         assertEquals(99, p.gameTotal)
     }
 
+    /**
+     * 실제 사례 (2026-10-13): LD플레이어 창이 가로 245px 로 아주 작은 PC 캡처. 정보 카드의 라벨 글자는 못 읽고
+     * "103%" 와 "1,806.1" 만 읽혔다 (Lv. 줄 아래). Lv. 아래 ~ "공격력" 위 사이의 % 를 쓴다
+     */
+    @Test
+    fun tinyAppPlayerWindow() {
+        val lines = File("src/test/resources/ocr/ldplayer_tiny.txt").readLines().filter { it.isNotBlank() }.map { line ->
+            val p = line.split('|'); val n = p.size
+            OcrLine(p.subList(0, n - 4).joinToString("|"), p[n - 4].toInt(), p[n - 3].toInt(), p[n - 2].toInt(), p[n - 1].toInt())
+        }
+        val p = OcrParser.parse(lines, db)
+        assertEquals("화혼랑", p.pet?.name)
+        assertEquals(150, p.level)
+        assertEquals(3, p.breaks)
+        assertEquals(listOf(593, 309, 481, 4231), p.stats.toList())
+        assertEquals(103, p.gameTotal)
+    }
+
     /** 강화 성공률 "35.00%", 채팅의 "성장점수가108" 은 총 성장 점수로 보지 않는다 */
     @Test
     fun ignoresOtherPercents() {
