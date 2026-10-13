@@ -8,7 +8,7 @@
     <?define JpInstallScope="perUser"?>
   <?endif?>
 
-  <?define JpProductLanguage=1033 ?>
+  <?define JpProductLanguage=1042 ?> <!-- TM-calc: 한국어 (jpackage 기본 1033 영어) -->
   <?define JpInstallerVersion=200 ?>
   <?define JpCompressedMsi=yes ?>
 
@@ -103,7 +103,7 @@
     <UIRef Id="JpUI"/>
 
     <!--
-      TM-calc: jpackage 기본 main.wxs 에서 바꾼 부분은 이 두 줄뿐.
+      TM-calc: jpackage 기본 main.wxs 에서 바꾼 부분은 이 두 줄과 위의 JpProductLanguage(한국어)뿐.
       같은 버전 설치 파일을 다시 실행하면(제품 코드가 같아 '이미 설치됨'으로 끝나던 경우) 전부 다시 설치한다.
       → 지운 바탕 화면/시작 메뉴 바로 가기도 다시 생긴다. 제거(REMOVE)나 직접 고른 복구(REINSTALL)는 건드리지 않는다.
     -->

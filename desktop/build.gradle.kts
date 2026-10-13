@@ -96,7 +96,7 @@ val prepareApp by tasks.registering(Sync::class) {
     from(modelDir) { into("models") }
     into(appInput)
 }
-val appVersion = "1.4.10"
+val appVersion = "1.4.11"
 fun jpackageArgs(type: String, dest: File) = listOf(
     File(System.getProperty("java.home"), "bin/jpackage").path,
     "--type", type, "--name", "TM-calc", "--app-version", appVersion,
@@ -131,6 +131,7 @@ val packageInstaller by tasks.registering(Exec::class) {
     }
     environment("PATH", wix.path + File.pathSeparator + System.getenv("PATH"))
     // packaging/main.wxs: jpackage 기본 설치 설정에 "같은 버전 다시 실행하면 전부 다시 설치" 두 줄만 더한 것
+    // packaging/MsiInstallerStrings_en.wxl: 설치 화면 한글 (WiX 기본 문구도 ko-kr 로 나온다)
     // (그래야 지운 바로 가기가 다시 생긴다). --win-dir-chooser: 설치할 때 폴더를 고르는 화면 (기본 AppData\Local\TM-calc)
     inputs.dir(layout.projectDirectory.dir("packaging"))
     commandLine(jpackageArgs("exe", out) + listOf(
