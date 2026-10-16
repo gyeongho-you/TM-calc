@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -20,6 +22,8 @@ import android.widget.Switch
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TableLayout
+import android.widget.TableRow
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -73,13 +77,10 @@ class MainActivity : Activity() {
             setOnClickListener { startOverlay() }
         }
         root.addView(startBtn, spaced())
+        // 도감 관리 · 성장률로 추정 · 설정은 버튼 하나(메뉴)로 모은다
         root.addView(Button(this).apply {
-            text = "도감 관리 (추가/수정)"
-            setOnClickListener { startActivity(Intent(this@MainActivity, PetEditorActivity::class.java)) }
-        }, spaced())
-        root.addView(Button(this).apply {
-            text = "설정"
-            setOnClickListener { openSettings() }
+            text = "메뉴 (도감 관리 · 추정 · 설정)"
+            setOnClickListener { openMenu() }
         }, spaced())
         root.addView(Button(this).apply {
             text = "레이어 끄기"
@@ -147,6 +148,86 @@ class MainActivity : Activity() {
             .setNeutralButton("앱 정보 열기") { _, _ ->
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }
+            .show()
+    }
+
+    private fun openMenu() {
+        AlertDialog.Builder(this)
+            .setTitle("메뉴")
+            .setItems(arrayOf("도감 관리 (추가/수정)", "성장률로 추정", "설정")) { _, which ->
+                when (which) {
+                    0 -> startActivity(Intent(this, PetEditorActivity::class.java))
+                    1 -> openEstimate()
+                    else -> openSettings()
+                }
+            }
+            .show()
+    }
+
+    /** 성장률로 추정: 도감 성장률 4개 → 초기치·만렙S·총능 (참고용, 도감에 저장하지 않음) */
+    private fun openEstimate() {
+        val dp = resources.displayMetrics.density
+        // 결과 표: 칸마다 TextView (한글과 숫자 폭이 달라 글자 정렬로는 안 맞는다)
+        val table = TableLayout(this).apply {
+            setPadding(0, (12 * dp).toInt(), 0, 0)
+            setColumnStretchable(1, true); setColumnStretchable(2, true)
+        }
+        val score = TextView(this).apply { textSize = 15f; setPadding(0, (8 * dp).toInt(), 0, 0) }
+        val labels = listOf("공", "방", "순", "체")
+        val inputs = labels.map {
+            EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                hint = it
+                gravity = Gravity.CENTER
+                setSelectAllOnFocus(true)
+            }
+        }
+        fun update() {
+            val g = inputs.map { it.text.toString().trim().toDoubleOrNull() ?: 0.0 }.toDoubleArray()
+            val e = Calculator.estimate(g)
+            table.removeAllViews()
+            if (e == null) { score.text = "성장률 4개를 모두 넣으면 결과가 나옵니다."; return }
+            Calculator.estimateRows(e).forEachIndexed { r, cells ->
+                table.addView(TableRow(this).apply {
+                    cells.forEachIndexed { c, t ->
+                        addView(TextView(context).apply {
+                            text = t
+                            textSize = 15f
+                            gravity = if (c == 0) Gravity.START else Gravity.END
+                            setPadding((8 * dp).toInt(), (2 * dp).toInt(), (8 * dp).toInt(), (2 * dp).toInt())
+                            if (r == 0) setTextColor(Color.parseColor("#8A8D93"))
+                        })
+                    }
+                })
+            }
+            score.text = Calculator.estimateScoreText(e)
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            inputs.forEach { addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
+        }
+        inputs.forEach { it.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) = update()
+        }) }
+        update()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            addView(TextView(context).apply { text = "도감 성장률 (공 · 방 · 순 · 체)"; textSize = 15f })
+            addView(row)
+            addView(table)
+            addView(score)
+            addView(TextView(context).apply {
+                text = "\n" + Calculator.ESTIMATE_HELP
+                textSize = 12f
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("성장률로 추정")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("닫기", null)
             .show()
     }
 

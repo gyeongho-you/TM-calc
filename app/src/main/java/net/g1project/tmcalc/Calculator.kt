@@ -250,6 +250,51 @@ object Calculator {
     private val COMBAT_LIMIT = 1480.0..1920.0
 
     /**
+     * 성장률만으로 추정한 도감 값. 공·방·순·체 각각 lo..hi (보통 같고, 반올림 경계에 걸리면 1 차이).
+     * 참고용: 실제 값과 ±1 정도 다를 수 있어 계산에는 쓰지 않는다.
+     */
+    class Estimate(val initLo: IntArray, val initHi: IntArray, val maxLo: IntArray, val maxHi: IntArray) {
+        /** 만렙S 총능 (경계값은 가운데) */
+        val score: Double get() = (totalOf(maxLo) + totalOf(maxHi)) / 2
+        val initScore: Double get() = (totalOf(initLo) + totalOf(initHi)) / 2
+    }
+
+    /**
+     * 도감 119종으로 찾은 규칙: 초기치 ≈ 성장률 × [INIT_COEF] (476칸 중 436칸 정확, 나머지 ±1),
+     * 만렙S = 초기치 + 성장률 × 149 (±1). 입력이 이상하면 null.
+     */
+    fun estimate(growth: DoubleArray): Estimate? {
+        if (growth.size != 4 || growth.any { !it.isFinite() || it <= 0 || it > 1000 }) return null
+        val lo = IntArray(4); val hi = IntArray(4); val mLo = IntArray(4); val mHi = IntArray(4)
+        for (i in 0..3) {
+            val raw = growth[i] * INIT_COEF[i]
+            // 소수점이 .4~.6 이면 어느 쪽으로 반올림될지 알 수 없어 둘 다 보여 준다
+            if (Math.abs(raw - Math.floor(raw) - 0.5) < 0.1) { lo[i] = Math.floor(raw).toInt(); hi[i] = lo[i] + 1 }
+            else { lo[i] = Math.round(raw).toInt(); hi[i] = lo[i] }
+            mLo[i] = Math.round(lo[i] + growth[i] * (MAX_LEVEL - 1)).toInt()
+            mHi[i] = Math.round(hi[i] + growth[i] * (MAX_LEVEL - 1)).toInt()
+        }
+        return Estimate(lo, hi, mLo, mHi)
+    }
+
+    private val INIT_COEF = doubleArrayOf(3.96, 3.88, 3.99, 4.11)
+
+    /** 추정 결과 표 (폰·PC 같이 씀): 머리줄 + 공·방·순·체 줄, 각 줄은 [이름, 초기치, 만렙S] */
+    fun estimateRows(e: Estimate): List<List<String>> {
+        fun r(a: Int, b: Int) = if (a == b) "$a" else "$a~$b"
+        return listOf(listOf("", "초기치", "만렙S")) + listOf("공", "방", "순", "체").mapIndexed { i, n ->
+            listOf(n, r(e.initLo[i], e.initHi[i]), r(e.maxLo[i], e.maxHi[i]))
+        }
+    }
+
+    /** 표 아래 총능 줄 */
+    fun estimateScoreText(e: Estimate) = "만렙S 총능 약 ${Math.round(e.score)}  (1레벨 약 ${Math.round(e.initScore)})"
+
+    const val ESTIMATE_HELP = "게임 도감의 성장률(S 100%) 4개만 넣으면 초기치와 만렙S를 추정합니다.\n" +
+        "참고용 추정값이라 실제와 ±1 정도 다를 수 있고, 성장률 계산에는 쓰지 않습니다. " +
+        "\"7~8\" 은 반올림 경계라 둘 중 하나입니다."
+
+    /**
      * 능력치별 등급 = 현재 능력치 ÷ 도감값 을 배율(S+ 1.01, S++ 1.03, SS 1.05 ...)과 비교.
      * 게임 화면 등급 40칸(강화 전·후)과 모두 일치. 원래 시트는 성장률 (현재-초기치)/149 로 비교해서
      * 경계선 근처에서 한 칸씩 어긋났다 (예: 로얄 가드 유니 방어력 686 → 시트 SS++, 게임 SS+).

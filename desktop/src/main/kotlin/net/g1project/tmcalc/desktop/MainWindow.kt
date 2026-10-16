@@ -444,6 +444,7 @@ class MainWindow(
     private fun menu() = JMenuBar().apply {
         add(JMenu("도감").apply {
             add(JMenuItem("도감 관리 (추가/수정, JSON 저장/올리기)").apply { addActionListener { openPetEditor(fromScan = false) } })
+            add(JMenuItem("성장률로 추정…").apply { addActionListener { showEstimateDialog() } })
             add(JMenuItem("내 도감 폴더 열기").apply { addActionListener { pets.dir.mkdirs(); Desktop.getDesktop().open(pets.dir) } })
         })
         add(JMenu("설정").apply {
@@ -547,6 +548,50 @@ class MainWindow(
         })
         dlg.pack(); dlg.setLocationRelativeTo(this)
         SwingUtilities.invokeLater { catcher.requestFocusInWindow() }
+        dlg.isVisible = true
+    }
+
+    /** 도감 > 성장률로 추정: 도감 성장률 4개 → 초기치·만렙S·총능 (참고용, 도감에 저장하지 않음) */
+    private fun showEstimateDialog() {
+        val dlg = javax.swing.JDialog(this, "성장률로 추정", false)
+        val inputs = List(4) { field().apply { columns = 5 } }
+        val table = JPanel(GridLayout(5, 3, 18, 4)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
+        val score = label(" ", 13f, Color.WHITE)
+        fun update() {
+            val e = Calculator.estimate(inputs.map { it.text.trim().toDoubleOrNull() ?: 0.0 }.toDoubleArray())
+            table.removeAll()
+            if (e == null) score.text = "성장률 4개를 모두 넣으면 결과가 나옵니다."
+            else {
+                Calculator.estimateRows(e).forEachIndexed { r, cells ->
+                    cells.forEachIndexed { c, t ->
+                        table.add(label(t, 14f, if (r == 0) MUTED else Color.WHITE).apply {
+                            horizontalAlignment = if (c == 0) JLabel.LEFT else JLabel.RIGHT
+                        })
+                    }
+                }
+                score.text = Calculator.estimateScoreText(e)
+            }
+            table.revalidate(); table.repaint(); dlg.pack()
+        }
+        inputs.forEach { f ->
+            f.document.addDocumentListener(object : DocumentListener {
+                override fun insertUpdate(e: DocumentEvent) = update()
+                override fun removeUpdate(e: DocumentEvent) = update()
+                override fun changedUpdate(e: DocumentEvent) = update()
+            })
+        }
+        dlg.contentPane = vbox().apply {
+            isOpaque = true; background = BG
+            border = BorderFactory.createEmptyBorder(12, 14, 12, 14)
+            add(row(label("도감 성장률 (S 100%)", 12f, SUB)))
+            add(grid(listOf("공", "방", "순", "체").zip(inputs), listOf(1.0, 1.0, 1.0, 1.0)))
+            add(Box.createVerticalStrut(10)); add(table)
+            add(Box.createVerticalStrut(8)); add(row(score))
+            add(Box.createVerticalStrut(8))
+            add(row(label("<html><div style='width:270px'>" + esc(Calculator.ESTIMATE_HELP).replace("\n", "<br>") + "</div></html>", 11f, MUTED, allowHtml = true)))
+        }
+        update()
+        dlg.setLocationRelativeTo(this)
         dlg.isVisible = true
     }
 
