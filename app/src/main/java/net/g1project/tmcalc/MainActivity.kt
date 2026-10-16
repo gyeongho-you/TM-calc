@@ -79,7 +79,7 @@ class MainActivity : Activity() {
         root.addView(startBtn, spaced())
         // 도감 관리 · 성장률로 추정 · 설정은 버튼 하나(메뉴)로 모은다
         root.addView(Button(this).apply {
-            text = "메뉴 (도감 관리 · 추정 · 설정)"
+            text = "메뉴 (도감 관리 · 추정 · 성장증폭 설정)"
             setOnClickListener { openMenu() }
         }, spaced())
         root.addView(Button(this).apply {
@@ -90,6 +90,14 @@ class MainActivity : Activity() {
                 postDelayed({ refresh() }, 400)
             }
         }, spaced())
+        // 오른쪽 아래 버전
+        root.addView(TextView(this).apply {
+            text = "v" + runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+            textSize = 12f
+            setTextColor(Color.parseColor("#8A8D93"))
+            gravity = Gravity.END
+            setPadding(0, (16 * dp).toInt(), 0, 0)
+        }, LinearLayout.LayoutParams(-1, -2))
         root.gravity = Gravity.TOP
 
         // Android 15부터는 앱이 상태바 뒤까지 그려진다(edge-to-edge). 모든 버전에서 똑같이 동작하도록
@@ -154,7 +162,7 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 관리 (추가/수정)", "성장률로 추정", "설정")) { _, which ->
+            .setItems(arrayOf("도감 관리 (추가/수정)", "성장률로 추정", "성장증폭 설정")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
@@ -276,7 +284,7 @@ class MainActivity : Activity() {
             addView(ampBox)
         }
         val dlg = AlertDialog.Builder(this)
-            .setTitle("설정")
+            .setTitle("성장증폭 설정")
             .setView(box)
             .setNegativeButton("취소", null)
             .setPositiveButton("저장", null)

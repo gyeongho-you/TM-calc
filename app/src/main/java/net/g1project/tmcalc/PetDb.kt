@@ -94,6 +94,19 @@ class PetDb(val pets: List<Pet>) {
             else -> null
         }
 
+        /**
+         * 도감 값끼리 안 맞는 칸 (계산은 되지만 오타일 가능성이 큰 값). 게임 도감은 만렙S = 초기치 + S성장률 × 149 (±1) 라서
+         * 2 넘게 다르면 알려 준다 (예: 하용이 방어 만렙S 586, 식대로면 485).
+         */
+        fun oddValues(p: Pet): List<String> = (0..3).mapNotNull { i ->
+            val want = p.init[i] + p.sGrowth[i] * (Calculator.MAX_LEVEL - 1)
+            if (Math.abs(p.maxS[i] - want) <= ODD_LIMIT) null
+            else "${STAT_NAMES[i]} 만렙S ${p.maxS[i]} (초기치+성장률×149 = ${Math.round(want)})"
+        }
+
+        private const val ODD_LIMIT = 2.0
+        private val STAT_NAMES = listOf("공격", "방어", "속도", "생명")
+
         private const val MAX_TEXT = 40
         private const val MAX_STAT = 1_000_000
         private const val MAX_GROWTH = 10_000.0

@@ -163,6 +163,10 @@ class MainWindow(
             add(JScrollPane(body.apply { background = BG; isOpaque = true }).apply {
                 border = null; verticalScrollBar.unitIncrement = 16; viewport.background = BG
             }, BorderLayout.CENTER)
+            // 오른쪽 아래 버전
+            add(label("v$VERSION", 10f, MUTED).apply {
+                horizontalAlignment = JLabel.RIGHT; border = BorderFactory.createEmptyBorder(0, 0, 4, 10)
+            }, BorderLayout.SOUTH)
         }
         size = Dimension(420, 760)
         setLocationByPlatform(true)
@@ -299,6 +303,9 @@ class MainWindow(
         lastParsed?.let { lp ->
             if (lp.pet != null && lp.nameScore < 0.99 && pet == lp.pet) warns += "이름을 '${lp.nameRaw}'(으)로 읽어 ${lp.pet!!.name}(으)로 맞췄습니다."
         }
+        pet?.let { p -> PetDb.oddValues(p).takeIf { it.isNotEmpty() }?.let {
+            warns += "도감 값 확인 필요: ${it.joinToString(", ")}"
+        } }
         if (pet != null && atMax) for (i in 0..3) {
             val b = base[i] ?: continue
             if (b != pet.maxS[i]) warns += "${STAT_NAMES[i]}: 화면 기준 도감값 $b ≠ 시트 도감 ${pet.maxS[i]}"
@@ -348,7 +355,8 @@ class MainWindow(
             }
         }
         // 경고에는 화면에서 읽은 글자(OCR)와 도감 이름이 들어가므로 이스케이프
-        warnLbl.text = html(warns.joinToString("<br>") { esc(it) })
+        // 긴 경고는 창 너비 안에서 줄바꿈 (안 그러면 창이 옆으로 늘어나 입력칸이 잘린다)
+        warnLbl.text = if (warns.isEmpty()) "" else "<html><div style='width:290px'>" + warns.joinToString("<br>") { esc(it) } + "</div></html>"
         revalidate(); repaint()
     }
 
@@ -422,9 +430,9 @@ class MainWindow(
     /** 설정 > 내 성장증폭: 종 대비 전투 능력치를 내 캐릭터 기준으로 */
     private fun showGrowthAmpDialog() {
         val msg = "내 성장증폭 (%)\n캐릭터 능력치의 성장증폭을 넣으면 '종 대비 전투 능력치'가 내 캐릭터 기준으로 계산됩니다."
-        val input = JOptionPane.showInputDialog(this, msg, "설정", JOptionPane.PLAIN_MESSAGE, null, null, ampText(growthAmp())) as String? ?: return
+        val input = JOptionPane.showInputDialog(this, msg, "성장증폭 설정", JOptionPane.PLAIN_MESSAGE, null, null, ampText(growthAmp())) as String? ?: return
         val pct = input.trim().removeSuffix("%").trim().toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
-            ?: return JOptionPane.showMessageDialog(this, "0 ~ 100 사이 숫자를 넣어 주세요.", "설정", JOptionPane.WARNING_MESSAGE)
+            ?: return JOptionPane.showMessageDialog(this, "0 ~ 100 사이 숫자를 넣어 주세요.", "성장증폭 설정", JOptionPane.WARNING_MESSAGE)
         prefs.putDouble("growthAmp", pct / 100)
         setStatus("성장증폭 ${ampText(growthAmp())}% 기준으로 계산합니다")
         recompute()
@@ -450,7 +458,7 @@ class MainWindow(
         add(JMenu("설정").apply {
             add(JMenuItem("계산 단축키 바꾸기…").apply { addActionListener { showHotkeyDialog() } })
             // 성장증폭 메뉴는 종 대비 전투 능력치를 켤 때만 보인다
-            val ampItem = JMenuItem("내 성장증폭…").apply { addActionListener { showGrowthAmpDialog() }; isVisible = showCombat() }
+            val ampItem = JMenuItem("성장증폭 설정…").apply { addActionListener { showGrowthAmpDialog() }; isVisible = showCombat() }
             add(javax.swing.JCheckBoxMenuItem("종 대비 전투 능력치 보기", showCombat()).apply {
                 addActionListener {
                     prefs.putBoolean("showCombat", isSelected)
@@ -474,7 +482,7 @@ class MainWindow(
             add(JMenuItem("정보").apply {
                 addActionListener {
                     JOptionPane.showMessageDialog(this@MainWindow,
-                        "테이밍 계산 (PC)\n\n" +
+                        "테이밍 계산 (PC) v$VERSION\n\n" +
                             "· 고른 창(앱플레이어)의 화면만 캡처해서 글자를 읽습니다.\n" +
                             "· 게임/앱플레이어에 입력을 보내거나 메모리를 읽지 않습니다.\n" +
                             "· 글자 인식은 PC 안에서만 하고 인터넷으로 보내지 않습니다.\n" +
@@ -712,6 +720,8 @@ class MainWindow(
 
     companion object {
         const val TITLE = "테이밍 계산 (PC)"
+        /** 설치 버전 (build.gradle.kts 의 appVersion) */
+        val VERSION: String = MainWindow::class.java.getResource("/tmcalc-version.txt")?.readText()?.trim() ?: "개발"
         private val STAT_NAMES = listOf("공", "방", "순", "체")
         private const val MAX_BREAKS = 5
         val UI_FONT = Font("Malgun Gothic", Font.PLAIN, 12)

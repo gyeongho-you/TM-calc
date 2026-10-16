@@ -303,6 +303,9 @@ class OverlayService : Service() {
             if (lp.pet != null && lp.nameScore < 0.99 && pet == lp.pet)
                 warns += "이름을 '${lp.nameRaw}'(으)로 읽어 ${lp.pet.name}(으)로 맞췄습니다."
         }
+        pet?.let { p -> PetDb.oddValues(p).takeIf { it.isNotEmpty() }?.let {
+            warns += "도감 값 확인 필요: ${it.joinToString(", ")}"
+        } }
         // 게임의 "도감 대비"는 그 레벨의 도감값 기준이고 시트 도감은 만렙(150) 기준이라, 150일 때만 비교한다
         if (pet != null && atMax) for (i in 0..3) {
             val b = base[i] ?: continue

@@ -25,5 +25,13 @@ for r in ws.iter_rows(min_row=2, values_only=True):
         "s": [float(x) for x in r[8:12]],   # 성장S등급
         "m": [int(x) for x in r[12:16]],    # 만렙S
     })
+# 시트 오타 (만렙S = 초기치 + S성장률 × 149 와 안 맞는 값)
+FIXES = {("하용이", 1): 485}  # 시트 586
+for p in pets:
+    for i in range(4):
+        if (p["n"], i) in FIXES:
+            p["m"][i] = FIXES[(p["n"], i)]
+        elif abs(p["m"][i] - (p["i"][i] + p["s"][i] * 149)) > 2:
+            print(f"확인 필요: {p['n']} {i}번 만렙S {p['m'][i]} (초기치+성장률×149 = {p['i'][i] + p['s'][i] * 149:.0f})")
 out.write_text(json.dumps(pets, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 print(f"{len(pets)}종 → {out}")

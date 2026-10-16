@@ -147,7 +147,12 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
         }
         buttons.add(button("저장") {
             val err = save(pet, nameE, gradeE, elemE, typeE, initE, sE, mE)
-            if (err != null) warn(dlg, err) else { dlg.dispose(); changed() }
+            if (err != null) warn(dlg, err) else {
+                dlg.dispose(); changed()
+                pets.db.find(nameE.text.trim())?.let { PetDb.oddValues(it) }?.takeIf { it.isNotEmpty() }?.let {
+                    warn(this, "저장했습니다. 다만 값이 서로 맞지 않습니다 (오타인지 확인해 주세요):\n" + it.joinToString("\n"))
+                }
+            }
         })
         buttons.add(button("취소") { dlg.dispose() })
 

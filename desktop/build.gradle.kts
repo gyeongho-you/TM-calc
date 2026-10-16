@@ -26,8 +26,17 @@ val copyPets by tasks.registering(Copy::class) {
     from("../app/src/main/assets") { include("pets.json") }
     into(layout.buildDirectory.dir("shared-res"))
 }
+// 설치 파일 버전 (MSI 라 올리기만 해야 한다). 창 오른쪽 아래에 보이도록 리소스로도 넣는다
+val appVersion = "1.4.14"
+val versionRes = layout.buildDirectory.dir("version-res")
+val writeVersion by tasks.registering {
+    inputs.property("v", appVersion)
+    outputs.dir(versionRes)
+    doLast { versionRes.get().file("tmcalc-version.txt").asFile.apply { parentFile.mkdirs() }.writeText(appVersion) }
+}
+sourceSets { main { resources.srcDir(versionRes) } }
 tasks.named("compileKotlin") { dependsOn(copyShared) }
-tasks.named("processResources") { dependsOn(copyPets) }
+tasks.named("processResources") { dependsOn(copyPets, writeVersion) }
 
 // OCR 모델 (PaddleOCR PP-OCRv5, RapidOCR 배포본). 용량이 커서 레포에 넣지 않고 받아서 SHA-256 으로 확인한다
 val models = mapOf(
@@ -96,7 +105,6 @@ val prepareApp by tasks.registering(Sync::class) {
     from(modelDir) { into("models") }
     into(appInput)
 }
-val appVersion = "1.4.13"
 fun jpackageArgs(type: String, dest: File) = listOf(
     File(System.getProperty("java.home"), "bin/jpackage").path,
     "--type", type, "--name", "TM-calc", "--app-version", appVersion,

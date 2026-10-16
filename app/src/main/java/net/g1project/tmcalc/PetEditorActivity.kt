@@ -206,7 +206,9 @@ class PetEditorActivity : Activity() {
                 val p = Pet(n, gradeE.text.toString().trim(), elemE.text.toString().trim(), typeE.text.toString().trim(), init, s, m)
                 PetDb.check(p)?.let { return@setOnClickListener toast(it) }
                 PetStore.put(this, p, oldName = pet?.name)
-                toast("${p.name} 저장했습니다.")
+                val odd = PetDb.oddValues(p)
+                if (odd.isEmpty()) toast("${p.name} 저장했습니다.")
+                else Toast.makeText(this, "${p.name} 저장했습니다. 값 확인 필요: ${odd.joinToString(", ")}", Toast.LENGTH_LONG).show()
                 dlg.dismiss()
                 refresh()
             }

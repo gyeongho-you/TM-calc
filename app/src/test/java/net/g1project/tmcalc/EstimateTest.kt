@@ -26,8 +26,8 @@ class EstimateTest {
             }
         }
         assertTrue("초기치 $initHit/$cells", initHit >= cells * 0.9)
-        // 하용이 방어 586 은 도감 쪽 오타로 보임 (규칙대로면 485 근처)
-        assertTrue(far.joinToString(), far.size <= 2)
+        // 헤르츠 방어: 초기치를 15 로 추정했지만 실제 16 이라 만렙S 가 2 차이
+        assertTrue(far.joinToString(), far.size <= 1)
     }
 
     @Test
@@ -37,6 +37,15 @@ class EstimateTest {
         assertArrayEquals(intArrayOf(13, 8, 15, 103), e.initHi)
         assertArrayEquals(intArrayOf(486, 295, 574, 3849), e.maxLo)
         assertEquals(1741.0, e.score, 1.0)
+    }
+
+    /** 도감 값끼리 안 맞으면 경고 (예전 하용이 방어 만렙S 586, 식대로면 485) */
+    @Test
+    fun oddValues() {
+        assertTrue(db.pets.filter { PetDb.oddValues(it).isNotEmpty() }.map { it.name }.toString(), db.pets.all { PetDb.oddValues(it).isEmpty() })
+        val p = db.find("하용이")!!
+        val bad = Pet(p.name, p.grade, p.element, p.type, p.init, p.sGrowth, intArrayOf(497, 586, 299, 4409))
+        assertEquals(listOf("방어 만렙S 586 (초기치+성장률×149 = 485)"), PetDb.oddValues(bad))
     }
 
     @Test
