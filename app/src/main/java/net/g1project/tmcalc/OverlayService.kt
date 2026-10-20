@@ -402,12 +402,13 @@ class OverlayService : Service() {
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
             val combat = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
-            val cells = listOf(when { k == breaks -> "${k}강\n현재"; k < breaks -> "${k}강\n이전"; else -> "${k}강" }) +
+            val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 // 현재 강은 위의 총 성장률(화면 인게임 값으로 맞춘 값)과 같게
                 if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}"
-            val line = row(cells, small = true)
+            // 현재 강은 굵게, 이전 강화는 연하게 (이후 강화는 그대로)
+            val line = row(cells, small = true, bold = k == breaks).apply { if (k < breaks) alpha = 0.45f }
             enhanceTable.addView(line)
             // 줄을 누르면 그 강의 능력치별 전투가 아래에 펼쳐진다
             if (combat != null) {
@@ -832,7 +833,7 @@ class OverlayService : Service() {
         setPadding(0, dp(10), 0, dp(4))
     }
 
-    private fun row(cells: List<String>, header: Boolean = false, small: Boolean = false) = LinearLayout(ui).apply {
+    private fun row(cells: List<String>, header: Boolean = false, small: Boolean = false, bold: Boolean = false) = LinearLayout(ui).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(2), 0, dp(2))
         cells.forEachIndexed { i, c ->
@@ -841,7 +842,8 @@ class OverlayService : Service() {
                 textSize = when { small -> 10.5f; header -> 11f; else -> 13f }
                 gravity = if (i == 0) Gravity.START else Gravity.CENTER
                 setTextColor(if (header) Color.parseColor("#9A9DA3") else gradeColor(c))
-                if (i == 0 && !header) setTextColor(Color.parseColor("#C9CBD0"))
+                if (i == 0 && !header) setTextColor(Color.parseColor(if (bold) "#FFFFFF" else "#C9CBD0"))
+                if (bold) typeface = Typeface.DEFAULT_BOLD
             }, LinearLayout.LayoutParams(0, -2, if (i == 0) 0.8f else 1f))
         }
     }

@@ -389,6 +389,7 @@ class MainWindow(
         }))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
         val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
+        val styles = mutableListOf<RowStyle>()
         // 현재 강보다 아래(0강~): 강마다 도감값의 1% 를 빼면 된다 (위로 갈 때와 같은 정확도). 누르면 펼치고 접는다
         val lower = breaks > 0 && prefs.getBoolean("showLowerBreaks", false)
         if (breaks > 0) enhance.add(row(label(if (lower) "▼ 이전 강화 접기" else "▶ 이전 강화 보기", 12f, Color(0x4FC3F7)).apply {
@@ -404,17 +405,21 @@ class MainWindow(
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
-            rows += listOf(when { k == breaks -> "${k}강\n현재"; k < breaks -> "${k}강\n이전"; else -> "${k}강" }) + (0..3).map { "${s[it]}\n${g[it]}" } +
+            rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
             rowBreak += k
+            // 현재 강은 굵게, 이전 강화는 연하게 (이후 강화는 그대로)
+            val style = when { k == breaks -> RowStyle.BOLD; k < breaks -> RowStyle.DIM; else -> RowStyle.NORMAL }
+            styles += style
             // 누른 줄 아래에 그 강의 능력치별 전투 (위 공·방·순·체 칸에 맞춰 숫자만)
             if (c != null && expandedBreak == k) {
                 rows += listOf("전투") + (0..3).map { combatPct(c.pct[it], c.approx) } + listOf("", "")
                 rowBreak += null
+                styles += if (style == RowStyle.DIM) RowStyle.DIM else RowStyle.NORMAL
             }
         }
-        enhance.add(table(rows, small = true) { r ->
+        enhance.add(table(rows, small = true, styles = styles) { r ->
             val k = rowBreak.getOrNull(r) ?: return@table
             if (showCombat()) { expandedBreak = if (expandedBreak == k) null else k; recompute() }
         })
@@ -692,18 +697,26 @@ class MainWindow(
 
     /** 표: 셀 안의 "\n" 뒤는 등급으로 보고 색을 입힌다 */
     /** [onRowClick] 가 있으면 데이터 줄(머리줄 제외, 0부터)을 누를 때 불린다 */
-    private fun table(rows: List<List<String>>, small: Boolean = false, onRowClick: ((Int) -> Unit)? = null) =
+    private enum class RowStyle { NORMAL, BOLD, DIM }
+
+    /** [styles]: 데이터 줄마다 굵게(현재 강) / 연하게(이전 강화) */
+    private fun table(rows: List<List<String>>, small: Boolean = false, styles: List<RowStyle> = emptyList(), onRowClick: ((Int) -> Unit)? = null) =
         FitPanel(GridLayout(rows.size, rows[0].size, 2, 2)).apply {
         isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
         rows.forEachIndexed { r, cells ->
+            val style = if (r == 0) RowStyle.NORMAL else styles.getOrNull(r - 1) ?: RowStyle.NORMAL
+            // 연하게: 배경색 쪽으로 섞는다
+            fun tone(col: Color) = if (style != RowStyle.DIM) col else Color(
+                (col.red * 0.45 + BG.red * 0.55).toInt(), (col.green * 0.45 + BG.green * 0.55).toInt(), (col.blue * 0.45 + BG.blue * 0.55).toInt())
             cells.forEachIndexed { c, v ->
                 val header = r == 0
                 val parts = v.split("\n")
-                val text = if (parts.size == 2) html("${esc(parts[0])}<br><font color='${hex(gradeColor(parts[1]))}'>${esc(parts[1])}</font>")
+                val text = if (parts.size == 2) html("${esc(parts[0])}<br><font color='${hex(tone(gradeColor(parts[1])))}'>${esc(parts[1])}</font>")
                     else v
-                add(label(text, if (small) 11f else 13f, when {
-                    header -> MUTED; c == 0 -> SUB; parts.size == 1 -> gradeColor(v); else -> Color.WHITE
-                }, allowHtml = parts.size == 2).apply {
+                add(label(text, if (small) 11f else 13f, tone(when {
+                    header -> MUTED; c == 0 -> if (style == RowStyle.BOLD) Color.WHITE else SUB; parts.size == 1 -> gradeColor(v); else -> Color.WHITE
+                }), allowHtml = parts.size == 2).apply {
+                    if (style == RowStyle.BOLD) font = font.deriveFont(Font.BOLD)
                     horizontalAlignment = if (c == 0) JLabel.LEFT else JLabel.CENTER
                     if (onRowClick != null && !header) {
                         cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)

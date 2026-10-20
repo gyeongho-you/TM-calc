@@ -53,7 +53,7 @@ class LowerBreaksUiTest {
             File("build/ui").mkdirs(); ImageIO.write(img, "png", File("build/ui/$name.png"))
         }
         val before = labels()
-        assertTrue(before.toString(), before.contains("▶ 이전 강화 보기") && before.none { it.startsWith("<html>0강") })
+        assertTrue(before.toString(), before.contains("▶ 이전 강화 보기") && !before.contains("0강"))
         SwingUtilities.invokeAndWait {
             fun find(c: Container): JLabel? { for (x in c.components) { if (x is JLabel && x.text == "▶ 이전 강화 보기") return x; if (x is Container) find(x)?.let { return it } }; return null }
             val l = find(win.contentPane as Container)!!
@@ -62,7 +62,7 @@ class LowerBreaksUiTest {
         Thread.sleep(500)
         val after = labels(); snap("lower-open")
         assertTrue(prefs.getBoolean("showLowerBreaks", false))
-        assertTrue(after.toString(), after.contains("▼ 이전 강화 접기") && after.any { it.startsWith("<html>0강") } && after.any { it.startsWith("<html>2강") })
+        assertTrue(after.toString(), after.contains("▼ 이전 강화 접기") && after.contains("0강") && after.contains("2강") && after.none { it.contains("이전<") })
         SwingUtilities.invokeAndWait { win.dispose() }
         prefs.removeNode()
     }
