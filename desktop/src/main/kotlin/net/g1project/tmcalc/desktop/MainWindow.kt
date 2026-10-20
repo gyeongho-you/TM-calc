@@ -390,7 +390,7 @@ class MainWindow(
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
         val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, breaks, k, worst)
+            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)

@@ -387,7 +387,7 @@ class OverlayService : Service() {
         if (breaks < MAX_BREAKS) enhanceTable.addView(worstToggle(worst))
         enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"), header = true))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, breaks, k, worst)
+            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)

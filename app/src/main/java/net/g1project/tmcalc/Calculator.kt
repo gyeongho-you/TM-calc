@@ -137,7 +137,7 @@ object Calculator {
         val nextGrowthTotal = curGradeTotal?.let { round(it * 1.01, 1) }
 
         val breakRows = (1..5).map { n ->
-            val s = statsAtBreaks(cur, input.breaks, input.breaks + n)
+            val s = statsAtBreaks(cur, input.base, input.breaks, input.breaks + n)
             val g = DoubleArray(4) { i -> round((s[i] - p.init[i]) / lv1, 2) }
             BreakRow(n, s, g, statGrades(s, input.base), totalOf(s))
         }
@@ -166,18 +166,20 @@ object Calculator {
     }
 
     /**
-     * 지금 [breaks]강인 소환수를 [target]강까지 했을 때 능력치.
-     * 게임 강화 화면(5마리 20칸)과 맞춘 식: 강화 1번마다 강화 안 한 능력치의 1%.
-     *   목표 = ROUND(현재 ÷ (1 + 1%×현재강) × (1 + 1%×목표강))
-     * 원래 시트는 0.95% 에 뺄셈 근사(현재 - 현재×0.95%×현재강)라 1~3 씩 낮게 나왔다.
-     * 게임은 소수까지 들고 있고 화면엔 정수만 보여서, 이 식도 게임과 1 차이 날 수 있다 (20칸 중 13칸 정확).
+     * 지금 [breaks]강인 소환수를 [target]강까지 했을 때 능력치. [base] 는 도감값(150레벨 S 100%).
+     * 게임은 강화 1번마다 도감값의 1% 를 더한다 (그래서 총 성장 점수가 강마다 딱 1%씩 오른다):
+     *   목표 = ROUND(현재 + 도감값 × 1% × (목표강 - 현재강))
+     * 게임 강화 화면 32칸(0→4강, 0→5강 포함)이 모두 [worst]..최고 범위 안. 예전 식(현재 능력치의 1%)은
+     * 여러 강을 한 번에 보면 높게 나왔다 (조세르 체 3751 → 5강 예상 3938, 실제 3932).
+     * [worst]: 화면 능력치는 반올림된 값이라 게임 속 값은 0.5 낮을 수 있다 → 그 가장 낮은 경우.
      */
-    fun statsAtBreaks(cur: IntArray, breaks: Int, target: Int, worst: Boolean = false): IntArray = IntArray(4) { i ->
-        // 최저치: 화면의 현재 능력치는 반올림된 값이라 실제(소수)는 현재 - 0.5 일 수도 있다. 그 가장 낮은 경우로 계산하면
-        // 게임 결과가 이보다 낮게 나오지 않는다 (게임 강화 20칸 모두 이 값 이상)
-        val c = if (worst) cur[i] - 0.5 else cur[i].toDouble()
+    fun statsAtBreaks(cur: IntArray, base: IntArray, breaks: Int, target: Int, worst: Boolean = false): IntArray = IntArray(4) { i ->
         if (target == breaks) cur[i]
-        else round(c / (1 + BREAK_RATE * breaks) * (1 + BREAK_RATE * target), 0).toInt()
+        else {
+            val c = if (worst) cur[i] - 0.5 else cur[i].toDouble()
+            val b = if (worst) base[i] - 0.5 else base[i].toDouble()
+            round(c + b * BREAK_RATE * (target - breaks), 0).toInt()
+        }
     }
 
     /** 게임의 "총 능력치 점수" = 공 + 방 + 순 + 체/10 */

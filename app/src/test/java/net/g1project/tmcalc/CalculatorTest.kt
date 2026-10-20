@@ -33,14 +33,14 @@ class CalculatorTest {
         assertEquals(1.329545455, r.toNextGrowth!!, 1e-8)
         assertEquals(0.6724137931, r.toNextGrade!!, 1e-8)
 
-        // 강화 표는 시트(0.95%) 대신 게임 강화 화면에 맞춘 1% 식 (GameEnhanceTest 참고)
+        // 강화 표는 시트(0.95%) 대신 게임 강화 화면에 맞춘 도감값 1% 식 (GameEnhanceTest 참고)
         val b = r.breakRows
-        assertArrayEquals(intArrayOf(610, 616, 622, 628, 634), b.map { it.stats[0] }.toIntArray())
+        assertArrayEquals(intArrayOf(610, 616, 622, 627, 633), b.map { it.stats[0] }.toIntArray())
         assertArrayEquals(intArrayOf(4523, 4568, 4612, 4657, 4702), b.map { it.stats[3] }.toIntArray())
         assertArrayEquals(doubleArrayOf(2.67, 2.7, 2.72, 2.75, 2.78), b.map { it.growth[1] }.toDoubleArray(), 1e-9)
-        assertEquals(listOf("S++", "SS", "SS", "SS+", "SS+"), b.map { it.grades[0] })
+        assertEquals(listOf("S++", "SS", "SS", "SS", "SS+"), b.map { it.grades[0] })
         assertEquals(listOf("S", "S+", "S+", "S++", "S++"), b.map { it.grades[3] })
-        assertArrayEquals(doubleArrayOf(1798.3, 1816.8, 1834.2, 1851.7, 1869.2), b.map { it.total }.toDoubleArray(), 1e-9)
+        assertArrayEquals(doubleArrayOf(1798.3, 1815.8, 1833.2, 1850.7, 1868.2), b.map { it.total }.toDoubleArray(), 1e-9)
     }
 
     /** 시트에 첨부된 게임 캡처: 화혼랑(+4) Lv.150, 게임 표기 105% / 1,860.8 / SS++ S++ SS SS */
@@ -144,12 +144,12 @@ class CalculatorTest {
         assertEquals(1743.4, Calculator.abilityScore(db.find("화혼랑")!!.maxS), 1e-9)
 
         val cur = IntArray(4) { pet.maxS[it] + intArrayOf(18, 13, 10, -2)[it] }
-        assertArrayEquals(intArrayOf(622, 416, 335, 4612), Calculator.statsAtBreaks(cur, 0, 3)) // 시트는 621/416/334/4606
-        assertArrayEquals(cur, Calculator.statsAtBreaks(cur, 2, 2))
+        assertArrayEquals(intArrayOf(622, 416, 334, 4612), Calculator.statsAtBreaks(cur, pet.maxS, 0, 3)) // 시트는 621/416/334/4606
+        assertArrayEquals(cur, Calculator.statsAtBreaks(cur, pet.maxS, 2, 2))
 
         // 등급 = 능력치 ÷ 도감값 (이 예시에서는 시트 B20:B23, D43:D46 과 같은 결과)
         assertEquals(listOf("S++", "S++", "S++", "S"), Calculator.statGrades(cur, pet.maxS))
-        assertEquals(listOf("SS", "SS", "SS", "S+"), Calculator.statGrades(Calculator.statsAtBreaks(cur, 0, 3), pet.maxS))
+        assertEquals(listOf("SS", "SS", "SS", "S+"), Calculator.statGrades(Calculator.statsAtBreaks(cur, pet.maxS, 0, 3), pet.maxS))
     }
 
     @Test

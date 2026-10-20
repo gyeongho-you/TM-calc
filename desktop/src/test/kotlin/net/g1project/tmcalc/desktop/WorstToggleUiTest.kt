@@ -60,9 +60,9 @@ class WorstToggleUiTest {
         val after = labels(); snap("worst-on")
         assertTrue(prefs.getBoolean("worstBreaks", false))
         assertTrue(after.any { it.contains("최저치)") })
-        // 5강 줄의 공격: 예상 559/1.00*1.05=587 → 최저 (558.5*1.05=586.4) 586
-        assertTrue(before.toString(), before.any { it.startsWith("<html>587") })
-        assertTrue(after.toString(), after.any { it.startsWith("<html>586") })
+        // 5강 줄의 체: 예상 3981 + 4237×5% = 4192.85 → 4193, 최저 3980.5 + 4236.5×5% = 4192.3 → 4192
+        assertTrue(before.toString(), before.any { it.startsWith("<html>4193") })
+        assertTrue(after.toString(), after.any { it.startsWith("<html>4192") })
         SwingUtilities.invokeAndWait { win.dispose() }
         prefs.removeNode()
     }
