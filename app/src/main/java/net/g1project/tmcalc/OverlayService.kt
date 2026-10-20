@@ -382,10 +382,12 @@ class OverlayService : Service() {
             enhanceTable.addView(note("강화는 ${MAX_LEVEL}레벨부터라 강화 예상은 ${MAX_LEVEL}레벨일 때만 표시됩니다."))
             return
         }
-        enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
+        val worst = AppPrefs.worstBreaks(this)
+        enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, " + (if (worst) "최저치)" else "예상)")))
+        if (breaks < MAX_BREAKS) enhanceTable.addView(worstToggle(worst))
         enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"), header = true))
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, breaks, k)
+            val s = Calculator.statsAtBreaks(cur, breaks, k, worst)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
@@ -407,8 +409,24 @@ class OverlayService : Service() {
             }
         }
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
-        else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서)"))
+        else if (worst) enhanceTable.addView(note("최저치: 게임 속 소수점을 모두 낮게 잡은 값입니다. 실제 강화 결과는 이보다 낮게 나오지 않습니다."))
+        else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서) 위 '최저치로 보기'를 켜면 가장 낮은 경우로 보여 줍니다."))
         if (showCombat()) enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다. 줄을 누르면 능력치별 전투가 나옵니다."))
+    }
+
+    /** 강화별 표 위의 '최저치로 보기' 켜기/끄기 (누를 때마다 바뀌고 기억한다) */
+    private fun worstToggle(on: Boolean) = TextView(ui).apply {
+        val blue = Color.parseColor("#4FC3F7")
+        text = (if (on) "■ " else "□ ") + "최저치로 보기  " + (if (on) "켜짐" else "꺼짐")
+        textSize = 13f
+        setTextColor(if (on) blue else Color.parseColor("#C9CBD0"))
+        setPadding(dp(10), dp(6), dp(10), dp(6))
+        background = GradientDrawable().apply {
+            cornerRadius = dp(14).toFloat()
+            setStroke(dp(1), if (on) blue else Color.parseColor("#6A6D73"))
+        }
+        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(4) }
+        setOnClickListener { AppPrefs.setWorstBreaks(this@OverlayService, !on); recompute() }
     }
 
     /** 설정에서 끄면 종 대비 전투 능력치를 아예 보여 주지 않는다 */

@@ -172,9 +172,12 @@ object Calculator {
      * 원래 시트는 0.95% 에 뺄셈 근사(현재 - 현재×0.95%×현재강)라 1~3 씩 낮게 나왔다.
      * 게임은 소수까지 들고 있고 화면엔 정수만 보여서, 이 식도 게임과 1 차이 날 수 있다 (20칸 중 13칸 정확).
      */
-    fun statsAtBreaks(cur: IntArray, breaks: Int, target: Int): IntArray = IntArray(4) { i ->
+    fun statsAtBreaks(cur: IntArray, breaks: Int, target: Int, worst: Boolean = false): IntArray = IntArray(4) { i ->
+        // 최저치: 화면의 현재 능력치는 반올림된 값이라 실제(소수)는 현재 - 0.5 일 수도 있다. 그 가장 낮은 경우로 계산하면
+        // 게임 결과가 이보다 낮게 나오지 않는다 (게임 강화 20칸 모두 이 값 이상)
+        val c = if (worst) cur[i] - 0.5 else cur[i].toDouble()
         if (target == breaks) cur[i]
-        else round(cur[i] / (1 + BREAK_RATE * breaks) * (1 + BREAK_RATE * target), 0).toInt()
+        else round(c / (1 + BREAK_RATE * breaks) * (1 + BREAK_RATE * target), 0).toInt()
     }
 
     /** 게임의 "총 능력치 점수" = 공 + 방 + 순 + 체/10 */

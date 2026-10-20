@@ -380,11 +380,17 @@ class MainWindow(
         if (level != Calculator.MAX_LEVEL) {
             enhance.add(section("강화별")); enhance.add(note("강화 예상은 ${Calculator.MAX_LEVEL}레벨일 때만 표시됩니다.")); return
         }
-        enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, 예상)"))
+        val worst = prefs.getBoolean("worstBreaks", false)
+        enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, " + (if (worst) "최저치)" else "예상)")))
+        // 최저치로 보기: 게임 속 소수점을 모두 낮게 잡은 경우 (실제 강화 결과는 이보다 낮지 않음)
+        if (breaks < MAX_BREAKS) enhance.add(row(JCheckBox("최저치로 보기", worst).apply {
+            isOpaque = false; font = UI_FONT.deriveFont(12f); foreground = if (worst) Color(0x4FC3F7) else SUB
+            addActionListener { prefs.putBoolean("worstBreaks", isSelected); recompute() }
+        }))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
         val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
         for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, breaks, k)
+            val s = Calculator.statsAtBreaks(cur, breaks, k, worst)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
@@ -402,7 +408,11 @@ class MainWindow(
             val k = rowBreak.getOrNull(r) ?: return@table
             if (showCombat()) { expandedBreak = if (expandedBreak == k) null else k; recompute() }
         })
-        enhance.add(note(if (breaks >= MAX_BREAKS) "이미 최대 강화(+${MAX_BREAKS}강)입니다." else "강화 수치는 게임과 1 정도 차이 날 수 있어요."))
+        enhance.add(note(when {
+            breaks >= MAX_BREAKS -> "이미 최대 강화(+${MAX_BREAKS}강)입니다."
+            worst -> "최저치: 소수점을 모두 낮게 잡은 값 (실제는 이보다 낮지 않음)"
+            else -> "강화 수치는 게임과 1 정도 차이 날 수 있어요."
+        }))
         // 한 줄이 길면 창이 옆으로 밀리므로 짧게 나눈다
         if (showCombat()) {
             enhance.add(note("전투 = 같은 종 도감(S 100%)보다 전투 능력치가 몇 % 높은지"))

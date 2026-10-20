@@ -27,7 +27,7 @@ val copyPets by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("shared-res"))
 }
 // 설치 파일 버전 (MSI 라 올리기만 해야 한다). 창 오른쪽 아래에 보이도록 리소스로도 넣는다
-val appVersion = "1.4.14"
+val appVersion = "1.4.15"
 val versionRes = layout.buildDirectory.dir("version-res")
 val writeVersion by tasks.registering {
     inputs.property("v", appVersion)

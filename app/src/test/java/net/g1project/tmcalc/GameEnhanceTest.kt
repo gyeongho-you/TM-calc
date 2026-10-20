@@ -46,6 +46,21 @@ class GameEnhanceTest {
         assertEquals(13, exact)
     }
 
+    /** 최저치(현재 - 0.5 로 계산): 게임 결과는 항상 이 값 이상이고, 보통 예상과 같거나 1 낮다 */
+    @Test
+    fun worstIsNeverAboveGame() {
+        for (c in cases) {
+            val lo = Calculator.statsAtBreaks(c.before, c.from, c.to, worst = true)
+            val mid = Calculator.statsAtBreaks(c.before, c.from, c.to)
+            for (i in 0..3) {
+                assertTrue("${c.name} stat$i: 최저 ${lo[i]} 게임 ${c.after[i]}", lo[i] <= c.after[i])
+                assertTrue(mid[i] - lo[i] in 0..1)
+            }
+        }
+        // 현재 강은 그대로
+        assertEquals(615, Calculator.statsAtBreaks(intArrayOf(615, 345, 339, 4396), 0, 0, worst = true)[0])
+    }
+
     /** 등급 = 능력치 ÷ 도감값: 강화 전·후 40칸 모두 게임 표시와 같다 */
     @Test
     fun gradesMatchGame() {
