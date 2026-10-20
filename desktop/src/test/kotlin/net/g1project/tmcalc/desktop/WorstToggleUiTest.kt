@@ -15,7 +15,7 @@ import javax.swing.JLabel
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
-/** 강화별 표의 '최저치로 보기' 를 켜면 예상 능력치가 같거나 1 낮아지고, 설정에 기억된다 */
+/** 강화별 표의 '최저치로 보기' 를 켜면 예상 능력치가 같거나 1 낮아지고, 새로 계산하면 다시 꺼진다 */
 class WorstToggleUiTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -58,7 +58,8 @@ class WorstToggleUiTest {
         SwingUtilities.invokeAndWait { find(win.contentPane as Container); box!!.doClick() }
         Thread.sleep(500)
         val after = labels(); snap("worst-on")
-        assertTrue(prefs.getBoolean("worstBreaks", false))
+        // 기억하지 않는다 (새로 계산하면 다시 꺼짐)
+        assertTrue(prefs.keys().none { it == "worstBreaks" })
         assertTrue(after.any { it.contains("최저치)") })
         // 5강 줄의 체: 예상 3981 + 4237×5% = 4192.85 → 4193, 최저 3980.5 + 4236.5×5% = 4192.3 → 4192
         assertTrue(before.toString(), before.any { it.startsWith("<html>4193") })

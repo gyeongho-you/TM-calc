@@ -86,6 +86,9 @@ class OverlayService : Service() {
     private var filling = false
     private var busy = false
     private var lastParsed: ParsedScreen? = null
+    /** 강화별 표의 '최저치로 보기' / '이전 강화 보기'. 기억하지 않고 새로 계산할 때마다 꺼진 상태로 */
+    private var worstOn = false
+    private var lowerOn = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -196,6 +199,7 @@ class OverlayService : Service() {
                 }
                 val parsed = OcrParser.parse(lines, db)
                 lastParsed = parsed
+                worstOn = false; lowerOn = false
                 // 괄호 숫자의 +/- 는 OCR이 놓치기 쉬우므로 글자색(빨강/초록)으로 한 번 더 확인
                 val deltas = Array(4) { i ->
                     val d = parsed.deltas[i] ?: return@Array null
@@ -382,18 +386,18 @@ class OverlayService : Service() {
             enhanceTable.addView(note("강화는 ${MAX_LEVEL}레벨부터라 강화 예상은 ${MAX_LEVEL}레벨일 때만 표시됩니다."))
             return
         }
-        val worst = AppPrefs.worstBreaks(this)
+        val worst = worstOn
         enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, " + (if (worst) "최저치)" else "예상)")))
         if (breaks < MAX_BREAKS) enhanceTable.addView(worstToggle(worst))
         enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"), header = true))
         // 현재 강보다 아래(0강~): 강마다 도감값의 1% 를 빼면 된다 (위로 갈 때와 같은 정확도). 누르면 펼치고 접는다
-        val lower = breaks > 0 && AppPrefs.showLowerBreaks(this)
+        val lower = breaks > 0 && lowerOn
         if (breaks > 0) enhanceTable.addView(TextView(ui).apply {
             text = if (lower) "▼ 이전 강화 접기" else "▶ 이전 강화 보기"
             textSize = 12f
             setTextColor(Color.parseColor("#4FC3F7"))
             setPadding(0, dp(4), 0, dp(4))
-            setOnClickListener { AppPrefs.setShowLowerBreaks(this@OverlayService, !lower); recompute() }
+            setOnClickListener { lowerOn = !lower; recompute() }
         })
         for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
             // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
@@ -425,7 +429,7 @@ class OverlayService : Service() {
         if (showCombat()) enhanceTable.addView(note("전투 = 종 대비 전투 능력치: 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지. 총 능력치 점수가 높을수록 크게 오릅니다. 줄을 누르면 능력치별 전투가 나옵니다."))
     }
 
-    /** 강화별 표 위의 '최저치로 보기' 켜기/끄기 (누를 때마다 바뀌고 기억한다) */
+    /** 강화별 표 위의 '최저치로 보기' 켜기/끄기 (새로 계산하면 다시 꺼짐) */
     private fun worstToggle(on: Boolean) = TextView(ui).apply {
         val blue = Color.parseColor("#4FC3F7")
         text = (if (on) "■ " else "□ ") + "최저치로 보기  " + (if (on) "켜짐" else "꺼짐")
@@ -437,7 +441,7 @@ class OverlayService : Service() {
             setStroke(dp(1), if (on) blue else Color.parseColor("#6A6D73"))
         }
         layoutParams = LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(4) }
-        setOnClickListener { AppPrefs.setWorstBreaks(this@OverlayService, !on); recompute() }
+        setOnClickListener { worstOn = !on; recompute() }
     }
 
     /** 설정에서 끄면 종 대비 전투 능력치를 아예 보여 주지 않는다 */

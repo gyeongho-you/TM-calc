@@ -29,26 +29,6 @@ object AppPrefs {
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_COMBAT, on).apply()
     }
 
-    private const val WORST_BREAKS = "worstBreaks"
-
-    /** 강화별 표를 최저치(소수점을 모두 낮게 잡은 경우)로 볼지 (기본 꺼짐) */
-    fun worstBreaks(c: Context): Boolean =
-        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(WORST_BREAKS, false)
-
-    fun setWorstBreaks(c: Context, on: Boolean) {
-        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(WORST_BREAKS, on).apply()
-    }
-
-    private const val SHOW_LOWER = "showLowerBreaks"
-
-    /** 강화별 표에서 현재 강보다 아래(0강~) 줄을 펼쳐 둘지 (기본 접힘) */
-    fun showLowerBreaks(c: Context): Boolean =
-        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(SHOW_LOWER, false)
-
-    fun setShowLowerBreaks(c: Context, on: Boolean) {
-        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_LOWER, on).apply()
-    }
-
     /** 화면에 보일 % 글자 (8.0 → "8", 10.4 → "10.4") */
     fun pctText(amp: Double): String {
         val p = Math.round(amp * 1000) / 10.0

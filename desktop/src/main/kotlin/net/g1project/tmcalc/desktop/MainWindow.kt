@@ -96,6 +96,9 @@ class MainWindow(
     /** 강화 표에서 눌러서 능력치별 전투를 펼친 강 */
     private var expandedBreak: Int? = null
     private var lastParsed: ParsedScreen? = null
+    /** 강화별 표의 '최저치로 보기' / '이전 강화 보기'. 기억하지 않고 새로 계산할 때마다 꺼진 상태로 */
+    private var worstOn = false
+    private var lowerOn = false
 
     init {
         defaultCloseOperation = EXIT_ON_CLOSE
@@ -223,6 +226,7 @@ class MainWindow(
                 scanBtn.isEnabled = true
                 result.onSuccess { (p, d) ->
                     lastParsed = p
+                    worstOn = false; lowerOn = false
                     fill(p, d)
                     setStatus(if (p.pet == null && p.stats.all { it == null }) "소환수 정보 화면을 찾지 못했습니다."
                         else "완료 (${System.currentTimeMillis() - t0} ms)")
@@ -380,23 +384,23 @@ class MainWindow(
         if (level != Calculator.MAX_LEVEL) {
             enhance.add(section("강화별")); enhance.add(note("강화 예상은 ${Calculator.MAX_LEVEL}레벨일 때만 표시됩니다.")); return
         }
-        val worst = prefs.getBoolean("worstBreaks", false)
+        val worst = worstOn
         enhance.add(section("강화별 (최대 +${MAX_BREAKS}강, " + (if (worst) "최저치)" else "예상)")))
         // 최저치로 보기: 게임 속 소수점을 모두 낮게 잡은 경우 (실제 강화 결과는 이보다 낮지 않음)
         if (breaks < MAX_BREAKS) enhance.add(row(JCheckBox("최저치로 보기", worst).apply {
             isOpaque = false; font = UI_FONT.deriveFont(12f); foreground = if (worst) Color(0x4FC3F7) else SUB
-            addActionListener { prefs.putBoolean("worstBreaks", isSelected); recompute() }
+            addActionListener { worstOn = isSelected; recompute() }
         }))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
         val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
         val styles = mutableListOf<RowStyle>()
         // 현재 강보다 아래(0강~): 강마다 도감값의 1% 를 빼면 된다 (위로 갈 때와 같은 정확도). 누르면 펼치고 접는다
-        val lower = breaks > 0 && prefs.getBoolean("showLowerBreaks", false)
+        val lower = breaks > 0 && lowerOn
         if (breaks > 0) enhance.add(row(label(if (lower) "▼ 이전 강화 접기" else "▶ 이전 강화 보기", 12f, Color(0x4FC3F7)).apply {
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
             border = BorderFactory.createEmptyBorder(2, 0, 4, 0)
             addMouseListener(object : java.awt.event.MouseAdapter() {
-                override fun mouseClicked(e: java.awt.event.MouseEvent) { prefs.putBoolean("showLowerBreaks", !lower); recompute() }
+                override fun mouseClicked(e: java.awt.event.MouseEvent) { lowerOn = !lower; recompute() }
             })
         }))
         for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {

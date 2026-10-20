@@ -15,7 +15,7 @@ import javax.swing.JLabel
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
-/** 3강짜리에서 '이전 강화 보기' 를 누르면 0~2강 줄이 펼쳐지고, 설정에 기억된다 */
+/** 3강짜리에서 '이전 강화 보기' 를 누르면 0~2강 줄이 펼쳐지고, 새로 계산하면 다시 꺼진다 */
 class LowerBreaksUiTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -61,7 +61,8 @@ class LowerBreaksUiTest {
         }
         Thread.sleep(500)
         val after = labels(); snap("lower-open")
-        assertTrue(prefs.getBoolean("showLowerBreaks", false))
+        // 기억하지 않는다 (새로 계산하면 다시 꺼짐)
+        assertTrue(prefs.keys().none { it == "showLowerBreaks" })
         assertTrue(after.toString(), after.contains("▼ 이전 강화 접기") && after.contains("0강") && after.contains("2강") && after.none { it.contains("이전<") })
         SwingUtilities.invokeAndWait { win.dispose() }
         prefs.removeNode()
