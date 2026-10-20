@@ -33,15 +33,21 @@ class GameEnhanceTest {
         // 2026-10-20 조세르 다른 개체: 강화 화면 4→5강, 그리고 0강 때 계산 결과와 실제 4·5강 (여러 강을 한 번에)
         Case("조세르", 4, 5, intArrayOf(535, 280, 647, 3896), intArrayOf(540, 282, 653, 3932),
             listOf("SS", "S++", "SS+", "SS+"), listOf("SS", "S++", "SS+", "SS++")),
+        // 2026-10-20 조세르 또 다른 개체 (0강 521 260 625 3663): 강화 화면 3→4강
+        Case("조세르", 3, 4, intArrayOf(536, 269, 643, 3772), intArrayOf(541, 271, 649, 3808),
+            listOf("SS", "S", "SS", "S++"), listOf("SS", "S", "SS+", "SS")),
     )
 
     /** 0강 화면 → 실제 4강·5강 (강화 화면이 아니라 강화한 뒤 정보 화면) */
     private val jumps = listOf(
         Triple(intArrayOf(515, 269, 623, 3751), 4, intArrayOf(535, 280, 647, 3896)),
         Triple(intArrayOf(515, 269, 623, 3751), 5, intArrayOf(540, 282, 653, 3932)),
+        // 다른 개체: 예전 식은 4강 체 최저 3809 (실제 3808)
+        Triple(intArrayOf(521, 260, 625, 3663), 3, intArrayOf(536, 269, 643, 3772)),
+        Triple(intArrayOf(521, 260, 625, 3663), 4, intArrayOf(541, 271, 649, 3808)),
     )
 
-    /** 도감값 1% 식: 강화 화면 24칸은 모두 1 이내, 15칸은 정확 */
+    /** 도감값 1% 식: 강화 화면 28칸은 모두 1 이내, 18칸은 정확 */
     @Test
     fun breaksMatchGameWithinOne() {
         var exact = 0
@@ -52,7 +58,7 @@ class GameEnhanceTest {
                 if (s[i] == c.after[i]) exact++
             }
         }
-        assertEquals(15, exact)
+        assertEquals(18, exact)
     }
 
     /** 최저치: 게임 결과는 항상 이 값 이상 (여러 강을 한 번에 건너뛰어도). 예상과는 같거나 1 낮다 */
