@@ -389,12 +389,22 @@ class MainWindow(
         }))
         val rows = mutableListOf(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"))
         val rowBreak = mutableListOf<Int?>() // 표의 데이터 줄 → 몇 강 줄인지 (펼친 전투 줄은 null)
-        for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst)
+        // 현재 강보다 아래(0강~): 강마다 도감값의 1% 를 빼면 된다 (위로 갈 때와 같은 정확도). 누르면 펼치고 접는다
+        val lower = breaks > 0 && prefs.getBoolean("showLowerBreaks", false)
+        if (breaks > 0) enhance.add(row(label(if (lower) "▼ 이전 강화 접기" else "▶ 이전 강화 보기", 12f, Color(0x4FC3F7)).apply {
+            cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+            border = BorderFactory.createEmptyBorder(2, 0, 4, 0)
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) { prefs.putBoolean("showLowerBreaks", !lower); recompute() }
+            })
+        }))
+        for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
+            // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
+            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst && k > breaks)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
-            rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
+            rows += listOf(when { k == breaks -> "${k}강\n현재"; k < breaks -> "${k}강\n이전"; else -> "${k}강" }) + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 (if (k == breaks) "${fmt(curReal, 2)}%\n$curGrade" else "${fmt(t.realTotal, 2)}%\n${t.realTotalGrade}")
             rowBreak += k

@@ -88,6 +88,16 @@ class GameEnhanceTest {
         for (i in 0..3) assertTrue("stat$i ${s[i]} vs ${a[i]}", Math.abs(s[i] - a[i]) <= 1)
     }
 
+    /** 거꾸로(이전 강화): 3강·4강·5강 화면에서 0강을 보면 실제 0강과 1 이내 */
+    @Test
+    fun lowerBreaks() {
+        val m = db.find("조세르")!!.maxS
+        for ((b, t, a) in jumps) {
+            val s = Calculator.statsAtBreaks(a, m, t, 0)
+            for (i in 0..3) assertTrue("${t}강→0강 stat$i ${s[i]} vs ${b[i]}", Math.abs(s[i] - b[i]) <= 1)
+        }
+    }
+
     /** 등급 = 능력치 ÷ 도감값: 강화 전·후 40칸 모두 게임 표시와 같다 */
     @Test
     fun gradesMatchGame() {

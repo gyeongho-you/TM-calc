@@ -386,13 +386,23 @@ class OverlayService : Service() {
         enhanceTable.addView(sectionTitle("강화별 (최대 +${MAX_BREAKS}강, " + (if (worst) "최저치)" else "예상)")))
         if (breaks < MAX_BREAKS) enhanceTable.addView(worstToggle(worst))
         enhanceTable.addView(row(listOf("강", "공", "방", "순", "체", if (showCombat()) "총점\n전투" else "총점", "성장률"), header = true))
-        for (k in breaks..maxOf(breaks, MAX_BREAKS)) {
-            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst)
+        // 현재 강보다 아래(0강~): 강마다 도감값의 1% 를 빼면 된다 (위로 갈 때와 같은 정확도). 누르면 펼치고 접는다
+        val lower = breaks > 0 && AppPrefs.showLowerBreaks(this)
+        if (breaks > 0) enhanceTable.addView(TextView(ui).apply {
+            text = if (lower) "▼ 이전 강화 접기" else "▶ 이전 강화 보기"
+            textSize = 12f
+            setTextColor(Color.parseColor("#4FC3F7"))
+            setPadding(0, dp(4), 0, dp(4))
+            setOnClickListener { AppPrefs.setShowLowerBreaks(this@OverlayService, !lower); recompute() }
+        })
+        for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
+            // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
+            val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst && k > breaks)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
             val combat = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
-            val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
+            val cells = listOf(when { k == breaks -> "${k}강\n현재"; k < breaks -> "${k}강\n이전"; else -> "${k}강" }) +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (combat?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
                 // 현재 강은 위의 총 성장률(화면 인게임 값으로 맞춘 값)과 같게
