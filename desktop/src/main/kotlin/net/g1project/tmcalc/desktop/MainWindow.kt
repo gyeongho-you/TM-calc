@@ -5,6 +5,7 @@ import net.g1project.tmcalc.OcrParser
 import net.g1project.tmcalc.ParsedScreen
 import net.g1project.tmcalc.Pet
 import net.g1project.tmcalc.PetDb
+import net.g1project.tmcalc.PetDraft
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -270,7 +271,7 @@ class MainWindow(
 
     private fun fill(p: ParsedScreen, deltas: Array<Int?>) {
         filling = true
-        nameF.text = p.pet?.name ?: p.nameRaw?.let { PetDb.key(it) } ?: ""
+        nameF.text = p.pet?.name ?: p.nameRaw?.let { PetDb.displayName(it) } ?: ""
         levelF.text = p.level?.toString() ?: ""
         breakF.text = (p.breaks ?: 0).toString()
         gameF.text = p.gameTotal?.toString() ?: ""
@@ -638,11 +639,12 @@ class MainWindow(
         val dlg = editor?.takeIf { it.isDisplayable } ?: PetEditorDialog(this, pets) { recompute() }.also { editor = it }
         if (!fromScan) return dlg.open(null, null)
         val name = nameF.text.trim().ifEmpty { null }
-        val maxS = if (levelF.text.trim().toIntOrNull() == Calculator.MAX_LEVEL) {
-            val b = List(4) { i -> num(statF[i])?.let { s -> num(deltaF[i])?.let { s - it } } }
-            if (b.all { it != null && it > 0 }) IntArray(4) { b[it]!! } else null
-        } else null
-        dlg.open(name, maxS)
+        // 게임 도감 화면이면 성장 평균(= S성장률)으로 초기치·만렙S 까지 채운다. 아니면 150레벨일 때 만렙S(현재 − 도감 대비)만
+        val lp = lastParsed
+        val dex = PetDb.dexFromScreen(levelF.text.trim().toIntOrNull(), statF.map { num(it) }, deltaF.map { num(it) },
+            lp?.growthAvgs?.toList() ?: List(4) { null })
+        dlg.open(name, PetDraft(dex.maxS, dex.init, dex.growth, lp?.grade, lp?.element, lp?.type,
+            dex.notes.takeIf { it.isNotEmpty() }?.joinToString(", ")))
     }
 
     // ------------------------------------------------------------------ 화면 도구

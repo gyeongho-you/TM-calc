@@ -24,6 +24,12 @@ class ParsedScreen(
     val screenGrades: Array<String?> = arrayOfNulls(4),
     /** 화면의 "총 성장 점수" (예: 96%). 게임이 직접 계산한 인게임 값이라 계산보다 정확하다 */
     val gameTotal: Int? = null,
+    /** 이름 위 태그 (전설 / 어둠 / 비행). 못 읽으면 null */
+    val grade: String? = null,
+    val element: String? = null,
+    val type: String? = null,
+    /** 게임 도감 화면 ([LV. 150] [LV. 1] 탭이 있음): 도감 대비가 없고 성장 평균이 곧 S성장률 */
+    val dexScreen: Boolean = false,
 ) {
     val complete: Boolean get() = pet != null && level != null && stats.all { it != null }
 }
@@ -58,11 +64,12 @@ object OcrParser {
     /** 총 성장 점수 "96%". 옆 글자와 붙어 읽혀도("100% 1,747.4", "총 성장 점수 100%") 첫 번째 % 숫자를 쓴다 */
     private val PERCENT = Regex("""(?<![\d.,])(\d{2,3})\s*%""")
 
+    private val GRADES = setOf("전설", "유일", "영웅", "희귀", "고급", "일반", "신화")
+    private val ELEMENTS = setOf("불", "물", "바람", "땅", "빛", "어둠", "화염", "대지", "자연")
+    private val TYPES = setOf("야수", "마법", "수중", "던전", "비행")
+
     /** 정보 카드에 있지만 이름이 아닌 문구 (등급/속성/타입 태그, 항목 제목) */
-    private val NOT_NAME = setOf(
-        "전설", "유일", "영웅", "희귀", "고급", "일반", "신화",
-        "불", "물", "바람", "땅", "빛", "어둠", "화염", "대지", "자연",
-        "야수", "마법", "수중", "던전", "비행",
+    private val NOT_NAME = GRADES + ELEMENTS + TYPES + setOf(
         "잠재력", "성장등급", "총성장점수", "총능력치점수", "기본능력치", "전투능력치", "거래소", "소환수",
     )
 
@@ -129,7 +136,17 @@ object OcrParser {
         //    정보 카드는 능력치 표와 같은 세로 띠에 있다. 화면이 작으면 뒤에 깔린 목록 카드의 "Lv.150"(카드 바깥 왼쪽/오른쪽)이
         //    더 가깝게 읽혀 이름 대신 "배치중" 배지를 이름으로 고르는 일이 있어서, 표와 가로로 겹치는 줄만 본다
         val inTable = { l: OcrLine -> anchor == null || ((l.left + l.right) / 2 in anchor!!.left..tableRight) }
-        val levelLine = above.filter { LEVEL.containsMatchIn(it.text) && inTable(it) }.maxByOrNull { it.cy }
+        // 게임 도감 화면에는 능력치 표 바로 위에 [LV. 150] [LV. 1] 탭이 나란히 있다 → 같은 줄에 Lv 가 둘이면 탭이라 레벨로 보지 않는다
+        val lvLines = above.filter { LEVEL.containsMatchIn(it.text) }
+        val isTab = { l: OcrLine ->
+            LEVEL.findAll(l.text).count() > 1 ||
+                lvLines.any { o -> o !== l && Math.abs(o.cy - l.cy) < l.height * 0.6 }
+        }
+        val dexScreen = lvLines.any { isTab(it) }
+        // 도감 화면에는 도감 대비가 없다 ("486 -" 의 대시를 OCR 이 놓쳐도 0)
+        if (dexScreen) for (i in 0..3) if (stats[i] != null && deltas[i] == null) deltas[i] = 0
+        val levelLine = lvLines.filter { inTable(it) && !isTab(it) }.maxByOrNull { it.cy }
+            ?: lvLines.filter { !isTab(it) }.maxByOrNull { it.cy }
             ?: above.filter { LEVEL.containsMatchIn(it.text) }.maxByOrNull { it.cy }
             ?: lines.firstOrNull { LEVEL.containsMatchIn(it.text) }
         val level = levelLine?.let { LEVEL.find(it.text)!!.groupValues[1].toIntOrNull() }
@@ -174,8 +191,13 @@ object OcrParser {
             BREAKS.find(l.text)?.let { m -> (m.groupValues[1].ifEmpty { m.groupValues[2] }).toIntOrNull() }
         }
 
+        // 5) 이름 위 태그 (전설 / 어둠 / 비행)
+        val tagWords = nameLine?.let { n -> lines.filter { it.bottom <= n.top + n.height / 2 && it.top >= n.top - n.height * 3 } }.orEmpty()
+            .flatMap { it.text.split(' ') }.map { PetDb.key(it) }
         return ParsedScreen(pet, nameRaw, nameScore, level, breaks, stats, deltas, deltaBoxes, growthAvgs, screenGrades,
-            gameTotal(lines, levelLine, nameLine))
+            gameTotal(lines, levelLine, nameLine),
+            grade = tagWords.firstOrNull { it in GRADES }, element = tagWords.firstOrNull { it in ELEMENTS },
+            type = tagWords.firstOrNull { it in TYPES }, dexScreen = dexScreen)
     }
 
     /**

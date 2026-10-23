@@ -263,7 +263,7 @@ class OverlayService : Service() {
 
     private fun fill(p: ParsedScreen, deltas: Array<Int?>) {
         filling = true
-        if (p.pet != null) nameEdit.setText(p.pet.name) else nameEdit.setText(p.nameRaw?.let { PetDb.key(it) } ?: "")
+        if (p.pet != null) nameEdit.setText(p.pet.name) else nameEdit.setText(p.nameRaw?.let { PetDb.displayName(it) } ?: "")
         // 못 읽은 칸은 이전 소환수 값이 남지 않도록 비운다
         levelEdit.setText(p.level?.toString() ?: "")
         breakEdit.setText((p.breaks ?: 0).toString())
@@ -762,12 +762,14 @@ class OverlayService : Service() {
 
     private fun openPetEditor() {
         val name = nameEdit.text.toString().trim().ifEmpty { null }
-        val maxS = if (levelEdit.text.toString().toIntOrNull() == MAX_LEVEL) {
-            val b = List(4) { i -> num(statEdits[i]!!)?.let { s -> num(deltaEdits[i]!!)?.let { s - it } } }
-            if (b.all { it != null && it > 0 }) IntArray(4) { b[it]!! } else null
-        } else null
+        // 게임 도감 화면이면 성장 평균(= S성장률)으로 초기치·만렙S 까지 채운다. 아니면 150레벨일 때 만렙S(현재 − 도감 대비)만
+        val lp = lastParsed
+        val dex = PetDb.dexFromScreen(levelEdit.text.toString().toIntOrNull(), statEdits.map { num(it!!) }, deltaEdits.map { num(it!!) },
+            lp?.growthAvgs?.toList() ?: List(4) { null })
+        val draft = PetDraft(dex.maxS, dex.init, dex.growth, lp?.grade, lp?.element, lp?.type,
+            dex.notes.takeIf { it.isNotEmpty() }?.joinToString(", "))
         showPanel(false)
-        startActivity(PetEditorActivity.intent(this, name, maxS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        startActivity(PetEditorActivity.intent(this, name, draft).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private var panelFocusable = false

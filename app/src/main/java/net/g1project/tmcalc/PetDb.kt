@@ -16,6 +16,13 @@ class Pet(
     val maxS: IntArray,
 )
 
+/**
+ * 도감 편집 창에 미리 채울 값 (계산 화면에서 읽은 것). 게임 도감 화면이면 초기치·성장률·태그까지 있다.
+ * 화면 값이 있으면 도감에 있던 값보다 먼저 쓴다. [note] 는 성장률과 안 맞아 고친 칸.
+ */
+class PetDraft(val maxS: IntArray?, val init: IntArray?, val growth: DoubleArray?,
+               val grade: String?, val element: String?, val type: String?, val note: String?)
+
 class PetDb(val pets: List<Pet>) {
 
     private val byKey = pets.associateBy { key(it.name) }
@@ -102,6 +109,58 @@ class PetDb(val pets: List<Pet>) {
             val want = p.init[i] + p.sGrowth[i] * (Calculator.MAX_LEVEL - 1)
             if (Math.abs(p.maxS[i] - want) <= ODD_LIMIT) null
             else "${STAT_NAMES[i]} 만렙S ${p.maxS[i]} (초기치+성장률×149 = ${Math.round(want)})"
+        }
+
+        /** 화면에서 읽은 이름을 도감에 넣을 이름으로: 돌파 "(+4)" 만 빼고 숫자·띄어쓰기는 둔다 ("1세대의 전설") */
+        fun displayName(raw: String): String =
+            raw.replace(Regex("\\(.*?\\)|\\+\\d+"), "").filter { it in '가'..'힣' || it.isLetterOrDigit() || it == ' ' }
+                .replace(Regex(" +"), " ").trim()
+
+        /**
+         * 도감에 추가할 값 (화면에서 바로 얻은 것). [notes] 는 읽은 값이 이상해서 성장률로 고친 칸.
+         * 못 구한 값은 null.
+         */
+        class DexValues(val init: IntArray?, val growth: DoubleArray?, val maxS: IntArray?, val notes: List<String>)
+
+        /**
+         * 게임 도감 화면(또는 도감 대비가 모두 0 인 S 100% 개체)에서 초기치·S성장률·만렙S 를 구한다.
+         * - 도감 대비가 모두 0("-") 이고 성장 평균 4개가 읽혔으면 그 성장 평균이 곧 S성장률
+         * - 능력치가 초기치 추정(성장률 × 약 4) 근처면 LV.1 탭(초기치), 아니면 150레벨 값(만렙S)
+         * - 만렙S 와 성장률이 있으면 초기치 = 만렙S − 성장률 × 149 (반올림 차이 0.5 안이라 정확)
+         * - 그 초기치가 성장률로 본 값과 3 넘게 다르면 능력치를 잘못 읽은 것(예: 3849 → 3349)이라 성장률로 다시 계산
+         * 성장률을 못 읽은 150레벨 화면은 만렙S(현재 − 도감 대비)만 준다.
+         */
+        fun dexFromScreen(level: Int?, stats: List<Int?>, deltas: List<Int?>, growth: List<Double?>): DexValues {
+            val lv1 = Calculator.MAX_LEVEL - 1
+            val g = growth.takeIf { gs -> gs.size == 4 && gs.all { it != null && it > 0 } && deltas.all { it == 0 } }
+                ?.map { it!! }?.toDoubleArray()
+            val st = stats.takeIf { s -> s.size == 4 && s.all { it != null && it > 0 } }?.map { it!! }
+            if (g == null) {
+                val m = if (level == Calculator.MAX_LEVEL && st != null && deltas.all { it != null })
+                    IntArray(4) { st[it] - deltas[it]!! }.takeIf { a -> a.all { it > 0 } } else null
+                return DexValues(null, null, m, emptyList())
+            }
+            val est = Calculator.estimate(g) ?: return DexValues(null, null, null, emptyList())
+            val notes = ArrayList<String>()
+            // LV.1 탭: 모든 능력치가 초기치 추정 근처
+            val isLv1 = st != null && (0..3).all { st[it] in (est.initLo[it] - 3)..(est.initHi[it] + 3) }
+            val init = IntArray(4); val maxS = IntArray(4)
+            for (i in 0..3) {
+                val guessInit = est.initLo[i]
+                when {
+                    st == null -> { init[i] = guessInit; maxS[i] = Math.round(init[i] + g[i] * lv1).toInt() }
+                    isLv1 -> { init[i] = st[i]; maxS[i] = Math.round(st[i] + g[i] * lv1).toInt() }
+                    else -> {
+                        val fromMax = Math.round(st[i] - g[i] * lv1).toInt()
+                        if (Math.abs(fromMax - guessInit) <= 3) { init[i] = fromMax; maxS[i] = st[i] }
+                        else {
+                            init[i] = guessInit; maxS[i] = Math.round(guessInit + g[i] * lv1).toInt()
+                            notes += "${STAT_NAMES[i]} ${st[i]} → ${maxS[i]}"
+                        }
+                    }
+                }
+            }
+            return DexValues(init, g, maxS, notes)
         }
 
         private const val ODD_LIMIT = 2.0

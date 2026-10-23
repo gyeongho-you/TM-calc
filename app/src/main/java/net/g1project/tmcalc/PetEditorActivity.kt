@@ -92,7 +92,8 @@ class PetEditorActivity : Activity() {
     private fun openFromIntent(i: Intent) {
         val name = i.getStringExtra(EXTRA_NAME) ?: return
         val existing = PetStore.load(this).find(name)
-        edit(existing, name, i.getIntArrayExtra(EXTRA_MAXS))
+        edit(existing, name, PetDraft(i.getIntArrayExtra(EXTRA_MAXS), i.getIntArrayExtra(EXTRA_INIT), i.getDoubleArrayExtra(EXTRA_GROWTH),
+            i.getStringExtra(EXTRA_GRADE), i.getStringExtra(EXTRA_ELEMENT), i.getStringExtra(EXTRA_TYPE), i.getStringExtra(EXTRA_NOTE)))
     }
 
     private fun refresh() {
@@ -126,10 +127,10 @@ class PetEditorActivity : Activity() {
     }
 
     /**
-     * 편집 창. [pet] 이 있으면 그 값으로, 없으면 [name]/[maxS] 만 채운 새 소환수로.
+     * 편집 창. [pet] 이 있으면 그 값으로, 없으면 [name]/[d] 를 채운 새 소환수로.
      * 성장률(S)과 만렙S 중 하나만 적으면 나머지는 시트와 같은 식으로 채운다: 만렙S = ROUND(초기치 + S성장률 × 149).
      */
-    private fun edit(pet: Pet?, name: String?, maxS: IntArray?) {
+    private fun edit(pet: Pet?, name: String?, d: PetDraft?) {
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(px(20), px(8), px(20), 0)
@@ -144,17 +145,26 @@ class PetEditorActivity : Activity() {
         val num = InputType.TYPE_CLASS_NUMBER
         val dec = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         val nameE = field("이름", pet?.name ?: name ?: "", InputType.TYPE_CLASS_TEXT)
-        val gradeE = field("등급 (예: 전설)", pet?.grade ?: "", InputType.TYPE_CLASS_TEXT)
-        val elemE = field("속성", pet?.element ?: "", InputType.TYPE_CLASS_TEXT)
-        val typeE = field("타입", pet?.type ?: "", InputType.TYPE_CLASS_TEXT)
+        val gradeE = field("등급 (예: 전설)", d?.grade ?: pet?.grade ?: "", InputType.TYPE_CLASS_TEXT)
+        val elemE = field("속성", d?.element ?: pet?.element ?: "", InputType.TYPE_CLASS_TEXT)
+        val typeE = field("타입", d?.type ?: pet?.type ?: "", InputType.TYPE_CLASS_TEXT)
         form.addView(nameE)
         form.addView(LinearLayout(this).apply {
             addView(gradeE, weight()); addView(elemE, weight()); addView(typeE, weight())
         })
         val stats = listOf("공", "방", "순", "체")
-        val initE = List(4) { field(stats[it], pet?.init?.get(it)?.toString() ?: "", num) }
-        val sE = List(4) { field(stats[it], pet?.sGrowth?.get(it)?.let { v -> fmt(v) } ?: "", dec) }
-        val mE = List(4) { field(stats[it], (pet?.maxS ?: maxS)?.get(it)?.toString() ?: "", num) }
+        // 화면에서 만렙S 만 읽었으면(성장률 없음) 초기치·성장률은 도감 값을 두지 않고 비운다 (값이 서로 안 맞게 되므로)
+        val fromScreen = d?.maxS != null
+        val initE = List(4) { field(stats[it], (d?.init ?: pet?.init.takeIf { !fromScreen || d?.growth != null })?.get(it)?.toString() ?: "", num) }
+        val sE = List(4) { field(stats[it], (d?.growth ?: pet?.sGrowth.takeIf { !fromScreen })?.get(it)?.let { v -> fmt(v) } ?: "", dec) }
+        val mE = List(4) { field(stats[it], (d?.maxS ?: pet?.maxS)?.get(it)?.toString() ?: "", num) }
+        if (d?.growth != null) form.addView(TextView(this).apply {
+            text = "게임 도감 화면에서 읽은 값입니다. 저장 전에 한 번 확인해 주세요." +
+                (d.note?.let { "\n성장률과 안 맞아 고친 값: $it" } ?: "")
+            textSize = 12f
+            setTextColor(Color.parseColor("#F2B84B"))
+            setPadding(0, px(6), 0, 0)
+        })
         for ((label, row) in listOf("초기치 (1레벨)" to initE, "S등급 성장률 (레벨당)" to sE, "만렙S (150레벨 도감값)" to mE)) {
             form.addView(TextView(this).apply { text = label; textSize = 12f; setPadding(0, px(8), 0, 0) })
             form.addView(LinearLayout(this).apply { row.forEach { addView(it, weight()) } })
@@ -310,13 +320,25 @@ class PetEditorActivity : Activity() {
     companion object {
         const val EXTRA_NAME = "name"
         const val EXTRA_MAXS = "maxS"
+        const val EXTRA_INIT = "init"
+        const val EXTRA_GROWTH = "growth"
+        const val EXTRA_GRADE = "grade"
+        const val EXTRA_ELEMENT = "element"
+        const val EXTRA_TYPE = "type"
+        const val EXTRA_NOTE = "note"
         private const val REQ_IMPORT = 1
         private const val REQ_EXPORT = 2
         private const val MAX_IMPORT_BYTES = 1 shl 20
 
-        fun intent(ctx: Context, name: String?, maxS: IntArray?) = Intent(ctx, PetEditorActivity::class.java).apply {
+        fun intent(ctx: Context, name: String?, d: PetDraft?) = Intent(ctx, PetEditorActivity::class.java).apply {
             if (name != null) putExtra(EXTRA_NAME, name)
-            if (maxS != null) putExtra(EXTRA_MAXS, maxS)
+            d?.maxS?.let { putExtra(EXTRA_MAXS, it) }
+            d?.init?.let { putExtra(EXTRA_INIT, it) }
+            d?.growth?.let { putExtra(EXTRA_GROWTH, it) }
+            d?.grade?.let { putExtra(EXTRA_GRADE, it) }
+            d?.element?.let { putExtra(EXTRA_ELEMENT, it) }
+            d?.type?.let { putExtra(EXTRA_TYPE, it) }
+            d?.note?.let { putExtra(EXTRA_NOTE, it) }
         }
     }
 }

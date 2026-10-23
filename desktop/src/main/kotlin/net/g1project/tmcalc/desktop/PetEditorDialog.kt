@@ -3,6 +3,7 @@ package net.g1project.tmcalc.desktop
 import net.g1project.tmcalc.Calculator
 import net.g1project.tmcalc.Pet
 import net.g1project.tmcalc.PetDb
+import net.g1project.tmcalc.PetDraft
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -102,20 +103,22 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
     }
 
     /** 계산 창의 [도감에 추가/수정]: 이름과 (150레벨이면) 화면의 도감값을 채워서 연다 */
-    fun open(name: String?, maxS: IntArray?) {
+    fun open(name: String?, d: PetDraft?) {
         isVisible = true
-        if (name != null) edit(pets.db.find(name), name, maxS)
+        if (name != null) edit(pets.db.find(name), name, d)
     }
 
     // ------------------------------------------------------------------ 편집 창
 
-    private fun edit(pet: Pet?, name: String?, maxS: IntArray?) {
+    private fun edit(pet: Pet?, name: String?, d: PetDraft? = null) {
         val dlg = JDialog(this, if (pet == null) "소환수 추가" else "${pet.name} 수정", true)
         val nameE = field(pet?.name ?: name ?: "")
-        val gradeE = field(pet?.grade ?: ""); val elemE = field(pet?.element ?: ""); val typeE = field(pet?.type ?: "")
-        val initE = List(4) { field(pet?.init?.get(it)?.toString() ?: "") }
-        val sE = List(4) { field(pet?.sGrowth?.get(it)?.let { v -> if (v == Math.floor(v)) v.toInt().toString() else v.toString() } ?: "") }
-        val mE = List(4) { field((pet?.maxS ?: maxS)?.get(it)?.toString() ?: "") }
+        val gradeE = field(d?.grade ?: pet?.grade ?: ""); val elemE = field(d?.element ?: pet?.element ?: ""); val typeE = field(d?.type ?: pet?.type ?: "")
+        // 화면에서 만렙S 만 읽었으면(성장률 없음) 초기치·성장률은 도감 값을 두지 않고 비운다 (값이 서로 안 맞게 되므로)
+        val fromScreen = d?.maxS != null
+        val initE = List(4) { field((d?.init ?: pet?.init.takeIf { !fromScreen || d?.growth != null })?.get(it)?.toString() ?: "") }
+        val sE = List(4) { field((d?.growth ?: pet?.sGrowth.takeIf { !fromScreen })?.get(it)?.let { v -> if (v == Math.floor(v)) v.toInt().toString() else v.toString() } ?: "") }
+        val mE = List(4) { field((d?.maxS ?: pet?.maxS)?.get(it)?.toString() ?: "") }
         val stats = listOf("공", "방", "순", "체")
 
         val form = vbox().apply {
@@ -132,6 +135,9 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                     fields.forEachIndexed { i, f -> add(labeled(stats[i], f)) }
                 })
             }
+            if (d?.growth != null) add(row(label("<html>게임 도감 화면에서 읽은 값입니다. 저장 전에 한 번 확인해 주세요." +
+                (d.note?.let { "<br>성장률과 안 맞아 고친 값: " + it.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") } ?: "") +
+                "</html>", 11f, Color(0xF2B84B), allowHtml = true).apply { border = BorderFactory.createEmptyBorder(8, 0, 0, 0) }))
             add(row(label("<html>· 초기치는 꼭 필요합니다.<br>· 성장률(S)과 만렙S 중 하나만 적으면 나머지는 자동으로 채웁니다.<br>" +
                 "· 150레벨 화면에서 열면 만렙S 칸에 화면의 도감값(현재 − 도감 대비)이 들어갑니다.</html>", 11f, MainWindow.MUTED, allowHtml = true)
                 .apply { border = BorderFactory.createEmptyBorder(8, 0, 0, 0) }))
