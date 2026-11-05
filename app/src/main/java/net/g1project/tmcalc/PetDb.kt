@@ -208,3 +208,55 @@ class PetDb(val pets: List<Pet>) {
         }
     }
 }
+
+/**
+ * 저장해 둔 소환수 (프리셋). 계산 화면의 값을 그대로 남겨서 누르면 다시 볼 수 있고, 비교 기준으로도 쓴다.
+ * [base] 는 그 레벨의 도감값(현재 − 도감 대비). 강을 바꿔 볼 때(강화 예상)와 종 대비 계산에 쓴다.
+ */
+class Preset(
+    val label: String,
+    val name: String,
+    val level: Int,
+    val breaks: Int,
+    val stats: IntArray,
+    val base: IntArray,
+    val gameTotal: Int? = null,
+) {
+    /** 도감 대비 (현재 − 도감값) */
+    val deltas: IntArray get() = IntArray(4) { stats[it] - base[it] }
+
+    fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("label", label); put("name", name); put("level", level); put("breaks", breaks)
+        put("stats", org.json.JSONArray(stats.toList())); put("base", org.json.JSONArray(base.toList()))
+        gameTotal?.let { put("game", it) }
+    }
+
+    companion object {
+        const val MAX_COUNT = 200
+
+        fun listToJson(list: List<Preset>): String = org.json.JSONArray(list.map { it.toJson() }).toString()
+
+        /** 잘못된 항목은 건너뛴다 (손으로 고친 파일이어도 앱이 죽지 않게) */
+        fun listFromJson(json: String): List<Preset> {
+            val arr = runCatching { org.json.JSONArray(json) }.getOrNull() ?: return emptyList()
+            return (0 until minOf(arr.length(), MAX_COUNT)).mapNotNull { i ->
+                runCatching {
+                    val o = arr.getJSONObject(i)
+                    val s = o.getJSONArray("stats"); val b = o.getJSONArray("base")
+                    Preset(o.getString("label").take(40), o.getString("name").take(40), o.getInt("level"), o.getInt("breaks"),
+                        IntArray(4) { s.getInt(it) }, IntArray(4) { b.getInt(it) }, if (o.has("game")) o.getInt("game") else null)
+                }.getOrNull()?.takeIf { p ->
+                    p.level in 1..300 && p.breaks in 0..Calculator.MAX_BREAKS && p.stats.all { it in 1..1_000_000 } && p.base.all { it in 1..1_000_000 }
+                }
+            }
+        }
+
+        /** 기본 이름: "화혼랑 3강 103%" (같은 이름이 있으면 뒤에 (2), (3)) */
+        fun defaultLabel(name: String, breaks: Int, gameTotal: Int?, existing: List<Preset>): String {
+            val base = (name.ifBlank { "이름 없음" } + " ${breaks}강" + (gameTotal?.let { " $it%" } ?: "")).take(36)
+            var label = base; var n = 2
+            while (existing.any { it.label == label }) label = "$base (${n++})"
+            return label
+        }
+    }
+}

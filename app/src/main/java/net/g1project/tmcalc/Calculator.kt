@@ -209,6 +209,54 @@ object Calculator {
         return Combat(pct, pct.average(), approx)
     }
 
+    /** 종 대비 전투 능력치를 계산하지 않는 이유 (계산되면 null). 화면에 그냥 숨기지 않고 알려 주려고 */
+    fun combatUnavailableReason(stats: IntArray, base: IntArray): String? {
+        if (base.any { it < 1 }) return "도감값이 필요합니다"
+        val s = totalOf(stats); val s0 = totalOf(base)
+        return when {
+            s !in COMBAT_LIMIT -> "총능 ${fmt1(s)} 은 계산 범위(${COMBAT_LIMIT.start.toInt()}~${COMBAT_LIMIT.endInclusive.toInt()}) 밖"
+            s0 !in COMBAT_LIMIT -> "도감 총능 ${fmt1(s0)} 은 계산 범위(${COMBAT_LIMIT.start.toInt()}~${COMBAT_LIMIT.endInclusive.toInt()}) 밖"
+            else -> null
+        }
+    }
+
+    private fun fmt1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
+
+    /**
+     * 두 소환수 비교 결과. [a]/[b] 는 고른 강의 능력치, [pct] 는 능력치별 "B 의 실제 전투 능력치가 A 보다 몇 % 높은지".
+     * 캐릭터 배율은 둘 다 같아서 지워진다:  (B ÷ A) × (1 + 증폭·u(B 총능)) ÷ (1 + 증폭·u(A 총능)) − 1.
+     * 총능이 계산 범위 밖이면 [pct] 는 null 이고 [reason] 에 이유.
+     */
+    class Comparison(val a: IntArray, val b: IntArray, val pct: DoubleArray?, val approx: Boolean, val reason: String?) {
+        val scoreA: Double get() = totalOf(a)
+        val scoreB: Double get() = totalOf(b)
+    }
+
+    /**
+     * [aStats] (강 [aBreaks], 도감값 [aBase]) 을 [aTarget] 강으로, B 도 마찬가지로 바꾼 뒤 비교.
+     * 강을 바꾼 능력치는 강화 예상 식 그대로 (강마다 도감값의 1%).
+     */
+    fun compare(aStats: IntArray, aBase: IntArray, aBreaks: Int, aTarget: Int,
+                bStats: IntArray, bBase: IntArray, bBreaks: Int, bTarget: Int,
+                amp: Double = DEFAULT_GROWTH_AMP): Comparison {
+        val a = statsAtBreaks(aStats, aBase, aBreaks, aTarget)
+        val b = statsAtBreaks(bStats, bBase, bBreaks, bTarget)
+        val sa = totalOf(a); val sb = totalOf(b)
+        val reason = when {
+            sa !in COMBAT_LIMIT -> "A 총능 ${fmt1(sa)} 은 계산 범위 밖이라 실전투 비교를 못 합니다"
+            sb !in COMBAT_LIMIT -> "B 총능 ${fmt1(sb)} 은 계산 범위 밖이라 실전투 비교를 못 합니다"
+            else -> null
+        }
+        if (reason != null) return Comparison(a, b, null, false, reason)
+        val g = amp.coerceIn(0.0, 1.0)
+        val k = (1 + g * scoreFactor(sb)) / (1 + g * scoreFactor(sa))
+        val pct = DoubleArray(4) { (b[it].toDouble() / a[it] * k - 1) * 100 }
+        return Comparison(a, b, pct, sa !in COMBAT_CHECKED || sb !in COMBAT_CHECKED, null)
+    }
+
+    /** 강화는 최대 +5강 */
+    const val MAX_BREAKS = 5
+
     /** 결과의 '종 대비 전투 능력치'를 누르면 보여 줄 설명 (폰·PC 같이 씀) */
     const val COMBAT_HELP =
         "같은 종 도감(S 100%) 개체보다 실제 전투 능력치가 몇 % 높은지 보여 줍니다.\n\n" +

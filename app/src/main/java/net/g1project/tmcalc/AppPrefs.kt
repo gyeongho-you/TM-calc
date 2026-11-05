@@ -29,6 +29,16 @@ object AppPrefs {
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_COMBAT, on).apply()
     }
 
+    private const val PRESETS = "presets"
+
+    /** 저장한 소환수 (프리셋). 폰 안에만 저장 */
+    fun presets(c: Context): List<Preset> =
+        Preset.listFromJson(c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(PRESETS, null) ?: "[]")
+
+    fun setPresets(c: Context, list: List<Preset>) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(PRESETS, Preset.listToJson(list.take(Preset.MAX_COUNT))).apply()
+    }
+
     /** 화면에 보일 % 글자 (8.0 → "8", 10.4 → "10.4") */
     fun pctText(amp: Double): String {
         val p = Math.round(amp * 1000) / 10.0

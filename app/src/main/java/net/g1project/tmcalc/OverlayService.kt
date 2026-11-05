@@ -90,6 +90,16 @@ class OverlayService : Service() {
     private var worstOn = false
     private var lowerOn = false
 
+    private lateinit var compareBox: LinearLayout
+    private lateinit var presetBox: LinearLayout
+    /** 비교 기준(A). 지금 계산이나 저장 목록에서 고정한다 */
+    private var pinned: Preset? = null
+    /** A 를 볼 강 / B 를 볼 강 (B 가 null 이면 찍힌 강) */
+    private var pinTarget = 0
+    private var curTarget: Int? = null
+    /** 강 고르기 줄을 펼친 쪽 ('A' / 'B', 없으면 ' ') */
+    private var pickFor = ' '
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -280,8 +290,153 @@ class OverlayService : Service() {
             statEdits[i]!!.setText(s?.toString() ?: "")
             deltaEdits[i]!!.setText(d?.toString() ?: "")
         }
+        curTarget = null; pickFor = ' '
         filling = false
         recompute()
+    }
+
+    // ---------------------------------------------------------------- 저장 목록 / 비교
+
+    /** 지금 계산 화면의 값 (능력치 4개와 도감값을 알 수 있을 때만). 도감값 = 현재 − 도감 대비, 비었으면 150레벨 도감 */
+    private fun currentPreset(forSave: Boolean = false): Preset? {
+        val pet = db.find(nameEdit.text.toString())
+        val level = levelEdit.text.toString().toIntOrNull() ?: return null
+        val breaks = (breakEdit.text.toString().toIntOrNull() ?: 0).coerceIn(0, Calculator.MAX_BREAKS)
+        val stats = statEdits.map { num(it!!) }
+        val deltas = deltaEdits.map { num(it!!) }
+        if (stats.any { it == null || it <= 0 }) return null
+        val base = IntArray(4) { i ->
+            deltas[i]?.let { stats[i]!! - it } ?: pet?.maxS?.get(i)?.takeIf { level == MAX_LEVEL } ?: return null
+        }
+        if (base.any { it <= 0 }) return null
+        val name = pet?.name ?: nameEdit.text.toString().trim()
+        val game = num(gameEdit)
+        // 저장할 때만 같은 이름 뒤에 (2), (3) 을 붙인다
+        return Preset(Preset.defaultLabel(name, breaks, game, if (forSave) AppPrefs.presets(this) else emptyList()), name, level, breaks,
+            IntArray(4) { stats[it]!! }, base, game)
+    }
+
+    private fun savePreset() {
+        val p = currentPreset(forSave = true) ?: return toast("능력치와 도감 대비를 먼저 채워 주세요 (150레벨이고 도감에 있으면 도감 대비는 비워도 됨)")
+        val list = AppPrefs.presets(this)
+        if (list.size >= Preset.MAX_COUNT) return toast("저장은 ${Preset.MAX_COUNT}개까지입니다. 목록에서 지워 주세요.")
+        AppPrefs.setPresets(this, list + p)
+        toast("저장했습니다: ${p.label}")
+        if (presetBox.visibility == View.VISIBLE) renderPresets()
+    }
+
+    private fun pin(p: Preset) {
+        pinned = p; pinTarget = p.breaks; pickFor = ' '
+        toast("기준 고정: ${p.label}\n다른 소환수를 계산하면 나란히 비교됩니다")
+        renderCompare()
+    }
+
+    /** 저장한 값을 계산 화면에 그대로 띄운다 (게임에서 다시 찍지 않아도 됨) */
+    private fun loadPreset(p: Preset) {
+        filling = true
+        nameEdit.setText(p.name)
+        levelEdit.setText(p.level.toString())
+        breakEdit.setText(p.breaks.toString())
+        gameEdit.setText(p.gameTotal?.toString() ?: "")
+        val d = p.deltas
+        for (i in 0..3) { statEdits[i]!!.setText(p.stats[i].toString()); deltaEdits[i]!!.setText(d[i].toString()) }
+        lastParsed = null
+        worstOn = false; lowerOn = false; curTarget = null; pickFor = ' '
+        filling = false
+        recompute()
+    }
+
+    private fun renderPresets() {
+        presetBox.removeAllViews()
+        val list = AppPrefs.presets(this)
+        if (list.isEmpty()) {
+            presetBox.addView(note("저장한 소환수가 없습니다. 계산한 뒤 [저장]을 누르세요."))
+            return
+        }
+        for (p in list) {
+            presetBox.addView(LinearLayout(ui).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(3), 0, dp(3))
+                addView(TextView(ui).apply {
+                    text = p.label + "\n" + "Lv.${p.level} · 총능 ${fmt(Calculator.abilityScore(p.stats), 1)}"
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#C9CBD0"))
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(headerButton("보기") { loadPreset(p) })
+                addView(headerButton("기준") { pin(p) })
+                addView(headerButton("삭제") {
+                    AppPrefs.setPresets(this@OverlayService, AppPrefs.presets(this@OverlayService).filterNot { it.label == p.label })
+                    renderPresets()
+                })
+            })
+        }
+    }
+
+    /**
+     * 기준(A)과 지금 계산(B)을 나란히: 능력치와 "B 의 실제 전투 능력치가 A 보다 몇 %".
+     * 강은 찍힌 강이 기본이고, 강 글자를 누르면 0~5강 중에서 고를 수 있다 (예상 능력치로 바꿔서 비교).
+     */
+    private fun renderCompare() {
+        compareBox.removeAllViews()
+        val a = pinned ?: run { compareBox.visibility = View.GONE; return }
+        compareBox.visibility = View.VISIBLE
+        compareBox.addView(sectionTitle("비교"))
+        val b = currentPreset()
+        val bT = b?.let { curTarget ?: it.breaks }
+        val c = b?.let { Calculator.compare(a.stats, a.base, a.breaks, pinTarget, it.stats, it.base, it.breaks, bT!!, growthAmp()) }
+        val aStats = c?.a ?: Calculator.statsAtBreaks(a.stats, a.base, a.breaks, pinTarget)
+        // 열 머리에 이름, 그 아래 강 버튼 (누르면 0~5강 고르기), 그 아래 능력치
+        compareBox.addView(row(listOf("", "${a.name}(기준)", b?.name?.ifBlank { "지금 계산" } ?: "-", "실전투"), header = true).apply {
+            for (i in 1..2) (getChildAt(i) as TextView).apply { setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD }
+        })
+        compareBox.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(View(ui), LinearLayout.LayoutParams(0, 0, 0.8f))
+            for ((side, k) in listOf('A' to pinTarget, 'B' to bT)) {
+                addView(LinearLayout(ui).apply {
+                    gravity = Gravity.CENTER
+                    if (k != null) addView(headerButton("${k}강 ▾") { pickFor = if (pickFor == side) ' ' else side; renderCompare() }
+                        .apply { (layoutParams as LinearLayout.LayoutParams).marginStart = 0 })
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            addView(View(ui), LinearLayout.LayoutParams(0, 0, 1f))
+        })
+        if (pickFor == 'A') compareBox.addView(breakPicker("기준") { pinTarget = it })
+        if (pickFor == 'B' && b != null) compareBox.addView(breakPicker(b.name) { curTarget = it })
+        for (i in 0..3) {
+            val p = c?.pct?.get(i)
+            val line = row(listOf(STAT_NAMES[i], "${aStats[i]}", c?.b?.get(i)?.toString() ?: "-", p?.let { combatPct(it, c.approx) } ?: "-"))
+            (line.getChildAt(3) as TextView).apply {
+                setTextColor(Color.parseColor(if (p == null) "#9A9DA3" else if (p >= 0) "#7FD4A0" else "#F28B82"))
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            compareBox.addView(line)
+        }
+        compareBox.addView(row(listOf("총능", fmt(c?.scoreA ?: Calculator.abilityScore(aStats), 1), c?.let { fmt(it.scoreB, 1) } ?: "-", ""), small = true))
+        compareBox.addView(note(when {
+            b == null -> "다른 소환수를 계산하면 오른쪽에 나와서 기준과 비교됩니다."
+            c?.reason != null -> c.reason!!
+            else -> "실전투 = 성장증폭 ${ampText(growthAmp())}%와 총능 보너스를 넣은 실제 전투 능력치가 기준보다 몇 % 높은지. 강 버튼을 누르면 그 강의 예상 능력치로 비교합니다."
+        }))
+        compareBox.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            if (b != null) addView(headerButton("A↔B 바꾸기") {
+                val old = pinned!!; val oldT = pinTarget
+                pinned = b; pinTarget = curTarget ?: b.breaks
+                loadPreset(old); curTarget = oldT; renderCompare()
+            })
+            addView(headerButton("기준 해제") { pinned = null; pickFor = ' '; renderCompare() })
+        })
+    }
+
+    /** 강 고르기 줄: "기준: [0강] [1강] … [5강]" */
+    private fun breakPicker(who: String, onPick: (Int) -> Unit) = LinearLayout(ui).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL or Gravity.END
+        setPadding(0, dp(2), 0, dp(4))
+        addView(TextView(ui).apply { text = "$who:"; textSize = 11f; setTextColor(Color.parseColor("#9A9DA3")) })
+        for (k in 0..Calculator.MAX_BREAKS) addView(headerButton("$k") { onPick(k); pickFor = ' '; renderCompare() })
     }
 
     // ---------------------------------------------------------------- calc + render
@@ -346,12 +501,17 @@ class OverlayService : Service() {
                 combatView.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)  ⓘ"
                 combatView.setTextColor(Color.parseColor(if (combat.avg >= 0) "#7FD4A0" else "#F28B82"))
                 combatView.visibility = View.VISIBLE
+            } else if (showCombat()) {
+                // 숨기지 않고 왜 안 나오는지 알려 준다 (총능이 계산 범위 밖 등)
+                combatView.text = "종 대비 전투 능력치: " + (Calculator.combatUnavailableReason(cur, b) ?: "계산할 수 없음")
+                combatView.setTextColor(Color.parseColor("#9A9DA3"))
+                combatView.visibility = View.VISIBLE
             } else { combatView.visibility = View.GONE; combatHelp.visibility = View.GONE }
             renderEnhance(cur, b, breaks, pet, level, real, realGrade)
         } else {
             totalView.text = "-"
             totalGradeView.text = ""
-            totalSubView.text = "능력치와 (도감 대비) 값을 확인해 주세요"
+            totalSubView.text = "능력치와 (도감 대비)를 채워 주세요. 150레벨이고 도감에 있는 소환수면 도감 대비는 비워도 됩니다"
             scoreView.text = ""
             combatView.visibility = View.GONE; combatHelp.visibility = View.GONE
             enhanceTable.removeAllViews()
@@ -372,6 +532,7 @@ class OverlayService : Service() {
         }
         warnView.text = warns.joinToString("\n")
         warnView.visibility = if (warns.isEmpty()) View.GONE else View.VISIBLE
+        renderCompare()
     }
 
     /**
@@ -679,6 +840,10 @@ class OverlayService : Service() {
         }
         body.addView(warnView)
 
+        // 비교: 기준(A)을 고정하면 지금 계산(B)과 나란히 보여 준다
+        compareBox = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        body.addView(compareBox)
+
         // ---- 입력칸: 결과 아래. 잘못 읽혔으면 여기서 고친다 (이름 / 레벨 / 강 → 능력치 → 인게임 %)
         body.addView(View(ui).apply { setBackgroundColor(Color.parseColor("#3A3D44")) },
             LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(6); bottomMargin = dp(2) })
@@ -726,6 +891,24 @@ class OverlayService : Service() {
             addView(labeled("인게임 총 성장 점수 (%)", gameEdit), LinearLayout.LayoutParams(0, -2, 1f))
             addView(View(ui), LinearLayout.LayoutParams(0, 0, 1f))
         })
+
+        // 저장 / 비교 기준 / 저장 목록
+        presetBox = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        body.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, 0)
+            addView(headerButton("저장") { savePreset() }.apply { (layoutParams as LinearLayout.LayoutParams).marginStart = 0 })
+            addView(headerButton("기준으로 고정") { currentPreset()?.let { pin(it) } ?: toast("능력치와 도감 대비를 먼저 채워 주세요") })
+            addView(headerButton("저장 목록 ▾") {}.apply {
+                setOnClickListener {
+                    val show = presetBox.visibility != View.VISIBLE
+                    presetBox.visibility = if (show) View.VISIBLE else View.GONE
+                    text = if (show) "저장 목록 ▴" else "저장 목록 ▾"
+                    if (show) renderPresets()
+                }
+            })
+        })
+        body.addView(presetBox)
 
         // 자세히: 능력치별 성장률·등급, 다음 등급까지, 도감 추가, 강화별 표
         val detail = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }

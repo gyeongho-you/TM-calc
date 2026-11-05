@@ -6,6 +6,7 @@ import net.g1project.tmcalc.ParsedScreen
 import net.g1project.tmcalc.Pet
 import net.g1project.tmcalc.PetDb
 import net.g1project.tmcalc.PetDraft
+import net.g1project.tmcalc.Preset
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -100,6 +101,11 @@ class MainWindow(
     /** 강화별 표의 '최저치로 보기' / '이전 강화 보기'. 기억하지 않고 새로 계산할 때마다 꺼진 상태로 */
     private var worstOn = false
     private var lowerOn = false
+    /** 비교 기준(A). 지금 계산이나 저장 목록에서 고정한다. A/B 를 볼 강 (B 가 null 이면 찍힌 강) */
+    private var pinned: Preset? = null
+    private var pinTarget = 0
+    private var curTarget: Int? = null
+    private val compareBox = vbox()
 
     init {
         defaultCloseOperation = EXIT_ON_CLOSE
@@ -134,6 +140,7 @@ class MainWindow(
             add(row(label("총 성장률 (계산기)", 11f, MUTED)))
             add(row(totalLbl, gradeLbl))
             add(row(subLbl)); add(row(combatLbl)); add(row(scoreLbl)); add(row(warnLbl))
+            add(compareBox.apply { isVisible = false })
             add(JSeparator().apply { foreground = CHIP; maximumSize = Dimension(Int.MAX_VALUE, 2) })
             add(Box.createVerticalStrut(4))
             add(suggestHint.apply { isVisible = false })
@@ -144,6 +151,8 @@ class MainWindow(
                 for (i in 0..3) add(vbox().apply { add(row(label(STAT_NAMES[i], 10f, MUTED))); add(statF[i]); add(deltaF[i]) })
             })
             add(grid(listOf("인게임 총 성장 점수 (%)" to gameF), weights = listOf(1.0)))
+            add(Box.createVerticalStrut(4))
+            add(row(button("저장") { savePreset() }, button("기준으로 고정") { pinCurrent() }, button("저장 목록…") { showPresets() }))
             add(Box.createVerticalStrut(6))
             add(button("자세히 ▼").apply {
                 alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, 32)
@@ -286,8 +295,163 @@ class MainWindow(
             statF[i].text = s?.toString() ?: ""
             deltaF[i].text = d?.toString() ?: ""
         }
+        curTarget = null
         filling = false
         recompute()
+    }
+
+    // ------------------------------------------------------------------ 저장 목록 / 비교
+
+    private val presetFile get() = java.io.File(pets.dir, "presets.json")
+
+    fun presets(): List<Preset> = runCatching { Preset.listFromJson(presetFile.readText()) }.getOrDefault(emptyList())
+
+    private fun setPresets(list: List<Preset>) {
+        pets.dir.mkdirs()
+        presetFile.writeText(Preset.listToJson(list.take(Preset.MAX_COUNT)))
+    }
+
+    /** 지금 계산 화면의 값 (능력치 4개와 도감값을 알 수 있을 때만). 도감값 = 현재 − 도감 대비, 비었으면 150레벨 도감 */
+    private fun currentPreset(forSave: Boolean = false): Preset? {
+        val pet = pets.db.find(nameF.text)
+        val level = levelF.text.trim().toIntOrNull() ?: return null
+        val breaks = (breakF.text.trim().toIntOrNull() ?: 0).coerceIn(0, Calculator.MAX_BREAKS)
+        val stats = statF.map { num(it) }
+        val deltas = deltaF.map { num(it) }
+        if (stats.any { it == null || it <= 0 }) return null
+        val base = IntArray(4) { i ->
+            deltas[i]?.let { stats[i]!! - it } ?: pet?.maxS?.get(i)?.takeIf { level == Calculator.MAX_LEVEL } ?: return null
+        }
+        if (base.any { it <= 0 }) return null
+        val name = pet?.name ?: nameF.text.trim()
+        val game = num(gameF)
+        // 저장할 때만 같은 이름 뒤에 (2), (3) 을 붙인다
+        return Preset(Preset.defaultLabel(name, breaks, game, if (forSave) presets() else emptyList()), name, level, breaks,
+            IntArray(4) { stats[it]!! }, base, game)
+    }
+
+    private fun savePreset() {
+        val p = currentPreset(forSave = true) ?: return setStatus("능력치와 도감 대비를 먼저 채워 주세요 (150레벨이고 도감에 있으면 도감 대비는 비워도 됨)")
+        val list = presets()
+        if (list.size >= Preset.MAX_COUNT) return setStatus("저장은 ${Preset.MAX_COUNT}개까지입니다. 저장 목록에서 지워 주세요.")
+        setPresets(list + p)
+        setStatus("저장했습니다: ${p.label}")
+        presetDialog?.takeIf { it.isDisplayable }?.let { refreshPresetList() }
+    }
+
+    private fun pinCurrent() {
+        val p = currentPreset() ?: return setStatus("능력치와 도감 대비를 먼저 채워 주세요")
+        pin(p)
+    }
+
+    private fun pin(p: Preset) {
+        pinned = p; pinTarget = p.breaks
+        setStatus("기준 고정: ${p.label} — 다른 소환수를 계산하면 나란히 비교됩니다")
+        renderCompare(); revalidate(); repaint()
+    }
+
+    /** 저장한 값을 계산 화면에 그대로 띄운다 (게임에서 다시 찍지 않아도 됨) */
+    private fun loadPreset(p: Preset) {
+        filling = true
+        nameF.text = p.name; levelF.text = p.level.toString(); breakF.text = p.breaks.toString()
+        gameF.text = p.gameTotal?.toString() ?: ""
+        val d = p.deltas
+        for (i in 0..3) { statF[i].text = p.stats[i].toString(); deltaF[i].text = d[i].toString() }
+        lastParsed = null
+        worstOn = false; lowerOn = false; curTarget = null
+        filling = false
+        recompute()
+    }
+
+    private var presetDialog: javax.swing.JDialog? = null
+    private val presetModel = javax.swing.DefaultListModel<Preset>()
+
+    private fun refreshPresetList() { presetModel.clear(); presets().forEach { presetModel.addElement(it) } }
+
+    /** 저장 목록: 보기 / 기준으로 / 삭제 */
+    private fun showPresets() {
+        presetDialog?.takeIf { it.isDisplayable }?.let { refreshPresetList(); it.isVisible = true; it.toFront(); return }
+        val dlg = javax.swing.JDialog(this, "저장 목록", false)
+        refreshPresetList()
+        val list = javax.swing.JList(presetModel).apply {
+            background = FIELD; foreground = Color.WHITE; font = UI_FONT.deriveFont(13f)
+            // 이름은 사용자가 붙인 글자라 HTML 로 그리지 않는다
+            cellRenderer = object : javax.swing.DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(l: javax.swing.JList<*>?, v: Any?, i: Int, sel: Boolean, f: Boolean): Component =
+                    super.getListCellRendererComponent(l, (v as? Preset)?.let { "${it.label}   (Lv.${it.level} · 총능 ${fmt(Calculator.abilityScore(it.stats), 1)})" }, i, sel, f)
+                        .also { (it as JLabel).putClientProperty("html.disable", true); it.border = BorderFactory.createEmptyBorder(4, 6, 4, 6) }
+            }
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) { if (e.clickCount == 2) selectedValue?.let { loadPreset(it) } }
+            })
+        }
+        fun sel(f: (Preset) -> Unit) = list.selectedValue?.let(f) ?: setStatus("목록에서 하나를 골라 주세요")
+        dlg.contentPane = JPanel(BorderLayout()).apply {
+            background = BG
+            add(JScrollPane(list).apply { preferredSize = Dimension(380, 260); border = null }, BorderLayout.CENTER)
+            add(JPanel(FlowLayout(FlowLayout.RIGHT, 6, 6)).apply {
+                isOpaque = false
+                add(button("보기") { sel { loadPreset(it) } })
+                add(button("기준으로") { sel { pin(it) } })
+                add(button("삭제") { sel { p -> setPresets(presets().filterNot { it.label == p.label }); refreshPresetList() } })
+            }, BorderLayout.SOUTH)
+            add(label("두 번 누르면 계산 화면에 띄웁니다", 11f, MUTED).apply { border = BorderFactory.createEmptyBorder(6, 8, 2, 8) }, BorderLayout.NORTH)
+        }
+        dlg.pack(); dlg.setLocationRelativeTo(this); dlg.isVisible = true
+        presetDialog = dlg
+    }
+
+    /**
+     * 기준(A)과 지금 계산(B)을 나란히: 능력치와 "B 의 실제 전투 능력치가 A 보다 몇 %".
+     * 강은 찍힌 강이 기본이고 옆 칸에서 0~5강을 고르면 그 강의 예상 능력치로 비교한다.
+     */
+    private fun renderCompare() {
+        compareBox.removeAll()
+        val a = pinned
+        compareBox.isVisible = a != null
+        if (a == null) return
+        compareBox.add(section("비교"))
+        fun breakBox(sel: Int, onPick: (Int) -> Unit) = JComboBox((0..Calculator.MAX_BREAKS).map { "${it}강" }.toTypedArray()).apply {
+            selectedIndex = sel; font = UI_FONT.deriveFont(12f)
+            addActionListener { onPick(selectedIndex); SwingUtilities.invokeLater { renderCompare(); revalidate(); repaint() } }
+        }
+        val b = currentPreset()
+        val bT = b?.let { curTarget ?: it.breaks }
+        val c = b?.let { Calculator.compare(a.stats, a.base, a.breaks, pinTarget, it.stats, it.base, it.breaks, bT!!, growthAmp()) }
+        // 열 머리에 이름, 그 아래 강 고르기, 그 아래 능력치 (이름은 사용자가 붙인 글자라 HTML 로 그리지 않음)
+        val grid = FitPanel(GridLayout(0, 4, 4, 2)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
+        fun cell(t: String, color: Color = Color.WHITE, bold: Boolean = false, left: Boolean = false) = label(t, 12f, color).apply {
+            horizontalAlignment = if (left) JLabel.LEFT else JLabel.CENTER
+            if (bold) font = font.deriveFont(Font.BOLD)
+        }
+        grid.add(cell("")); grid.add(cell("${a.name}(기준)", bold = true)); grid.add(cell(b?.name?.ifBlank { "지금 계산" } ?: "-", bold = true)); grid.add(cell("실전투", MUTED))
+        grid.add(cell("")); grid.add(breakBox(pinTarget) { pinTarget = it })
+        grid.add(if (b != null) breakBox(bT!!) { curTarget = it } else cell("")); grid.add(cell(""))
+        for (i in 0..3) {
+            grid.add(cell(STAT_NAMES[i], SUB, left = true))
+            grid.add(cell("${c?.a?.get(i) ?: Calculator.statsAtBreaks(a.stats, a.base, a.breaks, pinTarget)[i]}"))
+            grid.add(cell(c?.b?.get(i)?.toString() ?: "-"))
+            val p = c?.pct?.get(i)
+            grid.add(cell(p?.let { combatPct(it, c.approx) } ?: "-", if (p == null) MUTED else if (p >= 0) GREEN else Color(0xF2, 0x8B, 0x82), bold = true))
+        }
+        grid.add(cell("총능", SUB, left = true))
+        grid.add(cell(fmt(c?.scoreA ?: Calculator.abilityScore(Calculator.statsAtBreaks(a.stats, a.base, a.breaks, pinTarget)), 1), MUTED))
+        grid.add(cell(c?.let { fmt(it.scoreB, 1) } ?: "-", MUTED)); grid.add(cell(""))
+        compareBox.add(grid)
+        compareBox.add(wrapNote(when {
+            b == null -> "다른 소환수를 계산하면 오른쪽에 나와서 기준과 비교됩니다."
+            c?.reason != null -> c.reason!!
+            else -> "실전투 = 성장증폭 ${ampText(growthAmp())}%와 총능 보너스를 넣은 실제 전투 능력치가 기준보다 몇 % 높은지. 강을 바꾸면 그 강의 예상 능력치로 비교합니다."
+        }))
+        compareBox.add(row(*listOfNotNull(
+            b?.let { bb -> button("A↔B 바꾸기") {
+                val old = pinned!!; val oldT = pinTarget
+                pinned = bb; pinTarget = curTarget ?: bb.breaks
+                loadPreset(old); curTarget = oldT; renderCompare(); revalidate(); repaint()
+            } },
+            button("기준 해제") { pinned = null; renderCompare(); revalidate(); repaint() },
+        ).toTypedArray()))
+        compareBox.add(Box.createVerticalStrut(6))
     }
 
     private fun recompute() {
@@ -336,16 +500,20 @@ class MainWindow(
             if (screenGame != null && range == null) warns += "화면의 인게임 ${screenGame}%와 능력치·도감 대비 값이 맞지 않습니다"
             scoreLbl.text = "총 능력치 점수 ${fmt(Calculator.abilityScore(cur), 1)}  ·  기본(도감) ${fmt(Calculator.abilityScore(b), 1)}"
             val combat = (if (showCombat()) Calculator.combat(cur, b, growthAmp()) else null)
-            combatLbl.isVisible = combat != null
+            combatLbl.isVisible = showCombat()
             if (combat != null) {
                 combatLbl.text = "종 대비 전투 능력치 ${combatPct(combat.avg, combat.approx)}  (성장증폭 ${ampText(growthAmp())}%)  (?)"
                 combatLbl.foreground = if (combat.avg >= 0) GREEN else Color(0xF2, 0x8B, 0x82)
+            } else {
+                // 숨기지 않고 왜 안 나오는지 알려 준다 (총능이 계산 범위 밖 등)
+                combatLbl.text = "종 대비 전투 능력치: " + (Calculator.combatUnavailableReason(cur, b) ?: "계산할 수 없음")
+                combatLbl.foreground = MUTED
             }
             renderEnhance(cur, b, breaks, level, real, realGrade)
         } else {
             combatLbl.isVisible = false
             totalLbl.text = "-"; gradeLbl.text = ""
-            subLbl.text = "능력치와 (도감 대비) 값을 확인해 주세요"
+            subLbl.text = html("능력치와 (도감 대비)를 채워 주세요.<br>150레벨이고 도감에 있는 소환수면 도감 대비는 비워도 됩니다")
             scoreLbl.text = ""
         }
         results.removeAll()
@@ -362,6 +530,7 @@ class MainWindow(
         // 경고에는 화면에서 읽은 글자(OCR)와 도감 이름이 들어가므로 이스케이프
         // 긴 경고는 창 너비 안에서 줄바꿈 (안 그러면 창이 옆으로 늘어나 입력칸이 잘린다)
         warnLbl.text = if (warns.isEmpty()) "" else "<html><div style='width:290px'>" + warns.joinToString("<br>") { esc(it) } + "</div></html>"
+        renderCompare()
         revalidate(); repaint()
     }
 
@@ -661,6 +830,9 @@ class MainWindow(
     }
 
     private fun note(t: String) = row(label(html(esc(t)), 11f, MUTED, allowHtml = true))
+
+    /** 긴 안내는 창 너비 안에서 줄바꿈 (안 그러면 창이 옆으로 늘어난다) */
+    private fun wrapNote(t: String) = row(label("<html><div style='width:290px'>" + esc(t) + "</div></html>", 11f, MUTED, allowHtml = true))
 
     private fun section(t: String) = row(label(t, 13f, Color.WHITE).apply {
         font = font.deriveFont(Font.BOLD); border = BorderFactory.createEmptyBorder(10, 0, 4, 0)
