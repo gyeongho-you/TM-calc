@@ -105,6 +105,8 @@ class MainWindow(
     private var pinned: Preset? = null
     private var pinTarget = 0
     private var curTarget: Int? = null
+    /** 비교 대상(B)을 저장 목록에서 골랐으면 그 소환수, 아니면 null(= 지금 계산) */
+    private var compareB: Preset? = null
     private val compareBox = vbox()
 
     init {
@@ -295,7 +297,7 @@ class MainWindow(
             statF[i].text = s?.toString() ?: ""
             deltaF[i].text = d?.toString() ?: ""
         }
-        curTarget = null
+        curTarget = null; compareB = null
         filling = false
         recompute()
     }
@@ -337,6 +339,13 @@ class MainWindow(
         setPresets(list + p)
         setStatus("저장했습니다: ${p.label}")
         presetDialog?.takeIf { it.isDisplayable }?.let { refreshPresetList() }
+        renderCompare(); revalidate(); repaint() // 비교 칸의 고르기 목록에도 바로 나오게
+    }
+
+    private fun setCompareB(p: Preset?) {
+        if (pinned == null) return setStatus("먼저 [기준으로]로 기준을 고정해 주세요")
+        compareB = p; curTarget = null
+        renderCompare(); revalidate(); repaint()
     }
 
     private fun pinCurrent() {
@@ -358,7 +367,7 @@ class MainWindow(
         val d = p.deltas
         for (i in 0..3) { statF[i].text = p.stats[i].toString(); deltaF[i].text = d[i].toString() }
         lastParsed = null
-        worstOn = false; lowerOn = false; curTarget = null
+        worstOn = false; lowerOn = false; curTarget = null; compareB = null
         filling = false
         recompute()
     }
@@ -393,7 +402,15 @@ class MainWindow(
                 isOpaque = false
                 add(button("보기") { sel { loadPreset(it) } })
                 add(button("기준으로") { sel { pin(it) } })
-                add(button("삭제") { sel { p -> setPresets(presets().filterNot { it.label == p.label }); refreshPresetList() } })
+                add(button("비교") { sel { setCompareB(it) } })
+                add(button("삭제") { sel { p ->
+                    // 실수로 지우지 않게 한 번 묻는다
+                    if (JOptionPane.showConfirmDialog(dlg, "'${p.label}' 을(를) 저장 목록에서 삭제할까요?", "삭제",
+                            JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {
+                        setPresets(presets().filterNot { it.label == p.label }); refreshPresetList()
+                        renderCompare(); revalidate(); repaint()
+                    }
+                } })
             }, BorderLayout.SOUTH)
             add(label("두 번 누르면 계산 화면에 띄웁니다", 11f, MUTED).apply { border = BorderFactory.createEmptyBorder(6, 8, 2, 8) }, BorderLayout.NORTH)
         }
@@ -411,11 +428,22 @@ class MainWindow(
         compareBox.isVisible = a != null
         if (a == null) return
         compareBox.add(section("비교"))
+        val saved = presets()
+        // 이름 칸: 세로 목록에서 저장한 소환수 고르기 (A: 기준 바꾸기, B: 지금 계산 / 저장한 소환수)
+        fun nameBox(items: List<String>, sel: Int, onPick: (Int) -> Unit) = JComboBox(items.toTypedArray()).apply {
+            selectedIndex = sel; font = UI_FONT.deriveFont(Font.BOLD, 12f)
+            (renderer as? JLabel)?.putClientProperty("html.disable", true)
+            // 표는 네 칸이 같은 너비라, 긴 이름 때문에 창이 옆으로 늘어나지 않게 폭을 고정 (펼친 목록은 전체 이름)
+            preferredSize = Dimension(84, preferredSize.height)
+            prototypeDisplayValue = null
+            addActionListener { if (selectedIndex != sel) { onPick(selectedIndex); SwingUtilities.invokeLater { renderCompare(); revalidate(); repaint() } } }
+        }
         fun breakBox(sel: Int, onPick: (Int) -> Unit) = JComboBox((0..Calculator.MAX_BREAKS).map { "${it}강" }.toTypedArray()).apply {
             selectedIndex = sel; font = UI_FONT.deriveFont(12f)
+            preferredSize = Dimension(84, preferredSize.height)
             addActionListener { onPick(selectedIndex); SwingUtilities.invokeLater { renderCompare(); revalidate(); repaint() } }
         }
-        val b = currentPreset()
+        val b = compareB ?: currentPreset()
         val bT = b?.let { curTarget ?: it.breaks }
         val c = b?.let { Calculator.compare(a.stats, a.base, a.breaks, pinTarget, it.stats, it.base, it.breaks, bT!!, growthAmp()) }
         // 열 머리에 이름, 그 아래 강 고르기, 그 아래 능력치 (이름은 사용자가 붙인 글자라 HTML 로 그리지 않음)
@@ -424,7 +452,13 @@ class MainWindow(
             horizontalAlignment = if (left) JLabel.LEFT else JLabel.CENTER
             if (bold) font = font.deriveFont(Font.BOLD)
         }
-        grid.add(cell("")); grid.add(cell("${a.name}(기준)", bold = true)); grid.add(cell(b?.name?.ifBlank { "지금 계산" } ?: "-", bold = true)); grid.add(cell("실전투", MUTED))
+        grid.add(cell(""))
+        grid.add(nameBox(listOf("${a.name}(기준)") + saved.map { it.label }, 0) { if (it > 0) pin(saved[it - 1]) })
+        val bSel = compareB?.let { cb -> saved.indexOfFirst { it.label == cb.label } + 1 } ?: 0
+        grid.add(nameBox(listOf(if (compareB == null) (b?.name?.ifBlank { null } ?: "지금 계산") else "지금 계산") + saved.map { it.label }, bSel.coerceAtLeast(0)) {
+            setCompareB(if (it == 0) null else saved[it - 1])
+        })
+        grid.add(cell("실전투", MUTED))
         grid.add(cell("")); grid.add(breakBox(pinTarget) { pinTarget = it })
         grid.add(if (b != null) breakBox(bT!!) { curTarget = it } else cell("")); grid.add(cell(""))
         for (i in 0..3) {
@@ -439,17 +473,18 @@ class MainWindow(
         grid.add(cell(c?.let { fmt(it.scoreB, 1) } ?: "-", MUTED)); grid.add(cell(""))
         compareBox.add(grid)
         compareBox.add(wrapNote(when {
-            b == null -> "다른 소환수를 계산하면 오른쪽에 나와서 기준과 비교됩니다."
+            b == null -> "다른 소환수를 계산하거나, 오른쪽 이름 칸에서 저장한 소환수를 고르면 기준과 비교됩니다."
             c?.reason != null -> c.reason!!
             else -> "실전투 = 성장증폭 ${ampText(growthAmp())}%와 총능 보너스를 넣은 실제 전투 능력치가 기준보다 몇 % 높은지. 강을 바꾸면 그 강의 예상 능력치로 비교합니다."
         }))
         compareBox.add(row(*listOfNotNull(
             b?.let { bb -> button("A↔B 바꾸기") {
-                val old = pinned!!; val oldT = pinTarget
-                pinned = bb; pinTarget = curTarget ?: bb.breaks
-                loadPreset(old); curTarget = oldT; renderCompare(); revalidate(); repaint()
+                val oldA = pinned!!; val oldAT = pinTarget
+                pinned = bb; pinTarget = bT!!
+                if (compareB != null) compareB = oldA else loadPreset(oldA)
+                curTarget = oldAT; renderCompare(); revalidate(); repaint()
             } },
-            button("기준 해제") { pinned = null; renderCompare(); revalidate(); repaint() },
+            button("기준 해제") { pinned = null; compareB = null; renderCompare(); revalidate(); repaint() },
         ).toTypedArray()))
         compareBox.add(Box.createVerticalStrut(6))
     }

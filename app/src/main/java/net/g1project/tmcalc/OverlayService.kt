@@ -97,8 +97,8 @@ class OverlayService : Service() {
     /** A 를 볼 강 / B 를 볼 강 (B 가 null 이면 찍힌 강) */
     private var pinTarget = 0
     private var curTarget: Int? = null
-    /** 강 고르기 줄을 펼친 쪽 ('A' / 'B', 없으면 ' ') */
-    private var pickFor = ' '
+    /** 비교 대상(B)을 저장 목록에서 골랐으면 그 소환수, 아니면 null(= 지금 계산) */
+    private var compareB: Preset? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -290,7 +290,7 @@ class OverlayService : Service() {
             statEdits[i]!!.setText(s?.toString() ?: "")
             deltaEdits[i]!!.setText(d?.toString() ?: "")
         }
-        curTarget = null; pickFor = ' '
+        curTarget = null; compareB = null
         filling = false
         recompute()
     }
@@ -323,10 +323,11 @@ class OverlayService : Service() {
         AppPrefs.setPresets(this, list + p)
         toast("저장했습니다: ${p.label}")
         if (presetBox.visibility == View.VISIBLE) renderPresets()
+        renderCompare() // 비교 칸의 고르기 목록에도 바로 나오게
     }
 
     private fun pin(p: Preset) {
-        pinned = p; pinTarget = p.breaks; pickFor = ' '
+        pinned = p; pinTarget = p.breaks
         toast("기준 고정: ${p.label}\n다른 소환수를 계산하면 나란히 비교됩니다")
         renderCompare()
     }
@@ -341,7 +342,7 @@ class OverlayService : Service() {
         val d = p.deltas
         for (i in 0..3) { statEdits[i]!!.setText(p.stats[i].toString()); deltaEdits[i]!!.setText(d[i].toString()) }
         lastParsed = null
-        worstOn = false; lowerOn = false; curTarget = null; pickFor = ' '
+        worstOn = false; lowerOn = false; curTarget = null; compareB = null
         filling = false
         recompute()
     }
@@ -365,45 +366,82 @@ class OverlayService : Service() {
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 addView(headerButton("보기") { loadPreset(p) })
                 addView(headerButton("기준") { pin(p) })
-                addView(headerButton("삭제") {
-                    AppPrefs.setPresets(this@OverlayService, AppPrefs.presets(this@OverlayService).filterNot { it.label == p.label })
-                    renderPresets()
-                })
+                addView(headerButton("비교") { setCompareB(p) })
+                addView(headerButton("삭제") { confirmDelete(p) })
             })
         }
     }
 
+    /** 실수로 지우지 않게 한 번 묻는다 (레이어 위에 뜨는 창) */
+    private fun confirmDelete(p: Preset) {
+        android.app.AlertDialog.Builder(ui)
+            .setTitle("삭제")
+            .setMessage("'${p.label}' 을(를) 저장 목록에서 삭제할까요?")
+            .setNegativeButton("취소", null)
+            .setPositiveButton("삭제") { _, _ ->
+                AppPrefs.setPresets(this, AppPrefs.presets(this).filterNot { it.label == p.label })
+                renderPresets(); renderCompare()
+            }
+            .create()
+            .apply { window?.setType(overlayType()) }
+            .show()
+    }
+
+    private fun setCompareB(p: Preset?) {
+        if (pinned == null) return toast("먼저 [기준]으로 기준을 고정해 주세요")
+        compareB = p; curTarget = null
+        renderCompare()
+    }
+
+    /** 세로로 뜨는 선택 목록 (안드로이드 PopupMenu, 레이어 창 위에 뜬다) */
+    private fun choose(anchor: View, items: List<String>, onPick: (Int) -> Unit) {
+        android.widget.PopupMenu(ui, anchor).apply {
+            items.forEachIndexed { i, t -> menu.add(0, i, i, t) }
+            setOnMenuItemClickListener { onPick(it.itemId); true }
+        }.show()
+    }
+
     /**
-     * 기준(A)과 지금 계산(B)을 나란히: 능력치와 "B 의 실제 전투 능력치가 A 보다 몇 %".
-     * 강은 찍힌 강이 기본이고, 강 글자를 누르면 0~5강 중에서 고를 수 있다 (예상 능력치로 바꿔서 비교).
+     * 기준(A)과 비교 대상(B)을 나란히: 능력치와 "B 의 실제 전투 능력치가 A 보다 몇 %".
+     * B 는 지금 계산 화면이 기본이고, 이름을 누르면 저장 목록에서 고를 수 있다 (A 도 마찬가지).
+     * 강은 찍힌 강이 기본이고, 강 버튼을 누르면 0~5강 목록에서 골라 그 강의 예상 능력치로 비교한다.
      */
     private fun renderCompare() {
         compareBox.removeAllViews()
         val a = pinned ?: run { compareBox.visibility = View.GONE; return }
         compareBox.visibility = View.VISIBLE
         compareBox.addView(sectionTitle("비교"))
-        val b = currentPreset()
+        val b = compareB ?: currentPreset()
         val bT = b?.let { curTarget ?: it.breaks }
         val c = b?.let { Calculator.compare(a.stats, a.base, a.breaks, pinTarget, it.stats, it.base, it.breaks, bT!!, growthAmp()) }
         val aStats = c?.a ?: Calculator.statsAtBreaks(a.stats, a.base, a.breaks, pinTarget)
-        // 열 머리에 이름, 그 아래 강 버튼 (누르면 0~5강 고르기), 그 아래 능력치
-        compareBox.addView(row(listOf("", "${a.name}(기준)", b?.name?.ifBlank { "지금 계산" } ?: "-", "실전투"), header = true).apply {
+        val saved = AppPrefs.presets(this)
+        // 열 머리: 이름 (누르면 저장 목록에서 고르기)
+        compareBox.addView(row(listOf("", "${a.name}(기준) ▾", (b?.name?.ifBlank { "지금 계산" } ?: "고르기") + " ▾", "실전투"), header = true).apply {
             for (i in 1..2) (getChildAt(i) as TextView).apply { setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD }
+            getChildAt(1).setOnClickListener { v ->
+                if (saved.isEmpty()) toast("저장한 소환수가 없습니다") else choose(v, saved.map { it.label }) { pin(saved[it]) }
+            }
+            getChildAt(2).setOnClickListener { v ->
+                choose(v, listOf("지금 계산") + saved.map { it.label }) { setCompareB(if (it == 0) null else saved[it - 1]) }
+            }
         })
+        // 그 아래 강 (누르면 0~5강 목록)
+        val breakItems = (0..Calculator.MAX_BREAKS).map { "${it}강" }
         compareBox.addView(LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(View(ui), LinearLayout.LayoutParams(0, 0, 0.8f))
-            for ((side, k) in listOf('A' to pinTarget, 'B' to bT)) {
+            for ((k, onPick) in listOf<Pair<Int?, (Int) -> Unit>>(pinTarget to { v -> pinTarget = v }, bT to { v -> curTarget = v })) {
                 addView(LinearLayout(ui).apply {
                     gravity = Gravity.CENTER
-                    if (k != null) addView(headerButton("${k}강 ▾") { pickFor = if (pickFor == side) ' ' else side; renderCompare() }
-                        .apply { (layoutParams as LinearLayout.LayoutParams).marginStart = 0 })
+                    if (k != null) addView(headerButton("${k}강 ▾") {}.apply {
+                        (layoutParams as LinearLayout.LayoutParams).marginStart = 0
+                        setOnClickListener { v -> choose(v, breakItems) { onPick(it); renderCompare() } }
+                    })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
             }
             addView(View(ui), LinearLayout.LayoutParams(0, 0, 1f))
         })
-        if (pickFor == 'A') compareBox.addView(breakPicker("기준") { pinTarget = it })
-        if (pickFor == 'B' && b != null) compareBox.addView(breakPicker(b.name) { curTarget = it })
         for (i in 0..3) {
             val p = c?.pct?.get(i)
             val line = row(listOf(STAT_NAMES[i], "${aStats[i]}", c?.b?.get(i)?.toString() ?: "-", p?.let { combatPct(it, c.approx) } ?: "-"))
@@ -415,28 +453,20 @@ class OverlayService : Service() {
         }
         compareBox.addView(row(listOf("총능", fmt(c?.scoreA ?: Calculator.abilityScore(aStats), 1), c?.let { fmt(it.scoreB, 1) } ?: "-", ""), small = true))
         compareBox.addView(note(when {
-            b == null -> "다른 소환수를 계산하면 오른쪽에 나와서 기준과 비교됩니다."
+            b == null -> "다른 소환수를 계산하거나, 오른쪽 이름을 눌러 저장한 소환수를 고르면 기준과 비교됩니다."
             c?.reason != null -> c.reason!!
-            else -> "실전투 = 성장증폭 ${ampText(growthAmp())}%와 총능 보너스를 넣은 실제 전투 능력치가 기준보다 몇 % 높은지. 강 버튼을 누르면 그 강의 예상 능력치로 비교합니다."
+            else -> "실전투 = 성장증폭 ${ampText(growthAmp())}%와 총능 보너스를 넣은 실제 전투 능력치가 기준보다 몇 % 높은지. 이름을 누르면 저장 목록에서, 강을 누르면 0~5강에서 고를 수 있습니다."
         }))
         compareBox.addView(LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL
             if (b != null) addView(headerButton("A↔B 바꾸기") {
-                val old = pinned!!; val oldT = pinTarget
-                pinned = b; pinTarget = curTarget ?: b.breaks
-                loadPreset(old); curTarget = oldT; renderCompare()
+                val oldA = pinned!!; val oldAT = pinTarget
+                pinned = b; pinTarget = bT!!
+                if (compareB != null) { compareB = oldA; curTarget = oldAT; renderCompare() }
+                else { loadPreset(oldA); curTarget = oldAT; renderCompare() }
             })
-            addView(headerButton("기준 해제") { pinned = null; pickFor = ' '; renderCompare() })
+            addView(headerButton("기준 해제") { pinned = null; compareB = null; renderCompare() })
         })
-    }
-
-    /** 강 고르기 줄: "기준: [0강] [1강] … [5강]" */
-    private fun breakPicker(who: String, onPick: (Int) -> Unit) = LinearLayout(ui).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL or Gravity.END
-        setPadding(0, dp(2), 0, dp(4))
-        addView(TextView(ui).apply { text = "$who:"; textSize = 11f; setTextColor(Color.parseColor("#9A9DA3")) })
-        for (k in 0..Calculator.MAX_BREAKS) addView(headerButton("$k") { onPick(k); pickFor = ' '; renderCompare() })
     }
 
     // ---------------------------------------------------------------- calc + render

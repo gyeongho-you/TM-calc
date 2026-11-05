@@ -54,17 +54,31 @@ class CompareUiTest {
         put("라르곤", 150, 0, listOf(559, 360, 405, 3981), listOf(18, 4, 11, -256))
         Thread.sleep(300)
         var t = texts()
-        assertTrue(t.toString(), "화혼랑(기준)" in t && "라르곤" in t)
+        fun combos(): List<JComboBox<*>> { val out = mutableListOf<JComboBox<*>>(); fun w(c: Container) { for (x in c.components) { if (x is JComboBox<*>) out += x; if (x is Container) w(x) } }; SwingUtilities.invokeAndWait { w(f("compareBox") as Container) }; return out }
+        fun names() = combos().filter { it.itemCount != 6 }.map { it.selectedItem.toString() }
+        assertEquals(listOf("화혼랑(기준)", "라르곤"), names())
         // 성장증폭 8%: 라르곤은 공 −34% 방 −18% 순 −41% 체 −34%
         assertTrue(t.toString(), listOf("-34%", "-18%", "-41%").all { it in t })
         snap(win, "compare")
         // B 를 5강으로 바꾸면 예상 능력치(586 378 425 4193)로 비교
-        val combo = all().filterIsInstance<JComboBox<*>>().last { it.itemCount == 6 }
+        val combo = combos().last { it.itemCount == 6 }
         SwingUtilities.invokeAndWait { combo.selectedIndex = 5 }
         Thread.sleep(400)
         t = texts()
         assertTrue(t.toString(), listOf("586", "378", "425", "4193").all { it in t })
         snap(win, "compare-5")
+        // 비교 대상(B)을 저장 목록에서 고르기: 라르곤도 저장하고, 계산 화면은 다른 값으로 바꿔도 B 는 저장한 라르곤
+        click("저장")
+        assertEquals(2, win.presets().size)
+        val bName = combos().filter { it.itemCount != 6 }[1]
+        SwingUtilities.invokeAndWait { bName.selectedIndex = 2 } // 0 = 지금 계산, 1 = 화혼랑, 2 = 라르곤
+        Thread.sleep(400)
+        put("화혼랑", 150, 0, listOf(593, 309, 481, 4231), listOf(19, 15, -4, 327))
+        Thread.sleep(300)
+        t = texts()
+        assertTrue(t.toString(), listOf("-34%", "-18%", "-41%").all { it in t })
+        assertEquals("라르곤 0강", names()[1])
+        snap(win, "compare-saved")
         // 저장 목록에서 다시 불러오기
         val p = win.presets().first()
         SwingUtilities.invokeAndWait { MainWindow::class.java.getDeclaredMethod("loadPreset", net.g1project.tmcalc.Preset::class.java).apply { isAccessible = true }.invoke(win, p) }
