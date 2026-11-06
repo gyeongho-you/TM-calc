@@ -46,10 +46,11 @@ class DexEditorUiTest {
         var shown = emptyList<JDialog>()
         for (t in 0 until 30) {
             shown = Window.getWindows().filter { it.isShowing && it is JDialog }.map { it as JDialog }
-            if (shown.any { it.title == "소환수 추가" }) break
+            if (shown.any { it.title == "소환수 추가" || it.title.endsWith(" 수정") }) break
             Thread.sleep(200)
         }
-        val dlg = shown.firstOrNull { it.title == "소환수 추가" } ?: error("창: ${shown.map { it.title }}")
+        // 이제 기본 도감에 있는 소환수라 "1세대의 전설 수정" 으로 열린다 (화면 값이 도감 값보다 먼저 채워짐)
+        val dlg = shown.firstOrNull { it.title == "1세대의 전설 수정" } ?: error("창: ${shown.map { it.title }}")
         val f = mutableListOf<String>()
         fun walk(c: Container) { for (x in c.components) { if (x is JTextField) f += x.text; if (x is Container) walk(x) } }
         SwingUtilities.invokeAndWait { walk(dlg.contentPane as Container) }
@@ -57,7 +58,7 @@ class DexEditorUiTest {
         SwingUtilities.invokeAndWait { dlg.paint(img.graphics) }
         File("build/ui").mkdirs(); ImageIO.write(img, "png", File("build/ui/dex-editor.png"))
         // 이름, 등급, 속성, 타입, 초기치 4, 성장률 4, 만렙S 4
-        assertEquals(listOf("1세대의전설", "전설", "어둠", "비행", "12", "7", "15", "103", "3.18", "1.93", "3.75", "25.14",
+        assertEquals(listOf("1세대의 전설", "전설", "어둠", "비행", "12", "7", "15", "103", "3.18", "1.93", "3.75", "25.14",
             "486", "295", "574", "3849"), f)
         SwingUtilities.invokeAndWait { Window.getWindows().forEach { it.dispose() } }
         prefs.removeNode()
