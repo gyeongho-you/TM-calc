@@ -213,12 +213,13 @@ class PetEditorActivity : Activity() {
                     orientation = LinearLayout.VERTICAL
                     setPadding(0, px(6), 0, px(6))
                     addView(TextView(this@PetEditorActivity).apply {
-                        text = p.name + tag + (if (tags.isEmpty()) "" else "   $tags")
+                        text = p.name + tag
                         textSize = 13f
                         setTextColor(if (tag.isEmpty()) Color.WHITE else Color.parseColor("#F2B84B"))
                     })
                     val score = String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))
-                    addView(statRow("", p.maxS.map { "$it" } + score, Color.parseColor("#C9CBD0"), 13f))
+                    // 등급/속성/타입은 숫자와 같은 줄 맨 앞 칸에
+                    addView(statRow(tags, p.maxS.map { "$it" } + score, Color.parseColor("#C9CBD0"), 13f, Color.parseColor("#9A9DA3")))
                     if (realSort) {
                         val bonus = PetSort.realBonus(p, amp)
                         addView(statRow("실전투", p.maxS.map { Math.round(it * bonus).toString() } + "", Color.parseColor("#4FC3F7"), 12f))
@@ -229,10 +230,13 @@ class PetEditorActivity : Activity() {
     }
 
     /** 공·방·순·체·총능 칸 (칸 너비가 같아 줄끼리 위아래로 맞는다). [label] 은 맨 앞 작은 글자 */
-    private fun statRow(label: String, cells: List<String>, color: Int, size: Float) = LinearLayout(this).apply {
+    private fun statRow(label: String, cells: List<String>, color: Int, size: Float,
+                        labelColor: Int = Color.parseColor("#4FC3F7")) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        addView(TextView(this@PetEditorActivity).apply { text = label; textSize = 10f; setTextColor(Color.parseColor("#4FC3F7")) },
-            LinearLayout.LayoutParams(0, -2, 0.9f))
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        // 맨 앞 칸: "전설/바람/마법" 이 한 줄에 들어갈 만큼
+        addView(TextView(this@PetEditorActivity).apply { text = label; textSize = 10f; setTextColor(labelColor); setSingleLine() },
+            LinearLayout.LayoutParams(0, -2, 1.7f))
         cells.forEachIndexed { i, c ->
             addView(TextView(this@PetEditorActivity).apply {
                 text = c; textSize = size; setTextColor(color)

@@ -87,10 +87,11 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
                 } else {
                     // 보기 모드: 이름 줄 + 공·방·순·체·총능 칸 (실전투를 켜면 그 아래에 실전투 환산값 = 능력치 × 총능 보너스)
                     val bonus = PetSort.realBonus(p, growthAmp())
-                    fun tds(cells: List<String>, color: String) = cells.joinToString("") { "<td width='58' align='right'><font color='$color'>$it</font></td>" }
-                    "<html><b>${esc(p.name)}</b>$tag&nbsp;&nbsp;<font color='#9A9DA3'>$info</font>" +
-                        "<table cellspacing='0' cellpadding='0'><tr><td width='44'></td>" + tds(p.maxS.map { "$it" } + score, "#C9CBD0") + "</tr>" +
-                        (if (realBox.isSelected) "<tr><td width='44'><font color='#4FC3F7'>실전투</font></td>" +
+                    fun tds(cells: List<String>, color: String) = cells.joinToString("") { "<td width='50' align='right'><font color='$color'>$it</font></td>" }
+                    // 등급/속성/타입은 숫자와 같은 줄 맨 앞 칸에
+                    "<html><b>${esc(p.name)}</b>$tag" +
+                        "<table cellspacing='0' cellpadding='0'><tr><td width='92'><font color='#9A9DA3'>$info</font></td>" + tds(p.maxS.map { "$it" } + score, "#C9CBD0") + "</tr>" +
+                        (if (realBox.isSelected) "<tr><td width='92'><font color='#4FC3F7'>실전투</font></td>" +
                             tds(p.maxS.map { Math.round(it * bonus).toString() } + "", "#4FC3F7") + "</tr>" else "") +
                         "</table></html>"
                 }
@@ -140,8 +141,8 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
                     add(javax.swing.Box.createVerticalStrut(4))
                     add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT; add(realBox) })
                     // 칸 머리
-                    add(row(label("<html><table cellspacing='0' cellpadding='0'><tr><td width='52'></td>" +
-                        listOf("공", "방", "순", "체", "총능").joinToString("") { "<td width='58' align='right'>$it</td>" } +
+                    add(row(label("<html><table cellspacing='0' cellpadding='0'><tr><td width='100'></td>" +
+                        listOf("공", "방", "순", "체", "총능").joinToString("") { "<td width='50' align='right'>$it</td>" } +
                         "</tr></table></html>", 11f, MainWindow.MUTED, allowHtml = true).apply { border = BorderFactory.createEmptyBorder(6, 0, 0, 0) }))
                 })
                 add(row(count))
