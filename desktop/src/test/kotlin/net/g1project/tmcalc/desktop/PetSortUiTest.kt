@@ -36,7 +36,7 @@ class PetSortUiTest {
         SwingUtilities.invokeAndWait { dlg.paint(img.graphics) }
         File("build/ui").mkdirs(); ImageIO.write(img, "png", File("build/ui/dex-sort.png"))
         // 실전투 기준을 켜면 능력치 × 총능 보너스 순서 (보너스 ×n.nn 표시)
-        val real = PetEditorDialog::class.java.getDeclaredField("realBox").apply { isAccessible = true }.get(dlg) as javax.swing.JCheckBox
+        val real = PetEditorDialog::class.java.getDeclaredField("realBox").apply { isAccessible = true }.get(dlg) as javax.swing.JToggleButton
         SwingUtilities.invokeAndWait { real.doClick() }
         Thread.sleep(300)
         val keys = (0 until model.size).map { model[it].maxS[0] * net.g1project.tmcalc.PetSort.realBonus(model[it], net.g1project.tmcalc.Calculator.DEFAULT_GROWTH_AMP) }

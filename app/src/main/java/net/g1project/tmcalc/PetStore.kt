@@ -24,7 +24,11 @@ object PetStore {
     fun user(ctx: Context): List<Pet> {
         val f = File(ctx.filesDir, USER_FILE)
         if (!f.exists()) return emptyList()
-        return runCatching { PetDb.parse(f.readText()).pets }.getOrDefault(emptyList())
+        val list = runCatching { PetDb.parse(f.readText()).pets }.getOrDefault(emptyList())
+        // 기본 도감이 업데이트돼서 내가 고친 값과 똑같아진 소환수는 내 도감에서 뺀다 ([수정함] 표시도 사라짐)
+        val kept = PetDb.pruneSameAsBase(list, builtIn(ctx))
+        if (kept.size != list.size) f.writeText(exportJson(kept))
+        return kept
     }
 
     /** 기본 도감에 내 도감을 덮어쓴 결과 */

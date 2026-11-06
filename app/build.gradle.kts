@@ -19,8 +19,8 @@ android {
         applicationId = "net.g1project.tmcalc"
         minSdk = 30
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.5.3"
+        versionCode = 20
+        versionName = "1.5.4"
     }
 
     signingConfigs {

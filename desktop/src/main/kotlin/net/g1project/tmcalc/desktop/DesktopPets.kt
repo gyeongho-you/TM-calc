@@ -16,6 +16,13 @@ class DesktopPets(val dir: File = File(System.getenv("APPDATA") ?: System.getPro
     val builtIn: List<Pet> = PetDb.parse(javaClass.getResource("/pets.json")!!.readText()).pets
     private val builtInKeys = builtIn.associateBy { PetDb.key(it.name) }
 
+    init {
+        // 기본 도감이 업데이트돼서 내가 고친 값과 똑같아진 소환수는 내 도감에서 뺀다 ([수정함] 표시도 사라짐)
+        val list = user()
+        val kept = PetDb.pruneSameAsBase(list, builtIn)
+        if (kept.size != list.size) runCatching { userFile.writeText(toJson(kept)) }
+    }
+
     var db: PetDb = load()
         private set
 

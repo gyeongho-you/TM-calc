@@ -98,4 +98,15 @@ class CompareTest {
         // 총능 정렬은 실전투와 상관없이 같다
         assertEquals(PetSort.SCORE_DESC.sort(db.pets).map { it.name }, PetSort.SCORE_DESC.sort(db.pets, 0.08).map { it.name })
     }
+
+    /** 기본 도감이 업데이트돼서 내가 고친 값과 같아지면 내 도감에서 뺀다 (등급 등이 비어 있어도 같다고 봄) */
+    @Test
+    fun pruneSameAsBase() {
+        val base = listOf(Pet("라르곤", "전설", "불", "야수", intArrayOf(14, 9, 10, 114), doubleArrayOf(3.54, 2.32, 2.57, 27.67), intArrayOf(541, 356, 394, 4237)))
+        val same = Pet("라르곤", "", "", "", intArrayOf(14, 9, 10, 114), doubleArrayOf(3.54, 2.32, 2.57, 27.67), intArrayOf(541, 356, 394, 4237))
+        val diff = Pet("라르곤", "전설", "불", "야수", intArrayOf(14, 9, 10, 114), doubleArrayOf(3.54, 2.32, 2.57, 27.67), intArrayOf(541, 356, 395, 4237))
+        val extra = Pet("새것", "", "", "", intArrayOf(1, 1, 1, 1), doubleArrayOf(1.0, 1.0, 1.0, 1.0), intArrayOf(150, 150, 150, 150))
+        assertEquals(listOf("새것"), PetDb.pruneSameAsBase(listOf(same, extra), base).map { it.name })
+        assertEquals(2, PetDb.pruneSameAsBase(listOf(diff, extra), base).size)
+    }
 }

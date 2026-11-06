@@ -150,6 +150,21 @@ class PetDb(val pets: List<Pet>) {
             else "${STAT_NAMES[i]} 만렙S ${p.maxS[i]} (초기치+성장률×149 = ${Math.round(want)})"
         }
 
+        /**
+         * 내 도감 중 기본 도감과 값이 똑같아진 것(기본 도감이 업데이트돼서 내가 고친 값과 같아짐)을 뺀다.
+         * 숫자(초기치·성장률·만렙S)가 같고, 등급/속성/타입은 같거나 내 쪽이 비어 있으면 같다고 본다.
+         * 그래야 [수정함] 표시가 사라지고, 다음에 기본 도감이 또 바뀌면 그 값을 그대로 받는다.
+         */
+        fun pruneSameAsBase(user: List<Pet>, base: List<Pet>): List<Pet> {
+            val byKey = base.associateBy { key(it.name) }
+            fun tag(mine: String, b: String) = mine.isBlank() || mine == b
+            return user.filterNot { u ->
+                val b = byKey[key(u.name)] ?: return@filterNot false
+                u.init.contentEquals(b.init) && u.sGrowth.contentEquals(b.sGrowth) && u.maxS.contentEquals(b.maxS) &&
+                    tag(u.grade, b.grade) && tag(u.element, b.element) && tag(u.type, b.type)
+            }
+        }
+
         /** 화면에서 읽은 이름을 도감에 넣을 이름으로: 돌파 "(+4)" 만 빼고 숫자·띄어쓰기는 둔다 ("1세대의 전설") */
         fun displayName(raw: String): String =
             raw.replace(STRIP, "").filter { it in '가'..'힣' || it.isLetterOrDigit() || it == ' ' || it == '(' || it == ')' }

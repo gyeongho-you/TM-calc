@@ -52,8 +52,19 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
         font = MainWindow.UI_FONT.deriveFont(12f)
     }
     /** 켜면 능력치 정렬을 실전투(내 성장증폭 × 그 종 총능 보너스) 기준으로 */
-    private val realBox = javax.swing.JCheckBox("실전투 기준 (총능 보너스 포함)").apply {
-        isOpaque = false; foreground = MainWindow.SUB; font = MainWindow.UI_FONT.deriveFont(12f)
+    private val realBox = javax.swing.JToggleButton("실전투 기준").apply {
+        putClientProperty("html.disable", true)
+        font = MainWindow.UI_FONT.deriveFont(Font.BOLD, 12f); isFocusPainted = false; isContentAreaFilled = false; isOpaque = false
+    }
+
+    /** 실전투 기준 버튼: 켜짐/꺼짐 글자와 파란 테두리로 잘 보이게 */
+    private fun paintRealBox() {
+        val on = realBox.isSelected
+        val blue = Color(0x4FC3F7)
+        realBox.text = (if (on) "■ " else "□ ") + "실전투 기준 " + (if (on) "켜짐" else "꺼짐") + "  (성장증폭 " + ampText(growthAmp()) + "% · 총능 보너스 포함)"
+        realBox.foreground = if (on) blue else MainWindow.SUB
+        realBox.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(if (on) blue else Color(0x6A6D73), 1, true), BorderFactory.createEmptyBorder(5, 10, 5, 10))
     }
 
     init {
@@ -121,7 +132,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
         // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
         val sort = PetSort.values()[sortBox.selectedIndex.coerceAtLeast(0)]
         val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 } else sort.sort(filtered, if (realBox.isSelected) growthAmp() else null)
-        realBox.text = "실전투 기준 (내 성장증폭 " + ampText(growthAmp()) + "% · 총능 보너스 포함)"
+        paintRealBox()
         model.clear(); shown.forEach { model.addElement(it) }
         count.text = "전체 ${all.size}종 (내 도감 ${pets.userCount}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
     }

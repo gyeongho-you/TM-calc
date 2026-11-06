@@ -77,11 +77,23 @@ class PetEditorActivity : Activity() {
                 override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
             }
         })
-        root.addView(android.widget.CheckBox(this).apply {
-            text = "실전투 기준 (내 성장증폭 ${AppPrefs.pctText(AppPrefs.growthAmp(this@PetEditorActivity))}% · 총능 보너스 포함)"
+        // 실전투 기준: 잘 보이게 켜짐/꺼짐 글자 + 파란 테두리 (강화표의 '최저치로 보기'와 같은 모양)
+        root.addView(TextView(this).apply {
+            val blue = Color.parseColor("#4FC3F7")
+            fun paint() {
+                text = (if (realSort) "■ " else "□ ") + "실전투 기준  " + (if (realSort) "켜짐" else "꺼짐") +
+                    "  (성장증폭 ${AppPrefs.pctText(AppPrefs.growthAmp(this@PetEditorActivity))}% · 총능 보너스 포함)"
+                setTextColor(if (realSort) blue else Color.parseColor("#C9CBD0"))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = px(14).toFloat()
+                    setStroke(px(1), if (realSort) blue else Color.parseColor("#6A6D73"))
+                }
+            }
             textSize = 13f
-            setOnCheckedChangeListener { _, on -> realSort = on; refresh() }
-        })
+            setPadding(px(12), px(8), px(12), px(8))
+            paint()
+            setOnClickListener { realSort = !realSort; paint(); refresh() }
+        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4); bottomMargin = px(2) })
         countView = TextView(this).apply { textSize = 12f; setPadding(0, px(4), 0, px(4)) }
         root.addView(countView)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
