@@ -27,6 +27,8 @@ class PetEditorActivity : Activity() {
     private lateinit var list: LinearLayout
     private lateinit var search: EditText
     private lateinit var countView: TextView
+    /** 목록 정렬 (도감 만렙S 기준). 앱을 다시 열면 기본 순서 */
+    private var sort = PetSort.DEFAULT
     private val dp get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +64,17 @@ class PetEditorActivity : Activity() {
             })
         }
         root.addView(search)
+        // 정렬: 기본 / 총능·공격·방어·속도·체력 높은순·낮은순 (도감 만렙S 기준)
+        root.addView(android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@PetEditorActivity, android.R.layout.simple_spinner_dropdown_item,
+                PetSort.values().map { "정렬: " + it.label })
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                    if (sort != PetSort.values()[pos]) { sort = PetSort.values()[pos]; refresh() }
+                }
+                override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+            }
+        })
         countView = TextView(this).apply { textSize = 12f; setPadding(0, px(4), 0, px(4)) }
         root.addView(countView)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -102,8 +115,9 @@ class PetEditorActivity : Activity() {
         val all = PetStore.load(this).pets
         val q = PetDb.key(search.text.toString())
         // 내 도감을 먼저, 그다음 기본 도감 순서
-        val shown = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
-            .sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 }
+        val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
+        // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
+        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 } else sort.sort(filtered)
         countView.text = "전체 ${all.size}종 (내 도감 ${mine.size}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
         list.removeAllViews()
         for (p in shown) {
@@ -117,7 +131,7 @@ class PetEditorActivity : Activity() {
                 text = "${p.name}$tag\n" +
                     listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
                         .let { if (it.isEmpty()) "" else "$it · " } +
-                    "만렙S ${p.maxS.joinToString(" / ")}"
+                    "만렙S ${p.maxS.joinToString(" / ")} · 총능 ${String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))}"
                 textSize = 14f
                 setTextColor(if (tag.isEmpty()) Color.parseColor("#C9CBD0") else Color.parseColor("#F2B84B"))
                 setPadding(0, px(8), 0, px(8))

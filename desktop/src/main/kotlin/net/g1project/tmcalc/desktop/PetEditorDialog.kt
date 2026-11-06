@@ -4,6 +4,7 @@ import net.g1project.tmcalc.Calculator
 import net.g1project.tmcalc.Pet
 import net.g1project.tmcalc.PetDb
 import net.g1project.tmcalc.PetDraft
+import net.g1project.tmcalc.PetSort
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -43,6 +44,10 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
     private val count = label("", 11f, MainWindow.MUTED)
     private val model = DefaultListModel<Pet>()
     private val list = JList(model)
+    /** 목록 정렬 (도감 만렙S 기준) */
+    private val sortBox = javax.swing.JComboBox(PetSort.values().map { "정렬: " + it.label }.toTypedArray()).apply {
+        font = MainWindow.UI_FONT.deriveFont(12f)
+    }
 
     init {
         list.background = MainWindow.FIELD
@@ -52,7 +57,8 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                 val tag = when { !pets.isMine(p.name) -> ""; pets.inBase(p.name) -> "  [수정함]"; else -> "  [추가함]" }
                 val info = esc(listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/"))
                 val c = super.getListCellRendererComponent(l, "<html><b>${esc(p.name)}</b>$tag<br>" +
-                    "<font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")}</font></html>", i, sel, focus)
+                    "<font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")} · 총능 " +
+                    String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS)) + "</font></html>", i, sel, focus)
                 (c as JLabel).apply {
                     font = MainWindow.UI_FONT.deriveFont(13f)
                     foreground = if (tag.isEmpty()) MainWindow.SUB else Color(0xF2B84B)
@@ -66,12 +72,13 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
             override fun mouseClicked(e: MouseEvent) { if (e.clickCount == 2) list.selectedValue?.let { edit(it, null, null) } }
         })
         search.onChange { refresh() }
+        sortBox.addActionListener { refresh() }
 
         contentPane = JPanel(BorderLayout(0, 8)).apply {
             background = MainWindow.BG
             border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
             add(vbox().apply {
-                add(row(label("<html><div style='width:350px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
+                add(row(label("<html><div style='width:320px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
                     "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다.</div></html>", 11f, MainWindow.MUTED, allowHtml = true)))
                 add(JPanel(GridLayout(1, 3, 6, 0)).apply {
                     isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
@@ -80,6 +87,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                     add(button("JSON 저장") { exportFile() })
                 })
                 add(labeled("이름 검색", search))
+                add(sortBox.apply { alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height) })
                 add(row(count))
             }, BorderLayout.NORTH)
             add(JScrollPane(list).apply { border = null }, BorderLayout.CENTER)
@@ -97,7 +105,10 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
     private fun refresh() {
         val q = PetDb.key(search.text)
         val all = pets.db.pets
-        val shown = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }.sortedBy { if (pets.isMine(it.name)) 0 else 1 }
+        val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
+        // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
+        val sort = PetSort.values()[sortBox.selectedIndex.coerceAtLeast(0)]
+        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 } else sort.sort(filtered)
         model.clear(); shown.forEach { model.addElement(it) }
         count.text = "전체 ${all.size}종 (내 도감 ${pets.userCount}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
     }

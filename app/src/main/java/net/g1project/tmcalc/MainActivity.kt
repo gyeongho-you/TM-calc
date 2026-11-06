@@ -162,15 +162,75 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 관리 (추가/수정)", "성장률로 추정", "성장증폭 설정")) { _, which ->
+            .setItems(arrayOf("도감 관리 (추가/수정)", "성장률로 추정", "성장증폭 설정", "저장 목록 내보내기 / 올리기")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
-                    else -> openSettings()
+                    2 -> openSettings()
+                    else -> openPresetFiles()
                 }
             }
             .show()
     }
+
+    /** 저장 목록(계산 레이어의 [저장])을 JSON 파일로 내보내거나 올린다. PC 프로그램과 같은 형식 */
+    private fun openPresetFiles() {
+        val n = AppPrefs.presets(this).size
+        AlertDialog.Builder(this)
+            .setTitle("저장 목록 내보내기 / 올리기")
+            .setMessage("저장한 소환수 ${n}개.\n\n내보내기: JSON 파일로 저장 (백업, PC로 옮기기, 친구와 나누기)\n" +
+                "올리기: 파일의 소환수를 지금 목록 뒤에 붙입니다 (똑같은 소환수는 건너뜀)")
+            .setPositiveButton("내보내기") { _, _ ->
+                if (n == 0) toast("저장한 소환수가 없습니다.")
+                else startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; putExtra(Intent.EXTRA_TITLE, "저장목록.json")
+                }, REQ_PRESET_EXPORT)
+            }
+            .setNeutralButton("올리기") { _, _ ->
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                }, REQ_PRESET_IMPORT)
+            }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = data?.data ?: return
+        if (resultCode != RESULT_OK) return
+        runCatching {
+            when (requestCode) {
+                REQ_PRESET_EXPORT -> {
+                    val list = AppPrefs.presets(this)
+                    contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(Preset.listToJson(list)) }
+                    toast("${list.size}개를 저장했습니다.")
+                }
+                REQ_PRESET_IMPORT -> {
+                    // 엉뚱한 큰 파일을 골라도 멈추지 않게 1MB 까지만 읽는다
+                    val bytes = contentResolver.openInputStream(uri)!!.use { it.readNBytesCompat(1 shl 20) }
+                    val incoming = Preset.listFromJson(String(bytes, Charsets.UTF_8))
+                    require(incoming.isNotEmpty()) { "저장 목록 파일이 아니거나 비어 있습니다" }
+                    val (merged, added) = Preset.merge(AppPrefs.presets(this), incoming)
+                    AppPrefs.setPresets(this, merged)
+                    toast("새로 ${added}개를 넣었습니다. (모두 ${merged.size}개)")
+                }
+            }
+        }.onFailure { toast("파일을 처리하지 못했습니다: ${it.message}") }
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(8192)
+        while (true) {
+            val n = read(buf); if (n < 0) break
+            out.write(buf, 0, n)
+            require(out.size() <= max) { "파일이 너무 큽니다 (1MB 이하)" }
+        }
+        return out.toByteArray()
+    }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     /** 성장률로 추정: 도감 성장률 4개 → 초기치·만렙S·총능 (참고용, 도감에 저장하지 않음) */
     private fun openEstimate() {
@@ -300,6 +360,11 @@ class MainActivity : Activity() {
             }
         }
         dlg.show()
+    }
+
+    private companion object {
+        const val REQ_PRESET_EXPORT = 11
+        const val REQ_PRESET_IMPORT = 12
     }
 
     private fun startOverlay() {

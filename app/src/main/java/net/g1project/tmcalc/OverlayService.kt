@@ -359,10 +359,13 @@ class OverlayService : Service() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(3), 0, dp(3))
+                // 이름을 누르면 이름·메모 고치기
                 addView(TextView(ui).apply {
-                    text = p.label + "\n" + "Lv.${p.level} · 총능 ${fmt(Calculator.abilityScore(p.stats), 1)}"
+                    text = p.label + "  ✎\n" + "Lv.${p.level} · 총능 ${fmt(Calculator.abilityScore(p.stats), 1)}" +
+                        (if (p.memo.isNotEmpty()) "\n" + p.memo else "")
                     textSize = 12f
                     setTextColor(Color.parseColor("#C9CBD0"))
+                    setOnClickListener { editPreset(p) }
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 addView(headerButton("보기") { loadPreset(p) })
                 addView(headerButton("기준") { pin(p) })
@@ -370,6 +373,32 @@ class OverlayService : Service() {
                 addView(headerButton("삭제") { confirmDelete(p) })
             })
         }
+    }
+
+    /** 저장한 소환수의 이름·메모 고치기 (레이어 위에 뜨는 창) */
+    private fun editPreset(p: Preset) {
+        val pad = dp(20)
+        val nameE = EditText(ui).apply { setText(p.label); hint = "이름"; setSingleLine() }
+        val memoE = EditText(ui).apply { setText(p.memo); hint = "메모 (예: PVP용, 재료 후보)"; setSingleLine() }
+        val box = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(pad, dp(8), pad, 0)
+            addView(nameE); addView(memoE)
+        }
+        android.app.AlertDialog.Builder(ui)
+            .setTitle("이름 / 메모")
+            .setView(box)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장") { _, _ ->
+                val list = AppPrefs.presets(this)
+                val others = list.filterNot { it.label == p.label }
+                val label = Preset.uniqueLabel(nameE.text.toString(), others)
+                AppPrefs.setPresets(this, list.map { if (it.label == p.label) it.renamed(label, memoE.text.toString()) else it })
+                if (pinned?.label == p.label) pinned = pinned!!.renamed(label, memoE.text.toString())
+                renderPresets(); renderCompare()
+            }
+            .create()
+            .apply { window?.setType(overlayType()) }
+            .show()
     }
 
     /** 실수로 지우지 않게 한 번 묻는다 (레이어 위에 뜨는 창) */

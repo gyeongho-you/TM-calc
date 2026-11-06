@@ -387,7 +387,9 @@ class MainWindow(
             // 이름은 사용자가 붙인 글자라 HTML 로 그리지 않는다
             cellRenderer = object : javax.swing.DefaultListCellRenderer() {
                 override fun getListCellRendererComponent(l: javax.swing.JList<*>?, v: Any?, i: Int, sel: Boolean, f: Boolean): Component =
-                    super.getListCellRendererComponent(l, (v as? Preset)?.let { "${it.label}   (Lv.${it.level} · 총능 ${fmt(Calculator.abilityScore(it.stats), 1)})" }, i, sel, f)
+                    super.getListCellRendererComponent(l, (v as? Preset)?.let {
+                        "${it.label}   (Lv.${it.level} · 총능 ${fmt(Calculator.abilityScore(it.stats), 1)})" + (if (it.memo.isNotEmpty()) "  — ${it.memo}" else "")
+                    }, i, sel, f)
                         .also { (it as JLabel).putClientProperty("html.disable", true); it.border = BorderFactory.createEmptyBorder(4, 6, 4, 6) }
             }
             addMouseListener(object : java.awt.event.MouseAdapter() {
@@ -403,6 +405,7 @@ class MainWindow(
                 add(button("보기") { sel { loadPreset(it) } })
                 add(button("기준으로") { sel { pin(it) } })
                 add(button("비교") { sel { setCompareB(it) } })
+                add(button("이름/메모") { sel { editPreset(dlg, it) } })
                 add(button("삭제") { sel { p ->
                     // 실수로 지우지 않게 한 번 묻는다
                     if (JOptionPane.showConfirmDialog(dlg, "'${p.label}' 을(를) 저장 목록에서 삭제할까요?", "삭제",
@@ -412,10 +415,59 @@ class MainWindow(
                     }
                 } })
             }, BorderLayout.SOUTH)
-            add(label("두 번 누르면 계산 화면에 띄웁니다", 11f, MUTED).apply { border = BorderFactory.createEmptyBorder(6, 8, 2, 8) }, BorderLayout.NORTH)
+            add(JPanel(BorderLayout()).apply {
+                isOpaque = false; border = BorderFactory.createEmptyBorder(6, 8, 2, 8)
+                add(label("두 번 누르면 계산 화면에 띄웁니다", 11f, MUTED), BorderLayout.CENTER)
+                add(JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
+                    isOpaque = false
+                    add(button("내보내기") { exportPresets(dlg) })
+                    add(button("올리기") { importPresets(dlg) })
+                }, BorderLayout.EAST)
+            }, BorderLayout.NORTH)
         }
         dlg.pack(); dlg.setLocationRelativeTo(this); dlg.isVisible = true
         presetDialog = dlg
+    }
+
+    /** 이름·메모 고치기 */
+    private fun editPreset(parent: java.awt.Component, p: Preset) {
+        val nameE = JTextField(p.label, 24); val memoE = JTextField(p.memo, 24)
+        val panel = JPanel(GridLayout(0, 1, 0, 4)).apply {
+            add(JLabel("이름").apply { putClientProperty("html.disable", true) }); add(nameE)
+            add(JLabel("메모 (예: PVP용, 재료 후보)").apply { putClientProperty("html.disable", true) }); add(memoE)
+        }
+        if (JOptionPane.showConfirmDialog(parent, panel, "이름 / 메모", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return
+        val list = presets()
+        val label = Preset.uniqueLabel(nameE.text, list.filterNot { it.label == p.label })
+        setPresets(list.map { if (it.label == p.label) it.renamed(label, memoE.text) else it })
+        if (pinned?.label == p.label) pinned = pinned!!.renamed(label, memoE.text)
+        refreshPresetList(); renderCompare(); revalidate(); repaint()
+    }
+
+    /** 저장 목록을 JSON 파일로 (폰 앱과 같은 형식) */
+    private fun exportPresets(parent: java.awt.Component) {
+        val list = presets()
+        if (list.isEmpty()) return setStatus("저장한 소환수가 없습니다")
+        val fc = javax.swing.JFileChooser().apply { selectedFile = java.io.File("저장목록.json") }
+        if (fc.showSaveDialog(parent) != javax.swing.JFileChooser.APPROVE_OPTION) return
+        runCatching { fc.selectedFile.writeText(Preset.listToJson(list)) }
+            .onSuccess { setStatus("${list.size}개를 저장했습니다: ${fc.selectedFile.name}") }
+            .onFailure { JOptionPane.showMessageDialog(parent, "저장하지 못했습니다: ${it.message}", "내보내기", JOptionPane.WARNING_MESSAGE) }
+    }
+
+    /** 파일의 저장 목록을 지금 목록 뒤에 붙인다 (똑같은 소환수는 건너뜀) */
+    private fun importPresets(parent: java.awt.Component) {
+        val fc = javax.swing.JFileChooser().apply { fileFilter = javax.swing.filechooser.FileNameExtensionFilter("저장 목록 JSON", "json") }
+        if (fc.showOpenDialog(parent) != javax.swing.JFileChooser.APPROVE_OPTION) return
+        runCatching {
+            val f = fc.selectedFile
+            require(f.length() <= 1 shl 20) { "파일이 너무 큽니다 (1MB 이하)" }
+            val incoming = Preset.listFromJson(f.readText())
+            require(incoming.isNotEmpty()) { "저장 목록 파일이 아니거나 비어 있습니다" }
+            val (merged, added) = Preset.merge(presets(), incoming)
+            setPresets(merged); added to merged.size
+        }.onSuccess { (added, total) -> refreshPresetList(); renderCompare(); setStatus("새로 ${added}개를 넣었습니다 (모두 ${total}개)") }
+            .onFailure { JOptionPane.showMessageDialog(parent, "올리지 못했습니다: ${it.message}", "올리기", JOptionPane.WARNING_MESSAGE) }
     }
 
     /**

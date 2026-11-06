@@ -58,4 +58,31 @@ class CompareTest {
         assertEquals(0, Preset.listFromJson("""[{"label":"x","name":"x","level":150,"breaks":9,"stats":[1,1,1,1],"base":[1,1,1,1]}]""").size)
         assertEquals("화혼랑 3강 103% (2)", Preset.defaultLabel("화혼랑", 3, 103, back))
     }
+
+    /** 메모·이름 바꾸기, 파일 올리기 합치기 (똑같은 건 건너뛰고 이름만 겹치면 (2)) */
+    @Test
+    fun presetMemoAndMerge() {
+        val a = Preset("화혼랑 3강", "화혼랑", 150, 3, hwa, hwaBase, 103, "PVP용")
+        val back = Preset.listFromJson(Preset.listToJson(listOf(a)))[0]
+        assertEquals("PVP용", back.memo)
+        assertEquals("새 이름", a.renamed("  새 이름 ", "메모").label)
+        val b = Preset("화혼랑 3강", "라르곤", 150, 0, lar, larBase)
+        val (merged, added) = Preset.merge(listOf(a), listOf(a, b))
+        assertEquals(1, added)
+        assertEquals(listOf("화혼랑 3강", "화혼랑 3강 (2)"), merged.map { it.label })
+        assertEquals("화혼랑 3강 (2)", Preset.uniqueLabel("화혼랑 3강", listOf(a)))
+    }
+
+    /** 도감 정렬: 총능·공격 등 높은순/낮은순, 기본은 그대로 */
+    @Test
+    fun petSort() {
+        val db = PetDb.parse(java.io.File("src/main/assets/pets.json").readText())
+        val atk = PetSort.ATK_DESC.sort(db.pets).map { it.maxS[0] }
+        assertEquals(atk.sortedDescending(), atk)
+        val hp = PetSort.HP_ASC.sort(db.pets).map { it.maxS[3] }
+        assertEquals(hp.sorted(), hp)
+        val sc = PetSort.SCORE_DESC.sort(db.pets).map { Calculator.abilityScore(it.maxS) }
+        assertEquals(sc.sortedDescending(), sc)
+        assertEquals(db.pets, PetSort.DEFAULT.sort(db.pets))
+    }
 }

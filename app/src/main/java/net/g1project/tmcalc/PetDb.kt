@@ -16,6 +16,33 @@ class Pet(
     val maxS: IntArray,
 )
 
+/** 도감 목록 정렬: 도감 만렙S(S 100%, 150레벨) 값 기준. [label] 은 고르기 목록에 보일 글자 */
+enum class PetSort(val label: String) {
+    DEFAULT("기본 순서"),
+    SCORE_DESC("총능 높은순"), SCORE_ASC("총능 낮은순"),
+    ATK_DESC("공격 높은순"), ATK_ASC("공격 낮은순"),
+    DEF_DESC("방어 높은순"), DEF_ASC("방어 낮은순"),
+    SPD_DESC("속도 높은순"), SPD_ASC("속도 낮은순"),
+    HP_DESC("체력 높은순"), HP_ASC("체력 낮은순");
+
+    /** 정렬에 쓰는 값 (기본 순서면 null) */
+    fun key(p: Pet): Double? = when (this) {
+        DEFAULT -> null
+        SCORE_DESC, SCORE_ASC -> Calculator.abilityScore(p.maxS)
+        ATK_DESC, ATK_ASC -> p.maxS[0].toDouble()
+        DEF_DESC, DEF_ASC -> p.maxS[1].toDouble()
+        SPD_DESC, SPD_ASC -> p.maxS[2].toDouble()
+        HP_DESC, HP_ASC -> p.maxS[3].toDouble()
+    }
+
+    /** 같은 값이면 원래 순서를 지킨다 (stable sort) */
+    fun sort(list: List<Pet>): List<Pet> = when {
+        this == DEFAULT -> list
+        name.endsWith("DESC") -> list.sortedByDescending { key(it)!! }
+        else -> list.sortedBy { key(it)!! }
+    }
+}
+
 /**
  * 도감 편집 창에 미리 채울 값 (계산 화면에서 읽은 것). 게임 도감 화면이면 초기치·성장률·태그까지 있다.
  * 화면 값이 있으면 도감에 있던 값보다 먼저 쓴다. [note] 는 성장률과 안 맞아 고친 칸.
@@ -221,6 +248,8 @@ class Preset(
     val stats: IntArray,
     val base: IntArray,
     val gameTotal: Int? = null,
+    /** 사용자가 단 메모 ("PVP용", "재료 후보" 등) */
+    val memo: String = "",
 ) {
     /** 도감 대비 (현재 − 도감값) */
     val deltas: IntArray get() = IntArray(4) { stats[it] - base[it] }
@@ -229,10 +258,16 @@ class Preset(
         put("label", label); put("name", name); put("level", level); put("breaks", breaks)
         put("stats", org.json.JSONArray(stats.toList())); put("base", org.json.JSONArray(base.toList()))
         gameTotal?.let { put("game", it) }
+        if (memo.isNotEmpty()) put("memo", memo)
     }
+
+    /** 이름·메모만 바꾼 복사본 */
+    fun renamed(label: String, memo: String) = Preset(label.trim().take(MAX_LABEL), name, level, breaks, stats, base, gameTotal, memo.trim().take(MAX_MEMO))
 
     companion object {
         const val MAX_COUNT = 200
+        const val MAX_LABEL = 40
+        const val MAX_MEMO = 60
 
         fun listToJson(list: List<Preset>): String = org.json.JSONArray(list.map { it.toJson() }).toString()
 
@@ -243,12 +278,35 @@ class Preset(
                 runCatching {
                     val o = arr.getJSONObject(i)
                     val s = o.getJSONArray("stats"); val b = o.getJSONArray("base")
-                    Preset(o.getString("label").take(40), o.getString("name").take(40), o.getInt("level"), o.getInt("breaks"),
-                        IntArray(4) { s.getInt(it) }, IntArray(4) { b.getInt(it) }, if (o.has("game")) o.getInt("game") else null)
+                    Preset(o.getString("label").trim().take(MAX_LABEL), o.getString("name").take(40), o.getInt("level"), o.getInt("breaks"),
+                        IntArray(4) { s.getInt(it) }, IntArray(4) { b.getInt(it) }, if (o.has("game")) o.getInt("game") else null,
+                        o.optString("memo").trim().take(MAX_MEMO))
                 }.getOrNull()?.takeIf { p ->
-                    p.level in 1..300 && p.breaks in 0..Calculator.MAX_BREAKS && p.stats.all { it in 1..1_000_000 } && p.base.all { it in 1..1_000_000 }
+                    p.label.isNotEmpty() && p.level in 1..300 && p.breaks in 0..Calculator.MAX_BREAKS && p.stats.all { it in 1..1_000_000 } && p.base.all { it in 1..1_000_000 }
                 }
             }
+        }
+
+        /** 이름이 겹치지 않게 (목록에서 이름으로 구분하므로). 겹치면 뒤에 (2), (3) */
+        fun uniqueLabel(label: String, existing: List<Preset>): String {
+            val base = label.trim().ifEmpty { "이름 없음" }.take(MAX_LABEL - 5)
+            var l = base; var n = 2
+            while (existing.any { it.label == l }) l = "$base (${n++})"
+            return l
+        }
+
+        /**
+         * 파일에서 올린 목록을 지금 목록 뒤에 붙인다. 똑같은 소환수(이름·능력치·도감값·강이 같음)는 건너뛰고,
+         * 이름만 겹치면 (2) 를 붙인다. 돌려주는 값: (합친 목록, 새로 넣은 수)
+         */
+        fun merge(current: List<Preset>, incoming: List<Preset>): Pair<List<Preset>, Int> {
+            val out = current.toMutableList(); var added = 0
+            for (p in incoming) {
+                if (out.size >= MAX_COUNT) break
+                if (out.any { it.name == p.name && it.breaks == p.breaks && it.level == p.level && it.stats.contentEquals(p.stats) && it.base.contentEquals(p.base) }) continue
+                out += p.renamed(uniqueLabel(p.label, out), p.memo); added++
+            }
+            return out to added
         }
 
         /** 기본 이름: "화혼랑 3강 103%" (같은 이름이 있으면 뒤에 (2), (3)) */
