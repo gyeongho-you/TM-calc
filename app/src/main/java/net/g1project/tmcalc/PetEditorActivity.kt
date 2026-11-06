@@ -67,16 +67,31 @@ class PetEditorActivity : Activity() {
         }
         root.addView(search)
         // 정렬: 기본 / 총능·공격·방어·속도·체력 높은순·낮은순 (도감 만렙S 기준)
+        // 고른 정렬이 잘 보이게: 흰 글자 + 테두리 상자 (기본 모양은 배경과 색이 같아 안 보였다)
         root.addView(android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@PetEditorActivity, android.R.layout.simple_spinner_dropdown_item,
-                PetSort.values().map { "정렬: " + it.label })
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = px(8).toFloat()
+                setColor(Color.parseColor("#2A2D33"))
+                setStroke(px(1), Color.parseColor("#6A6D73"))
+            }
+            setPadding(px(4), px(2), px(4), px(2))
+            adapter = object : android.widget.ArrayAdapter<String>(this@PetEditorActivity, android.R.layout.simple_spinner_item,
+                PetSort.values().map { "정렬: " + it.label + "  ▾" }) {
+                override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup) =
+                    (super.getView(position, convertView, parent) as TextView).apply {
+                        setTextColor(if (position == 0) Color.parseColor("#C9CBD0") else Color.parseColor("#4FC3F7"))
+                        textSize = 14f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setPadding(px(10), px(10), px(10), px(10))
+                    }
+            }.apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
                     if (sort != PetSort.values()[pos]) { sort = PetSort.values()[pos]; refresh() }
                 }
                 override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
             }
-        })
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(4) })
         // 실전투 기준: 잘 보이게 켜짐/꺼짐 글자 + 파란 테두리 (강화표의 '최저치로 보기'와 같은 모양)
         root.addView(TextView(this).apply {
             val blue = Color.parseColor("#4FC3F7")
