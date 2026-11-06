@@ -194,9 +194,12 @@ object OcrParser {
         // 5) 이름 위 태그 (전설 / 어둠 / 비행)
         val tagWords = nameLine?.let { n -> lines.filter { it.bottom <= n.top + n.height / 2 && it.top >= n.top - n.height * 3 } }.orEmpty()
             .flatMap { it.text.split(' ') }.map { PetDb.key(it) }
+        val grade = tagWords.firstOrNull { it in GRADES }
+        // 같은 이름에 등급만 다른 소환수 ("갓독 성요한(전설)"): 화면 이름에 등급 괄호가 없으면 태그의 등급을 붙여 찾는다
+        if (grade != null && nameRaw != null) db.find(PetDb.displayName(nameRaw) + "($grade)")?.let { pet = it; nameScore = 1.0 }
         return ParsedScreen(pet, nameRaw, nameScore, level, breaks, stats, deltas, deltaBoxes, growthAvgs, screenGrades,
             gameTotal(lines, levelLine, nameLine),
-            grade = tagWords.firstOrNull { it in GRADES }, element = tagWords.firstOrNull { it in ELEMENTS },
+            grade = grade, element = tagWords.firstOrNull { it in ELEMENTS },
             type = tagWords.firstOrNull { it in TYPES }, dexScreen = dexScreen)
     }
 

@@ -152,8 +152,14 @@ class PetDb(val pets: List<Pet>) {
 
         /** 화면에서 읽은 이름을 도감에 넣을 이름으로: 돌파 "(+4)" 만 빼고 숫자·띄어쓰기는 둔다 ("1세대의 전설") */
         fun displayName(raw: String): String =
-            raw.replace(Regex("\\(.*?\\)|\\+\\d+"), "").filter { it in '가'..'힣' || it.isLetterOrDigit() || it == ' ' }
-                .replace(Regex(" +"), " ").trim()
+            raw.replace(STRIP, "").filter { it in '가'..'힣' || it.isLetterOrDigit() || it == ' ' || it == '(' || it == ')' }
+                .replace(Regex(" +"), " ").replace(" (", "(").trim()
+
+        /**
+         * 지울 괄호: 돌파 "(+4)" 등은 지우고, 등급 괄호 "(전설)" 은 남긴다.
+         * 같은 이름에 등급만 다른 소환수("갓독 성요한(전설)")가 있어서 등급까지 이름으로 본다.
+         */
+        private val STRIP = Regex("""\((?!\s*(?:전설|유일|영웅|희귀|고급|일반|신화)\s*\))[^)]*\)|\+\d+""")
 
         /**
          * 도감에 추가할 값 (화면에서 바로 얻은 것). [notes] 는 읽은 값이 이상해서 성장률로 고친 칸.
@@ -211,7 +217,7 @@ class PetDb(val pets: List<Pet>) {
 
         /** 한글/영문/숫자만 남겨 비교용 키로 만든다 (공백, 괄호, 돌파 표기 제거). */
         fun key(s: String): String =
-            s.replace(Regex("\\(.*?\\)|\\+\\d+"), "")
+            s.replace(STRIP, "")
                 .filter { it in '가'..'힣' || it.isLetter() }
 
         fun similarity(a: String, b: String): Double {
