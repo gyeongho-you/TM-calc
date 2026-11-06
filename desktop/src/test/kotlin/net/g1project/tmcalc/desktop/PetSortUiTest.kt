@@ -15,7 +15,7 @@ import javax.swing.JComboBox
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
 
-/** 도감 관리: 정렬을 '공격 높은순'으로 고르면 만렙S 공격 순서로 바뀐다 */
+/** 도감 보기 모드: 정렬을 '공격 높은순'으로 고르면 만렙S 공격 순서로 바뀐다 */
 class PetSortUiTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -43,6 +43,13 @@ class PetSortUiTest {
         assertEquals(keys.sortedDescending(), keys)
         SwingUtilities.invokeAndWait { dlg.paint(img.graphics) }
         ImageIO.write(img, "png", File("build/ui/dex-sort-real.png"))
+        // 수정 모드로 바꾸면 정렬·실전투는 숨고 추가/JSON 이 보인다
+        val modeBtn = PetEditorDialog::class.java.getDeclaredField("modeBtn").apply { isAccessible = true }.get(dlg) as javax.swing.JButton
+        SwingUtilities.invokeAndWait { modeBtn.doClick() }
+        Thread.sleep(200)
+        assertEquals(false, box.isShowing)
+        SwingUtilities.invokeAndWait { dlg.paint(img.graphics) }
+        ImageIO.write(img, "png", File("build/ui/dex-edit-mode.png"))
         SwingUtilities.invokeAndWait { dlg.dispose() }
     }
 }

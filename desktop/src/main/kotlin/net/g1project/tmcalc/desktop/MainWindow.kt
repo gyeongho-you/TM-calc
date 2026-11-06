@@ -737,7 +737,7 @@ class MainWindow(
 
     private fun menu() = JMenuBar().apply {
         add(JMenu("도감").apply {
-            add(JMenuItem("도감 관리 (추가/수정, JSON 저장/올리기)").apply { addActionListener { openPetEditor(fromScan = false) } })
+            add(JMenuItem("도감 보기 / 수정 (추가, JSON 저장/올리기)").apply { addActionListener { openPetEditor(fromScan = false) } })
             add(JMenuItem("성장률로 추정…").apply { addActionListener { showEstimateDialog() } })
             add(JMenuItem("내 도감 폴더 열기").apply { addActionListener { pets.dir.mkdirs(); Desktop.getDesktop().open(pets.dir) } })
         })

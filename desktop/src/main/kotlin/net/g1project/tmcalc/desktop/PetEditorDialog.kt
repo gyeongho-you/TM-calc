@@ -41,7 +41,14 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
                       /** 내 성장증폭 (실전투 기준 정렬에 씀) */
                       private val growthAmp: () -> Double = { net.g1project.tmcalc.Calculator.DEFAULT_GROWTH_AMP },
                       private val onChanged: () -> Unit) :
-    JDialog(owner, "도감 관리", false) {
+    JDialog(owner, "도감", false) {
+
+    /** 처음엔 보기 모드(정렬·실전투), [수정 모드]에서 추가·JSON·고치기 */
+    private var editMode = false
+    private val modeBtn = button("수정 모드") { setEditMode(!editMode) }
+    private val editBox = vbox()
+    private val viewBox = vbox()
+    private val editBtn = button("수정") { list.selectedValue?.let { edit(it, null, null) } }
 
     private val search = field()
     private val count = label("", 11f, MainWindow.MUTED)
@@ -61,7 +68,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
     private fun paintRealBox() {
         val on = realBox.isSelected
         val blue = Color(0x4FC3F7)
-        realBox.text = (if (on) "■ " else "□ ") + "실전투 기준 " + (if (on) "켜짐" else "꺼짐") + "  (성장증폭 " + ampText(growthAmp()) + "% · 총능 보너스 포함)"
+        realBox.text = (if (on) "■ " else "□ ") + "실전투 " + (if (on) "켜짐" else "꺼짐") + "  (성장증폭 " + ampText(growthAmp()) + "% · 총능 보너스 포함)"
         realBox.foreground = if (on) blue else MainWindow.SUB
         realBox.border = BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(if (on) blue else Color(0x6A6D73), 1, true), BorderFactory.createEmptyBorder(5, 10, 5, 10))
@@ -74,15 +81,23 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
                 val p = v as Pet
                 val tag = when { !pets.isMine(p.name) -> ""; pets.inBase(p.name) -> "  [수정함]"; else -> "  [추가함]" }
                 val info = esc(listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/"))
-                val c = super.getListCellRendererComponent(l, "<html><b>${esc(p.name)}</b>$tag" +
-                    // 실전투 기준이면 이름 옆에 총능 보너스 배율 (줄이 길어져 창이 옆으로 늘어나지 않게)
-                    (if (realBox.isSelected) "&nbsp;&nbsp;<font color='#7FD4A0'>보너스 ×" + String.format(java.util.Locale.US, "%.2f", PetSort.realBonus(p, growthAmp())) + "</font>" else "") +
-                    "<br>" +
-                    "<font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")} · 총능 " +
-                    String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS)) + "</font></html>", i, sel, focus)
+                val score = String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))
+                val html = if (editMode) {
+                    "<html><b>${esc(p.name)}</b>$tag<br><font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")}</font></html>"
+                } else {
+                    // 보기 모드: 이름 줄 + 공·방·순·체·총능 칸 (실전투를 켜면 그 아래에 실전투 환산값 = 능력치 × 총능 보너스)
+                    val bonus = PetSort.realBonus(p, growthAmp())
+                    fun tds(cells: List<String>, color: String) = cells.joinToString("") { "<td width='58' align='right'><font color='$color'>$it</font></td>" }
+                    "<html><b>${esc(p.name)}</b>$tag&nbsp;&nbsp;<font color='#9A9DA3'>$info</font>" +
+                        "<table cellspacing='0' cellpadding='0'><tr><td width='44'></td>" + tds(p.maxS.map { "$it" } + score, "#C9CBD0") + "</tr>" +
+                        (if (realBox.isSelected) "<tr><td width='44'><font color='#4FC3F7'>실전투</font></td>" +
+                            tds(p.maxS.map { Math.round(it * bonus).toString() } + "", "#4FC3F7") + "</tr>" else "") +
+                        "</table></html>"
+                }
+                val c = super.getListCellRendererComponent(l, html, i, sel, focus)
                 (c as JLabel).apply {
                     font = MainWindow.UI_FONT.deriveFont(13f)
-                    foreground = if (tag.isEmpty()) MainWindow.SUB else Color(0xF2B84B)
+                    foreground = if (tag.isEmpty()) (if (editMode) MainWindow.SUB else Color.WHITE) else Color(0xF2B84B)
                     background = if (sel) MainWindow.CHIP else MainWindow.FIELD
                     border = BorderFactory.createEmptyBorder(5, 8, 5, 8)
                 }
@@ -90,7 +105,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
             }
         }
         list.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) { if (e.clickCount == 2) list.selectedValue?.let { edit(it, null, null) } }
+            override fun mouseClicked(e: MouseEvent) { if (editMode && e.clickCount == 2) list.selectedValue?.let { edit(it, null, null) } }
         })
         search.onChange { refresh() }
         sortBox.addActionListener { refresh() }
@@ -100,29 +115,55 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
             background = MainWindow.BG
             border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
             add(vbox().apply {
-                add(row(label("<html><div style='width:300px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
-                    "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다.</div></html>", 11f, MainWindow.MUTED, allowHtml = true)))
-                add(JPanel(GridLayout(1, 3, 6, 0)).apply {
-                    isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
-                    add(button("+ 추가") { edit(null, null, null) })
-                    add(button("JSON 올리기") { importFile() })
-                    add(button("JSON 저장") { exportFile() })
+                // 제목 줄: 모드 전환
+                add(JPanel(BorderLayout()).apply {
+                    isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, 36)
+                    add(label("도감", 15f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }, BorderLayout.WEST)
+                    add(modeBtn, BorderLayout.EAST)
                 })
+                // 수정 모드에서만: 설명 + 추가 / JSON 올리기 / JSON 저장
+                add(editBox.apply {
+                    add(row(label("<html><div style='width:300px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
+                        "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다. 두 번 누르면 고칠 수 있습니다.</div></html>", 11f, MainWindow.MUTED, allowHtml = true)))
+                    add(JPanel(GridLayout(1, 3, 6, 0)).apply {
+                        isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
+                        add(button("+ 추가") { edit(null, null, null) })
+                        add(button("JSON 올리기") { importFile() })
+                        add(button("JSON 저장") { exportFile() })
+                    })
+                })
+                // 검색은 두 모드 다
                 add(labeled("이름 검색", search))
-                add(sortBox.apply { alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height) })
-                add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT; add(realBox) })
+                // 보기 모드에서만: 정렬 + 실전투
+                add(viewBox.apply {
+                    add(sortBox.apply { alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height) })
+                    add(javax.swing.Box.createVerticalStrut(4))
+                    add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT; add(realBox) })
+                    // 칸 머리
+                    add(row(label("<html><table cellspacing='0' cellpadding='0'><tr><td width='52'></td>" +
+                        listOf("공", "방", "순", "체", "총능").joinToString("") { "<td width='58' align='right'>$it</td>" } +
+                        "</tr></table></html>", 11f, MainWindow.MUTED, allowHtml = true).apply { border = BorderFactory.createEmptyBorder(6, 0, 0, 0) }))
+                })
                 add(row(count))
             }, BorderLayout.NORTH)
             add(JScrollPane(list).apply { border = null }, BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
                 isOpaque = false
-                add(button("수정") { list.selectedValue?.let { edit(it, null, null) } })
+                add(editBtn)
                 add(button("닫기") { dispose() })
             }, BorderLayout.SOUTH)
         }
         size = Dimension(440, 640)
         setLocationRelativeTo(owner)
-        refresh()
+        setEditMode(false)
+    }
+
+    private fun setEditMode(on: Boolean) {
+        editMode = on
+        modeBtn.text = if (on) "보기 모드로" else "수정 모드"
+        editBox.isVisible = on; editBtn.isVisible = on
+        viewBox.isVisible = !on
+        refresh(); revalidate(); repaint()
     }
 
     private fun refresh() {
@@ -131,7 +172,8 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
         val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
         // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
         val sort = PetSort.values()[sortBox.selectedIndex.coerceAtLeast(0)]
-        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 } else sort.sort(filtered, if (realBox.isSelected) growthAmp() else null)
+        val shown = if (editMode || sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 }
+            else sort.sort(filtered, if (realBox.isSelected) growthAmp() else null)
         paintRealBox()
         model.clear(); shown.forEach { model.addElement(it) }
         count.text = "전체 ${all.size}종 (내 도감 ${pets.userCount}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
@@ -140,7 +182,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
     /** 계산 창의 [도감에 추가/수정]: 이름과 (150레벨이면) 화면의 도감값을 채워서 연다 */
     fun open(name: String?, d: PetDraft?) {
         isVisible = true
-        if (name != null) edit(pets.db.find(name), name, d)
+        if (name != null) { if (!editMode) setEditMode(true); edit(pets.db.find(name), name, d) }
     }
 
     // ------------------------------------------------------------------ 편집 창

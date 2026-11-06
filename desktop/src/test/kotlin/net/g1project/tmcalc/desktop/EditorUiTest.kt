@@ -55,7 +55,7 @@ class EditorUiTest {
             Thread.sleep(200)
         }
         val titles = shown.map { it.title }
-        assertTrue("도감 관리 창: $titles", "도감 관리" in titles)
+        assertTrue("도감 창: $titles", "도감" in titles)
         val edit = shown.first { it.title == "소환수 추가" }
         shown.forEach { snap(it, it.title) }
         // 만렙S 칸 = 현재 - 도감 대비 = 566, 286, 477, 4071
@@ -73,7 +73,7 @@ class EditorUiTest {
         // (만렙S - 초기치) / 149 → 청랑의 시트 S성장률과 같다
         assertEquals(listOf(3.70, 1.87, 3.12, 26.59), saved.sGrowth.toList())
         assertTrue("내 도감에 [추가함]으로 들어가야 함", pets.isMine("새소환수") && !pets.inBase("새소환수"))
-        val manager = shown.first { it.title == "도감 관리" }
+        val manager = shown.first { it.title == "도감" }
         snap(manager, "도감 관리-저장후")
         SwingUtilities.invokeAndWait { Window.getWindows().forEach { it.dispose() } }
         java.util.prefs.Preferences.userRoot().node("tmcalc-test").removeNode()

@@ -33,29 +33,50 @@ class PetEditorActivity : Activity() {
     private var realSort = false
     private val dp get() = resources.displayMetrics.density
 
+    /** 처음엔 보기 모드(정렬·실전투), [수정 모드]에서 추가·JSON·고치기 */
+    private var editMode = false
+    private lateinit var modeBtn: Button
+    private lateinit var editBox: LinearLayout
+    private lateinit var viewBox: LinearLayout
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(px(16), px(16), px(16), px(16))
         }
-        root.addView(TextView(this).apply {
-            text = "도감 관리"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-        })
-        root.addView(TextView(this).apply {
-            text = "기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 능력치 등급과 강화 등급이 정확하게 계산됩니다. " +
-                "내가 추가/수정한 것은 따로 저장되어 앱을 업데이트해도 남습니다."
-            textSize = 13f
-            setPadding(0, px(4), 0, px(8))
-        })
+        // 제목 + 모드 전환
+        modeBtn = button("수정 모드") { setEditMode(!editMode) }
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(button("+ 추가") { edit(null, null, null) }, weight())
-            addView(button("JSON 올리기") { importFile() }, weight())
-            addView(button("JSON 저장") { exportFile() }, weight())
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(TextView(this@PetEditorActivity).apply {
+                text = "도감"
+                textSize = 20f
+                setTextColor(Color.WHITE)
+            }, weight())
+            addView(modeBtn)
         })
+
+        // 수정 모드에서만: 설명 + 추가 / JSON 올리기 / JSON 저장
+        editBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@PetEditorActivity).apply {
+                text = "기본 도감에 없거나 값이 다른 소환수를 추가/수정하면 능력치 등급과 강화 예상이 정확해집니다. " +
+                    "내가 추가/수정한 것은 따로 저장되어 앱을 업데이트해도 남습니다. 소환수를 누르면 고칠 수 있습니다."
+                textSize = 13f
+                setPadding(0, px(4), 0, px(8))
+            })
+            addView(LinearLayout(this@PetEditorActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(button("+ 추가") { edit(null, null, null) }, weight())
+                addView(button("JSON 올리기") { importFile() }, weight())
+                addView(button("JSON 저장") { exportFile() }, weight())
+            })
+        }
+        root.addView(editBox)
+
+        // 검색은 두 모드 다
         search = EditText(this).apply {
             hint = "이름 검색"
             setSingleLine()
@@ -66,9 +87,11 @@ class PetEditorActivity : Activity() {
             })
         }
         root.addView(search)
-        // 정렬: 기본 / 총능·공격·방어·속도·체력 높은순·낮은순 (도감 만렙S 기준)
-        // 고른 정렬이 잘 보이게: 흰 글자 + 테두리 상자 (기본 모양은 배경과 색이 같아 안 보였다)
-        root.addView(android.widget.Spinner(this).apply {
+
+        // 보기 모드에서만: 정렬 + 실전투
+        viewBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // 고른 정렬이 잘 보이게: 테두리 상자 + 고른 정렬은 파란 굵은 글자
+        viewBox.addView(android.widget.Spinner(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = px(8).toFloat()
                 setColor(Color.parseColor("#2A2D33"))
@@ -92,11 +115,11 @@ class PetEditorActivity : Activity() {
                 override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
             }
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(4) })
-        // 실전투 기준: 잘 보이게 켜짐/꺼짐 글자 + 파란 테두리 (강화표의 '최저치로 보기'와 같은 모양)
-        root.addView(TextView(this).apply {
+        // 실전투: 켜면 능력치 아래에 실전투 환산값(능력치 × 총능 보너스), 정렬도 그 값으로
+        viewBox.addView(TextView(this).apply {
             val blue = Color.parseColor("#4FC3F7")
             fun paint() {
-                text = (if (realSort) "■ " else "□ ") + "실전투 기준  " + (if (realSort) "켜짐" else "꺼짐") +
+                text = (if (realSort) "■ " else "□ ") + "실전투  " + (if (realSort) "켜짐" else "꺼짐") +
                     "  (성장증폭 ${AppPrefs.pctText(AppPrefs.growthAmp(this@PetEditorActivity))}% · 총능 보너스 포함)"
                 setTextColor(if (realSort) blue else Color.parseColor("#C9CBD0"))
                 background = android.graphics.drawable.GradientDrawable().apply {
@@ -108,7 +131,9 @@ class PetEditorActivity : Activity() {
             setPadding(px(12), px(8), px(12), px(8))
             paint()
             setOnClickListener { realSort = !realSort; paint(); refresh() }
-        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4); bottomMargin = px(2) })
+        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(6); bottomMargin = px(2) })
+        root.addView(viewBox)
+
         countView = TextView(this).apply { textSize = 12f; setPadding(0, px(4), 0, px(4)) }
         root.addView(countView)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -127,8 +152,16 @@ class PetEditorActivity : Activity() {
             }
         }
         setContentView(scroll)
-        refresh()
+        setEditMode(false)
         if (savedInstanceState == null) openFromIntent(intent)
+    }
+
+    private fun setEditMode(on: Boolean) {
+        editMode = on
+        modeBtn.text = if (on) "보기 모드로" else "수정 모드"
+        editBox.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        viewBox.visibility = if (on) android.view.View.GONE else android.view.View.VISIBLE
+        refresh()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -136,8 +169,10 @@ class PetEditorActivity : Activity() {
         openFromIntent(intent)
     }
 
+    /** 계산 레이어의 [도감에 추가/수정]으로 열면 바로 수정 모드 + 편집 창 */
     private fun openFromIntent(i: Intent) {
         val name = i.getStringExtra(EXTRA_NAME) ?: return
+        if (!editMode) setEditMode(true)
         val existing = PetStore.load(this).find(name)
         edit(existing, name, PetDraft(i.getIntArrayExtra(EXTRA_MAXS), i.getIntArrayExtra(EXTRA_INIT), i.getDoubleArrayExtra(EXTRA_GROWTH),
             i.getStringExtra(EXTRA_GRADE), i.getStringExtra(EXTRA_ELEMENT), i.getStringExtra(EXTRA_TYPE), i.getStringExtra(EXTRA_NOTE)))
@@ -148,12 +183,14 @@ class PetEditorActivity : Activity() {
         val mine = PetStore.user(this).map { PetDb.key(it.name) }.toSet()
         val all = PetStore.load(this).pets
         val q = PetDb.key(search.text.toString())
-        // 내 도감을 먼저, 그다음 기본 도감 순서
         val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
-        // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
-        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 } else sort.sort(filtered, if (realSort) AppPrefs.growthAmp(this) else null)
+        val amp = AppPrefs.growthAmp(this)
+        // 수정 모드나 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 보기 모드에서 정렬을 고르면 그 값 순서
+        val shown = if (editMode || sort == PetSort.DEFAULT) filtered.sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 }
+            else sort.sort(filtered, if (realSort) amp else null)
         countView.text = "전체 ${all.size}종 (내 도감 ${mine.size}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
         list.removeAllViews()
+        if (!editMode) list.addView(statRow("", listOf("공", "방", "순", "체", "총능"), Color.parseColor("#9A9DA3"), 11f))
         for (p in shown) {
             val k = PetDb.key(p.name)
             val tag = when {
@@ -161,18 +198,46 @@ class PetEditorActivity : Activity() {
                 k in builtIn -> "  [수정함]"
                 else -> "  [추가함]"
             }
-            list.addView(TextView(this).apply {
-                // 실전투 기준이면 이름 옆에 그 종의 총능 보너스 배율
-                text = "${p.name}$tag" +
-                    (if (realSort) "  보너스 ×" + String.format(java.util.Locale.US, "%.2f", PetSort.realBonus(p, AppPrefs.growthAmp(this@PetEditorActivity))) else "") + "\n" +
-                    listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
-                        .let { if (it.isEmpty()) "" else "$it · " } +
-                    "만렙S ${p.maxS.joinToString(" / ")} · 총능 ${String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))}"
-                textSize = 14f
-                setTextColor(if (tag.isEmpty()) Color.parseColor("#C9CBD0") else Color.parseColor("#F2B84B"))
-                setPadding(0, px(8), 0, px(8))
-                setOnClickListener { edit(p, null, null) }
-            })
+            val tags = listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
+            if (editMode) {
+                list.addView(TextView(this).apply {
+                    text = "${p.name}$tag\n" + (if (tags.isEmpty()) "" else "$tags · ") + "만렙S ${p.maxS.joinToString(" / ")}"
+                    textSize = 14f
+                    setTextColor(if (tag.isEmpty()) Color.parseColor("#C9CBD0") else Color.parseColor("#F2B84B"))
+                    setPadding(0, px(8), 0, px(8))
+                    setOnClickListener { edit(p, null, null) }
+                })
+            } else {
+                // 보기 모드: 이름 줄 + 공·방·순·체·총능 칸 (실전투를 켜면 그 아래에 실전투 환산값)
+                list.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, px(6), 0, px(6))
+                    addView(TextView(this@PetEditorActivity).apply {
+                        text = p.name + tag + (if (tags.isEmpty()) "" else "   $tags")
+                        textSize = 13f
+                        setTextColor(if (tag.isEmpty()) Color.WHITE else Color.parseColor("#F2B84B"))
+                    })
+                    val score = String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))
+                    addView(statRow("", p.maxS.map { "$it" } + score, Color.parseColor("#C9CBD0"), 13f))
+                    if (realSort) {
+                        val bonus = PetSort.realBonus(p, amp)
+                        addView(statRow("실전투", p.maxS.map { Math.round(it * bonus).toString() } + "", Color.parseColor("#4FC3F7"), 12f))
+                    }
+                })
+            }
+        }
+    }
+
+    /** 공·방·순·체·총능 칸 (칸 너비가 같아 줄끼리 위아래로 맞는다). [label] 은 맨 앞 작은 글자 */
+    private fun statRow(label: String, cells: List<String>, color: Int, size: Float) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        addView(TextView(this@PetEditorActivity).apply { text = label; textSize = 10f; setTextColor(Color.parseColor("#4FC3F7")) },
+            LinearLayout.LayoutParams(0, -2, 0.9f))
+        cells.forEachIndexed { i, c ->
+            addView(TextView(this@PetEditorActivity).apply {
+                text = c; textSize = size; setTextColor(color)
+                gravity = android.view.Gravity.END
+            }, LinearLayout.LayoutParams(0, -2, if (i == 4) 1.3f else 1f))
         }
     }
 
