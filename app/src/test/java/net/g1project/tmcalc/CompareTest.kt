@@ -85,4 +85,17 @@ class CompareTest {
         assertEquals(sc.sortedDescending(), sc)
         assertEquals(db.pets, PetSort.DEFAULT.sort(db.pets))
     }
+
+    /** 실전투 기준: 능력치 × (1 + 증폭 × u(그 종 총능)) 순서. 총능이 높은 종이 같은 공격력이어도 앞에 온다 */
+    @Test
+    fun petSortRealCombat() {
+        val db = PetDb.parse(java.io.File("src/main/assets/pets.json").readText())
+        val sorted = PetSort.ATK_DESC.sort(db.pets, 0.08)
+        val keys = sorted.map { it.maxS[0] * PetSort.realBonus(it, 0.08) }
+        assertEquals(keys.sortedDescending(), keys)
+        // 순서가 실제로 바뀌는 경우가 있어야 의미가 있다
+        assert(sorted.map { it.name } != PetSort.ATK_DESC.sort(db.pets).map { it.name })
+        // 총능 정렬은 실전투와 상관없이 같다
+        assertEquals(PetSort.SCORE_DESC.sort(db.pets).map { it.name }, PetSort.SCORE_DESC.sort(db.pets, 0.08).map { it.name })
+    }
 }

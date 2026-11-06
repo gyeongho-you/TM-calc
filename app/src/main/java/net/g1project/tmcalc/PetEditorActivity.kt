@@ -29,6 +29,8 @@ class PetEditorActivity : Activity() {
     private lateinit var countView: TextView
     /** 목록 정렬 (도감 만렙S 기준). 앱을 다시 열면 기본 순서 */
     private var sort = PetSort.DEFAULT
+    /** 켜면 능력치 정렬을 실전투(내 성장증폭 × 그 종 총능 보너스) 기준으로 */
+    private var realSort = false
     private val dp get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,6 +77,11 @@ class PetEditorActivity : Activity() {
                 override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
             }
         })
+        root.addView(android.widget.CheckBox(this).apply {
+            text = "실전투 기준 (내 성장증폭 ${AppPrefs.pctText(AppPrefs.growthAmp(this@PetEditorActivity))}% · 총능 보너스 포함)"
+            textSize = 13f
+            setOnCheckedChangeListener { _, on -> realSort = on; refresh() }
+        })
         countView = TextView(this).apply { textSize = 12f; setPadding(0, px(4), 0, px(4)) }
         root.addView(countView)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -117,7 +124,7 @@ class PetEditorActivity : Activity() {
         // 내 도감을 먼저, 그다음 기본 도감 순서
         val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
         // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
-        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 } else sort.sort(filtered)
+        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (PetDb.key(it.name) in mine) 0 else 1 } else sort.sort(filtered, if (realSort) AppPrefs.growthAmp(this) else null)
         countView.text = "전체 ${all.size}종 (내 도감 ${mine.size}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
         list.removeAllViews()
         for (p in shown) {
@@ -128,7 +135,9 @@ class PetEditorActivity : Activity() {
                 else -> "  [추가함]"
             }
             list.addView(TextView(this).apply {
-                text = "${p.name}$tag\n" +
+                // 실전투 기준이면 이름 옆에 그 종의 총능 보너스 배율
+                text = "${p.name}$tag" +
+                    (if (realSort) "  보너스 ×" + String.format(java.util.Locale.US, "%.2f", PetSort.realBonus(p, AppPrefs.growthAmp(this@PetEditorActivity))) else "") + "\n" +
                     listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
                         .let { if (it.isEmpty()) "" else "$it · " } +
                     "만렙S ${p.maxS.joinToString(" / ")} · 총능 ${String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS))}"

@@ -892,7 +892,7 @@ class MainWindow(
     private var editor: PetEditorDialog? = null
 
     private fun openPetEditor(fromScan: Boolean) {
-        val dlg = editor?.takeIf { it.isDisplayable } ?: PetEditorDialog(this, pets) { recompute() }.also { editor = it }
+        val dlg = editor?.takeIf { it.isDisplayable } ?: PetEditorDialog(this, pets, { growthAmp() }) { recompute() }.also { editor = it }
         if (!fromScan) return dlg.open(null, null)
         val name = nameF.text.trim().ifEmpty { null }
         // 게임 도감 화면이면 성장 평균(= S성장률)으로 초기치·만렙S 까지 채운다. 아니면 150레벨일 때 만렙S(현재 − 도감 대비)만

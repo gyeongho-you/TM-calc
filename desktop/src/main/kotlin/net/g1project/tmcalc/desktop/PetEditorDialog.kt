@@ -37,7 +37,10 @@ import javax.swing.filechooser.FileNameExtensionFilter
  * 도감 관리 (폰 앱 PetEditorActivity 와 같은 기능): 목록·검색, 추가/수정, 기본값으로 되돌리기/삭제, JSON 저장/올리기.
  * 성장률(S)과 만렙S 중 하나만 적으면 나머지는 시트와 같은 식으로 채운다: 만렙S = ROUND(초기치 + S성장률 × 149).
  */
-class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val onChanged: () -> Unit) :
+class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
+                      /** 내 성장증폭 (실전투 기준 정렬에 씀) */
+                      private val growthAmp: () -> Double = { net.g1project.tmcalc.Calculator.DEFAULT_GROWTH_AMP },
+                      private val onChanged: () -> Unit) :
     JDialog(owner, "도감 관리", false) {
 
     private val search = field()
@@ -48,6 +51,10 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
     private val sortBox = javax.swing.JComboBox(PetSort.values().map { "정렬: " + it.label }.toTypedArray()).apply {
         font = MainWindow.UI_FONT.deriveFont(12f)
     }
+    /** 켜면 능력치 정렬을 실전투(내 성장증폭 × 그 종 총능 보너스) 기준으로 */
+    private val realBox = javax.swing.JCheckBox("실전투 기준 (총능 보너스 포함)").apply {
+        isOpaque = false; foreground = MainWindow.SUB; font = MainWindow.UI_FONT.deriveFont(12f)
+    }
 
     init {
         list.background = MainWindow.FIELD
@@ -56,7 +63,10 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                 val p = v as Pet
                 val tag = when { !pets.isMine(p.name) -> ""; pets.inBase(p.name) -> "  [수정함]"; else -> "  [추가함]" }
                 val info = esc(listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/"))
-                val c = super.getListCellRendererComponent(l, "<html><b>${esc(p.name)}</b>$tag<br>" +
+                val c = super.getListCellRendererComponent(l, "<html><b>${esc(p.name)}</b>$tag" +
+                    // 실전투 기준이면 이름 옆에 총능 보너스 배율 (줄이 길어져 창이 옆으로 늘어나지 않게)
+                    (if (realBox.isSelected) "&nbsp;&nbsp;<font color='#7FD4A0'>보너스 ×" + String.format(java.util.Locale.US, "%.2f", PetSort.realBonus(p, growthAmp())) + "</font>" else "") +
+                    "<br>" +
                     "<font color='#9A9DA3'>${if (info.isEmpty()) "" else "$info · "}만렙S ${p.maxS.joinToString(" / ")} · 총능 " +
                     String.format(java.util.Locale.US, "%.1f", Calculator.abilityScore(p.maxS)) + "</font></html>", i, sel, focus)
                 (c as JLabel).apply {
@@ -73,12 +83,13 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
         })
         search.onChange { refresh() }
         sortBox.addActionListener { refresh() }
+        realBox.addActionListener { refresh() }
 
         contentPane = JPanel(BorderLayout(0, 8)).apply {
             background = MainWindow.BG
             border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
             add(vbox().apply {
-                add(row(label("<html><div style='width:320px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
+                add(row(label("<html><div style='width:300px'>기본 도감(엑셀 시트)에 없거나 값이 다른 소환수를 추가/수정하면 등급과 강화 예상이 정확해집니다. " +
                     "내 도감은 따로 저장되어 프로그램을 업데이트해도 남습니다.</div></html>", 11f, MainWindow.MUTED, allowHtml = true)))
                 add(JPanel(GridLayout(1, 3, 6, 0)).apply {
                     isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
@@ -88,6 +99,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
                 })
                 add(labeled("이름 검색", search))
                 add(sortBox.apply { alignmentX = Component.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height) })
+                add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT; add(realBox) })
                 add(row(count))
             }, BorderLayout.NORTH)
             add(JScrollPane(list).apply { border = null }, BorderLayout.CENTER)
@@ -108,7 +120,8 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
         val filtered = all.filter { q.isEmpty() || PetDb.key(it.name).contains(q) }
         // 기본 순서면 내 도감을 먼저, 그다음 기본 도감. 정렬을 고르면 그 값 순서
         val sort = PetSort.values()[sortBox.selectedIndex.coerceAtLeast(0)]
-        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 } else sort.sort(filtered)
+        val shown = if (sort == PetSort.DEFAULT) filtered.sortedBy { if (pets.isMine(it.name)) 0 else 1 } else sort.sort(filtered, if (realBox.isSelected) growthAmp() else null)
+        realBox.text = "실전투 기준 (내 성장증폭 " + ampText(growthAmp()) + "% · 총능 보너스 포함)"
         model.clear(); shown.forEach { model.addElement(it) }
         count.text = "전체 ${all.size}종 (내 도감 ${pets.userCount}종)" + if (q.isNotEmpty()) " · 검색 ${shown.size}종" else ""
     }
@@ -282,4 +295,9 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets, private val 
         override fun removeUpdate(e: DocumentEvent) = f()
         override fun changedUpdate(e: DocumentEvent) = f()
     })
+
+    private fun ampText(a: Double): String {
+        val p = Math.round(a * 1000) / 10.0
+        return if (p == Math.floor(p)) p.toLong().toString() else p.toString()
+    }
 }

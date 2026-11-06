@@ -25,21 +25,33 @@ enum class PetSort(val label: String) {
     SPD_DESC("속도 높은순"), SPD_ASC("속도 낮은순"),
     HP_DESC("체력 높은순"), HP_ASC("체력 낮은순");
 
-    /** 정렬에 쓰는 값 (기본 순서면 null) */
-    fun key(p: Pet): Double? = when (this) {
+    /** 능력치 정렬이면 그 능력치 번호 (공 0 · 방 1 · 순 2 · 체 3), 아니면 null */
+    val stat: Int? get() = when (this) {
+        ATK_DESC, ATK_ASC -> 0; DEF_DESC, DEF_ASC -> 1; SPD_DESC, SPD_ASC -> 2; HP_DESC, HP_ASC -> 3
+        else -> null
+    }
+
+    /**
+     * 정렬에 쓰는 값 (기본 순서면 null). [amp] 를 주면 능력치를 실전투로:
+     * 도감 능력치 × (1 + 성장증폭 × u(그 종 도감 총능)). 캐릭터 배율은 모든 종에 같아서 순서에는 영향이 없다.
+     */
+    fun key(p: Pet, amp: Double? = null): Double? = when (this) {
         DEFAULT -> null
         SCORE_DESC, SCORE_ASC -> Calculator.abilityScore(p.maxS)
-        ATK_DESC, ATK_ASC -> p.maxS[0].toDouble()
-        DEF_DESC, DEF_ASC -> p.maxS[1].toDouble()
-        SPD_DESC, SPD_ASC -> p.maxS[2].toDouble()
-        HP_DESC, HP_ASC -> p.maxS[3].toDouble()
+        else -> p.maxS[stat!!] * (amp?.let { realBonus(p, it) } ?: 1.0)
     }
 
     /** 같은 값이면 원래 순서를 지킨다 (stable sort) */
-    fun sort(list: List<Pet>): List<Pet> = when {
+    fun sort(list: List<Pet>, amp: Double? = null): List<Pet> = when {
         this == DEFAULT -> list
-        name.endsWith("DESC") -> list.sortedByDescending { key(it)!! }
-        else -> list.sortedBy { key(it)!! }
+        name.endsWith("DESC") -> list.sortedByDescending { key(it, amp)!! }
+        else -> list.sortedBy { key(it, amp)!! }
+    }
+
+    companion object {
+        /** 그 종 도감(S 100%) 개체의 총능 보너스 배율: 1 + 성장증폭 × u(총능) */
+        fun realBonus(p: Pet, amp: Double): Double =
+            1 + amp.coerceIn(0.0, 1.0) * Calculator.scoreFactor(Calculator.abilityScore(p.maxS).coerceIn(1480.0, 1920.0))
     }
 }
 
