@@ -10,12 +10,27 @@ import java.math.RoundingMode
  */
 object Calculator {
 
-    /** '등급'!B2:B14 배율, 열 G..T 순서. index 8 은 S(100) = 도감값 그대로. */
-    val MULTS = doubleArrayOf(0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05, 1.07, 1.09)
-    val LABELS = listOf("C++", "B", "B+", "B++", "A", "A+", "A++", "S", "S(100)", "S+", "S++", "SS", "SS+", "SS++")
+    /**
+     * '등급'!B2:B14 배율, 열 G..T 순서. index 8 은 S(100) = 도감값 그대로.
+     * 14~16 (SSS, SSS+, SSS++) 은 게임에 없는 등급: 게임은 SS++ 가 끝이지만 그걸 넘는 능력치가 있어서
+     * 같은 2% 간격으로 이어 붙였다 (계산기에서만 보이는 등급, 무지개 색).
+     */
+    val MULTS = doubleArrayOf(0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15)
+    val LABELS = listOf("C++", "B", "B+", "B++", "A", "A+", "A++", "S", "S(100)", "S+", "S++", "SS", "SS+", "SS++", "SSS", "SSS+", "SSS++")
+
+    /** 게임에 없는 계산기 전용 등급인지 (SS++ 를 넘음) */
+    fun isBeyondGame(grade: String) = grade.contains("SSS")
+
+    /** 설정에서 끄면 SSS 대신 게임처럼 SS++ 로 보여 준다 (화면을 그리기 전에 폰/PC 가 설정값으로 맞춘다) */
+    @Volatile var showBeyondGame = true
+
+    /** SSS 가 나오면 함께 보여 줄 설명 */
+    const val BEYOND_NOTE = "SSS = 게임에 없는 계산기 전용 등급 (SS++ 를 넘은 값, 게임에선 SS++ 로 보임)"
+
+    private fun capGrade(g: String) = if (!showBeyondGame && isBeyondGame(g)) g.replace(Regex("SSS\\+{0,2}"), "SS++") else g
 
     /** 성장률 등급 IF 체인 (성장률계산기!B20). 시트의 라벨을 그대로 따른다. */
-    private val STAT_CHAIN = listOf(13 to "SS++", 12 to "SS+", 11 to "SS", 10 to "S++", 9 to "S+", 7 to "S",
+    private val STAT_CHAIN = listOf(16 to "SSS++", 15 to "SSS+", 14 to "SSS", 13 to "SS++", 12 to "SS+", 11 to "SS", 10 to "S++", 9 to "S+", 7 to "S",
         6 to "A++", 5 to "A+", 4 to "A", 3 to "B+", 2 to "B", 1 to "C")
 
     /** 총성 등급 판정에 쓰이는 열 (성장률계산기!C26). */
@@ -355,7 +370,7 @@ object Calculator {
      */
     fun statGrades(stats: IntArray, base: IntArray): List<String> = List(4) { i ->
         val q = fix(stats[i].toDouble() / base[i])
-        STAT_CHAIN.firstOrNull { q >= MULTS[it.first] }?.second ?: "D"
+        capGrade(STAT_CHAIN.firstOrNull { q >= MULTS[it.first] }?.second ?: "D")
     }
 
     /** 시트 도감(만렙S)과 강화가 기준으로 하는 레벨 */
@@ -371,7 +386,12 @@ object Calculator {
      * 성장률계산기!F21 / F23. 원본은 91% 미만에서 '등급'!I11(성장률 값, 3 안팎)과 비교하므로
      * 사실상 91% 미만은 모두 "B+" 가 된다. 시트와 같은 결과를 내도록 그대로 따른다.
      */
-    fun totalGrade(v: Double): String = when {
+    fun totalGrade(v: Double): String = capGrade(totalGradeRaw(v))
+
+    private fun totalGradeRaw(v: Double): String = when {
+        v >= 115 -> "SSS++"
+        v >= 113 -> "SSS+"
+        v >= 111 -> "SSS"
         v >= 109 -> "SS++"
         v >= 107 -> "SS+"
         v >= 105 -> "SS"

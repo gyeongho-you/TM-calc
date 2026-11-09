@@ -502,6 +502,7 @@ class OverlayService : Service() {
 
     private fun recompute() {
         if (filling) return
+        Calculator.showBeyondGame = AppPrefs.showSss(this)
         if (dbVersion != PetStore.version) reloadDb()
         val pet = db.find(nameEdit.text.toString())
         updateSuggestions(pet)
@@ -545,7 +546,7 @@ class OverlayService : Service() {
             } ?: t.realTotalGrade
             val game = screenGame?.toDouble() ?: t.gameTotal
             totalView.text = "${fmt(real, 2)}%"
-            totalGradeView.text = realGrade
+            totalGradeView.text = gradeText(realGrade)
             totalGradeView.setTextColor(gradeColor(realGrade))
             totalSubView.text = "인게임 ${fmt(game, 0)}% ${Calculator.totalGrade(game)}" +
                 (if (range != null && fmt(range.min, 2) != fmt(range.max, 2))
@@ -619,12 +620,14 @@ class OverlayService : Service() {
             setPadding(0, dp(4), 0, dp(4))
             setOnClickListener { lowerOn = !lower; recompute() }
         })
+        var beyond = false
         for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
             // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
             val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst && k > breaks)
             val t = Calculator.total(s, base)
             // 등급 = 능력치 ÷ 도감값 (도감에 없는 소환수도 화면의 도감값으로 똑같이 계산)
             val grades = Calculator.statGrades(s, base)
+            if (grades.any { Calculator.isBeyondGame(it) }) beyond = true
             val combat = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
             val cells = listOf(if (k == breaks) "${k}강\n현재" else "${k}강") +
                 (0..3).map { i -> "${s[i]}\n${grades[i]}" } +
@@ -643,6 +646,7 @@ class OverlayService : Service() {
                 enhanceTable.addView(detail)
             }
         }
+        if (beyond) enhanceTable.addView(note(Calculator.BEYOND_NOTE))
         if (breaks >= MAX_BREAKS) enhanceTable.addView(note("이미 최대 강화(+${MAX_BREAKS}강)입니다."))
         else if (worst) enhanceTable.addView(note("최저치: 게임 속 소수점을 모두 낮게 잡은 값입니다. 실제 강화 결과는 이보다 낮게 나오지 않습니다."))
         else enhanceTable.addView(note("강화 수치는 게임과 1 정도 차이 날 수 있어요. (게임은 소수까지 계산하고 화면엔 정수만 보여서) 위 '최저치로 보기'를 켜면 가장 낮은 경우로 보여 줍니다."))
@@ -701,6 +705,7 @@ class OverlayService : Service() {
             r.toNextGrowth?.let { "${fmt(it * 100, 1)}%" } ?: "-")))
         results.addView(row(listOf("다음등급", r.nextGrade, r.nextGradeTotal?.let { fmt(it, 1) } ?: "-",
             r.toNextGrade?.let { "${fmt(it * 100, 1)}%" } ?: "-")))
+        if (r.statGrades.any { Calculator.isBeyondGame(it) }) results.addView(note(Calculator.BEYOND_NOTE))
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1086,7 +1091,7 @@ class OverlayService : Service() {
         setPadding(0, dp(2), 0, dp(2))
         cells.forEachIndexed { i, c ->
             addView(TextView(ui).apply {
-                text = c
+                text = gradeText(c)
                 textSize = when { small -> 10.5f; header -> 11f; else -> 13f }
                 gravity = if (i == 0) Gravity.START else Gravity.CENTER
                 setTextColor(if (header) Color.parseColor("#9A9DA3") else gradeColor(c))
@@ -1096,10 +1101,20 @@ class OverlayService : Service() {
         }
     }
 
+    /** 글자 안의 SSS / SSS+ / SSS++ 를 무지개로 (나머지는 그대로) */
+    private fun gradeText(c: String): CharSequence {
+        val found = Regex("SSS\\+{0,2}").findAll(c).toList()
+        if (found.isEmpty()) return c
+        return android.text.SpannableString(c).apply {
+            found.forEach { setSpan(RainbowSpan(), it.range.first, it.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+        }
+    }
+
     private fun gradeColor(c: String): Int {
         val g = c.substringAfterLast(' ').substringAfterLast('\n').removePrefix("≈")
         return Color.parseColor(
             when {
+                Calculator.isBeyondGame(g) -> "#FFFFFF" // 실제로는 무지개 (gradeText)
                 g.startsWith("SS") -> "#F2B84B"
                 g.startsWith("S") -> "#FF8A7A"
                 g.startsWith("A") -> "#8FD48A"
@@ -1237,5 +1252,27 @@ class OverlayService : Service() {
 
         @Volatile
         var running = false
+    }
+}
+
+/** SS++ 를 넘는 계산기 전용 등급(SSS…)을 무지개 그라데이션으로 그린다 */
+private class RainbowSpan : android.text.style.ReplacementSpan() {
+    override fun getSize(paint: android.graphics.Paint, text: CharSequence, start: Int, end: Int, fm: android.graphics.Paint.FontMetricsInt?): Int {
+        if (fm != null) paint.getFontMetricsInt(fm)
+        return Math.ceil(paint.measureText(text, start, end).toDouble()).toInt()
+    }
+
+    override fun draw(canvas: android.graphics.Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int,
+                      paint: android.graphics.Paint) {
+        val w = paint.measureText(text, start, end)
+        val old = paint.shader
+        paint.shader = android.graphics.LinearGradient(x, 0f, x + w, 0f, RAINBOW, null, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawText(text, start, end, x, y.toFloat(), paint)
+        paint.shader = old
+    }
+
+    companion object {
+        val RAINBOW = intArrayOf(0xFFFF6A6A.toInt(), 0xFFFFB86A.toInt(), 0xFFF2E06A.toInt(), 0xFF7FD48A.toInt(),
+            0xFF5FE3F0.toInt(), 0xFF6A9CFF.toInt(), 0xFFC27FFF.toInt())
     }
 }

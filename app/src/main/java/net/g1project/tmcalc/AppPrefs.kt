@@ -29,6 +29,15 @@ object AppPrefs {
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_COMBAT, on).apply()
     }
 
+    private const val SHOW_SSS = "showSss"
+
+    /** SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 보여 줄지 (기본 켜짐) */
+    fun showSss(c: Context): Boolean = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(SHOW_SSS, true)
+
+    fun setShowSss(c: Context, on: Boolean) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_SSS, on).apply()
+    }
+
     private const val PRESETS = "presets"
 
     /** 저장한 소환수 (프리셋). 폰 안에만 저장 */

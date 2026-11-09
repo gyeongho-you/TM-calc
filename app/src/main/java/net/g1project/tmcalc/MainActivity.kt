@@ -162,14 +162,41 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "저장 목록 내보내기 / 올리기")) { _, which ->
+            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
                     2 -> openSettings()
+                    3 -> openDisplaySettings()
                     else -> openPresetFiles()
                 }
             }
+            .show()
+    }
+
+    /** 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 보여 줄지 */
+    private fun openDisplaySettings() {
+        val dp = resources.displayMetrics.density
+        val sw = Switch(this).apply {
+            text = "SS++ 넘는 등급을 SSS(무지개)로 표시"
+            textSize = 15f
+            isChecked = AppPrefs.showSss(this@MainActivity)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            addView(sw)
+            addView(TextView(context).apply {
+                text = "\n게임은 SS++ 가 마지막 등급이지만, 그보다 더 높은 능력치가 있습니다. 켜면 2%씩 SSS(×1.11) · SSS+(×1.13) · SSS++(×1.15) 로 " +
+                    "무지개 색으로 보여 줍니다. 게임에 없는 계산기 전용 등급이라 게임 화면에서는 SS++ 로 보입니다."
+                textSize = 12f
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("표시 설정")
+            .setView(box)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장") { _, _ -> AppPrefs.setShowSss(this, sw.isChecked) }
             .show()
     }
 

@@ -62,7 +62,7 @@ class MainWindow(
     private val status = label("OCR 준비 중…", 11f, MUTED)
 
     private val totalLbl = label("-", 30f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
-    private val gradeLbl = label("", 18f, Color.WHITE).apply { font = font.deriveFont(Font.BOLD) }
+    private val gradeLbl = RainbowLabel().apply { font = UI_FONT.deriveFont(Font.BOLD, 18f); foreground = Color.WHITE }
     private val subLbl = label("앱플레이어에서 소환수 정보 화면을 띄우고 [계산] 또는 단축키", 11f, SUB, allowHtml = true)
     private val scoreLbl = label("", 12f, Color.WHITE)
     /** 같은 종 도감(S 100%) 개체보다 전투 능력치가 몇 % 높은지 (총 능력치 점수 보너스 포함) */
@@ -543,6 +543,7 @@ class MainWindow(
 
     private fun recompute() {
         if (filling) return
+        Calculator.showBeyondGame = prefs.getBoolean("showSss", true)
         val db = pets.db
         val pet = db.find(nameF.text)
         updateSuggestions(pet, db)
@@ -634,6 +635,7 @@ class MainWindow(
                 r.toNextGrowth?.let { "${fmt(it * 100, 1)}%" } ?: "-"),
             listOf("다음등급", r.nextGrade, r.nextGradeTotal?.let { fmt(it, 1) } ?: "-", r.toNextGrade?.let { "${fmt(it * 100, 1)}%" } ?: "-"),
         )))
+        if (r.statGrades.any { Calculator.isBeyondGame(it) }) results.add(wrapNote(Calculator.BEYOND_NOTE))
     }
 
     /** 강화별 표: 강화 1번당 1% (게임 강화 화면 기준), 등급 = 능력치 ÷ 도감값 */
@@ -660,11 +662,13 @@ class MainWindow(
                 override fun mouseClicked(e: java.awt.event.MouseEvent) { lowerOn = !lower; recompute() }
             })
         }))
+        var beyond = false
         for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
             // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
             val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst && k > breaks)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
+            if (g.any { Calculator.isBeyondGame(it) }) beyond = true
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
@@ -684,6 +688,7 @@ class MainWindow(
             val k = rowBreak.getOrNull(r) ?: return@table
             if (showCombat()) { expandedBreak = if (expandedBreak == k) null else k; recompute() }
         })
+        if (beyond) enhance.add(wrapNote(Calculator.BEYOND_NOTE))
         enhance.add(note(when {
             breaks >= MAX_BREAKS -> "이미 최대 강화(+${MAX_BREAKS}강)입니다."
             worst -> "최저치: 소수점을 모두 낮게 잡은 값 (실제는 이보다 낮지 않음)"
@@ -753,6 +758,10 @@ class MainWindow(
                 }
             })
             add(ampItem)
+            addSeparator()
+            add(javax.swing.JCheckBoxMenuItem("SS++ 넘는 등급을 SSS(무지개)로 표시", prefs.getBoolean("showSss", true)).apply {
+                addActionListener { prefs.putBoolean("showSss", isSelected); recompute() }
+            })
         })
         add(JMenu("도움말").apply {
             add(javax.swing.JCheckBoxMenuItem("문제 확인용: 마지막 계산 화면 저장", prefs.getBoolean("saveLastScan", false)).apply {
@@ -976,6 +985,17 @@ class MainWindow(
             cells.forEachIndexed { c, v ->
                 val header = r == 0
                 val parts = v.split("\n")
+                // SS++ 를 넘는 계산기 전용 등급은 무지개로 직접 그린다 (HTML 로는 그라데이션을 못 그림)
+                if (!header && Calculator.isBeyondGame(parts.last())) {
+                    add(RainbowCell(if (parts.size == 2) parts[0] else null, parts.last(),
+                        UI_FONT.deriveFont(if (style == RowStyle.BOLD) Font.BOLD else Font.PLAIN, if (small) 11f else 13f),
+                        tone(Color.WHITE), dim = style == RowStyle.DIM).apply {
+                        if (onRowClick != null) addMouseListener(object : java.awt.event.MouseAdapter() {
+                            override fun mouseClicked(e: java.awt.event.MouseEvent) = onRowClick(r - 1)
+                        })
+                    })
+                    return@forEachIndexed
+                }
                 val text = if (parts.size == 2) html("${esc(parts[0])}<br><font color='${hex(tone(gradeColor(parts[1])))}'>${esc(parts[1])}</font>")
                     else v
                 add(label(text, if (small) 11f else 13f, tone(when {
@@ -1003,6 +1023,7 @@ class MainWindow(
     private fun gradeColor(c: String): Color {
         val g = c.substringAfterLast(' ')
         return when {
+            Calculator.isBeyondGame(g) -> Color.WHITE // 실제로는 무지개 (RainbowCell / RainbowLabel)
             g.startsWith("SS") -> Color(0xF2B84B)
             g.startsWith("S") -> Color(0xFF8A7A)
             g.startsWith("A") -> Color(0x8FD48A)
@@ -1025,5 +1046,57 @@ class MainWindow(
         val UI_FONT = Font("Malgun Gothic", Font.PLAIN, 12)
         val BG = Color(0x2B2D31); val FIELD = Color(0x1E1F22); val CHIP = Color(0x3A3D44)
         val MUTED = Color(0x9A9DA3); val SUB = Color(0xC9CBD0); val WARN = Color(0xFFD479); val GREEN = Color(0x7FD18B)
+    }
+}
+
+/** 무지개 색 (빨강 → 보라). SS++ 를 넘는 계산기 전용 등급(SSS…)에 쓴다 */
+private val RAINBOW = arrayOf(Color(0xFF6A6A), Color(0xFFB86A), Color(0xF2E06A), Color(0x7FD48A), Color(0x5FE3F0), Color(0x6A9CFF), Color(0xC27FFF))
+private val RAINBOW_STOPS = floatArrayOf(0f, 1f / 6, 2f / 6, 3f / 6, 4f / 6, 5f / 6, 1f)
+
+private fun java.awt.Graphics2D.drawRainbow(text: String, x: Int, y: Int, width: Int) {
+    paint = java.awt.LinearGradientPaint(x.toFloat(), 0f, (x + maxOf(width, 2)).toFloat(), 0f, RAINBOW_STOPS, RAINBOW)
+    drawString(text, x, y)
+}
+
+/** 총 성장률 옆 등급: SSS 면 무지개, 아니면 보통 글자 */
+class RainbowLabel : JLabel() {
+    init { putClientProperty("html.disable", true) }
+    override fun paintComponent(g: java.awt.Graphics) {
+        val t = text.orEmpty()
+        if (!Calculator.isBeyondGame(t)) return super.paintComponent(g)
+        val g2 = g.create() as java.awt.Graphics2D
+        g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+        g2.font = font
+        val fm = g2.fontMetrics
+        g2.drawRainbow(t, insets.left, (height - fm.height) / 2 + fm.ascent, fm.stringWidth(t))
+        g2.dispose()
+    }
+}
+
+/** 표 칸: 위 줄 숫자(있으면) + 아래 줄 무지개 등급 */
+class RainbowCell(private val value: String?, private val grade: String, private val f: Font, private val valueColor: Color,
+                  private val dim: Boolean) : javax.swing.JComponent() {
+    override fun getPreferredSize(): Dimension {
+        val fm = getFontMetrics(f)
+        val w = maxOf(fm.stringWidth(grade), value?.let { fm.stringWidth(it) } ?: 0) + 4
+        return Dimension(w, fm.height * (if (value != null) 2 else 1))
+    }
+
+    override fun paintComponent(g: java.awt.Graphics) {
+        val g2 = g.create() as java.awt.Graphics2D
+        g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+        if (dim) g2.composite = java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.45f)
+        g2.font = f
+        val fm = g2.fontMetrics
+        val lines = if (value != null) 2 else 1
+        var y = (height - fm.height * lines) / 2 + fm.ascent
+        if (value != null) {
+            g2.color = valueColor
+            g2.drawString(value, (width - fm.stringWidth(value)) / 2, y)
+            y += fm.height
+        }
+        val w = fm.stringWidth(grade)
+        g2.drawRainbow(grade, (width - w) / 2, y, w)
+        g2.dispose()
     }
 }
