@@ -14,7 +14,7 @@ import javax.imageio.ImageIO
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
-/** SS++ 를 넘는 능력치는 무지개 SSS 칸으로 그리고 설명 줄이 나온다 */
+/** 표시 설정을 켜면 SS++ 를 넘는 능력치는 무지개 SSS 칸으로 그린다 */
 class BeyondGradeUiTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -22,7 +22,7 @@ class BeyondGradeUiTest {
     @Test
     fun rainbowCells() {
         assumeTrue(!GraphicsEnvironment.isHeadless())
-        val prefs = java.util.prefs.Preferences.userRoot().node("tmcalc-test-sss").apply { clear() }
+        val prefs = java.util.prefs.Preferences.userRoot().node("tmcalc-test-sss").apply { clear(); putBoolean("showSss", true) }
         lateinit var win: MainWindow
         SwingUtilities.invokeAndWait {
             win = MainWindow(DesktopPets(tmp.newFolder()), prefs); win.setSize(420, 1300); win.isVisible = true
@@ -40,7 +40,8 @@ class BeyondGradeUiTest {
         fun walk(c: Container) { for (x in c.components) { if (x is RainbowCell) cells++; if (x is javax.swing.JLabel) texts += x.text.orEmpty(); if (x is Container) walk(x) } }
         SwingUtilities.invokeAndWait { walk(win.contentPane as Container) }
         assertTrue("무지개 칸 $cells", cells >= 2)
-        assertTrue(texts.any { it.contains("계산기 전용 등급") })
+        // 설명 줄은 표에 없다 (표시 설정 창에만)
+        assertTrue(texts.none { it.contains("계산기 전용 등급") })
         val img = BufferedImage(win.width, win.height, BufferedImage.TYPE_INT_RGB)
         SwingUtilities.invokeAndWait { win.paint(img.graphics) }
         File("build/ui").mkdirs(); ImageIO.write(img, "png", File("build/ui/sss.png"))

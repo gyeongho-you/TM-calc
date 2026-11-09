@@ -543,7 +543,7 @@ class MainWindow(
 
     private fun recompute() {
         if (filling) return
-        Calculator.showBeyondGame = prefs.getBoolean("showSss", true)
+        Calculator.showBeyondGame = prefs.getBoolean("showSss", false)
         val db = pets.db
         val pet = db.find(nameF.text)
         updateSuggestions(pet, db)
@@ -635,7 +635,6 @@ class MainWindow(
                 r.toNextGrowth?.let { "${fmt(it * 100, 1)}%" } ?: "-"),
             listOf("다음등급", r.nextGrade, r.nextGradeTotal?.let { fmt(it, 1) } ?: "-", r.toNextGrade?.let { "${fmt(it * 100, 1)}%" } ?: "-"),
         )))
-        if (r.statGrades.any { Calculator.isBeyondGame(it) }) results.add(wrapNote(Calculator.BEYOND_NOTE))
     }
 
     /** 강화별 표: 강화 1번당 1% (게임 강화 화면 기준), 등급 = 능력치 ÷ 도감값 */
@@ -662,13 +661,11 @@ class MainWindow(
                 override fun mouseClicked(e: java.awt.event.MouseEvent) { lowerOn = !lower; recompute() }
             })
         }))
-        var beyond = false
         for (k in (if (lower) 0 else breaks)..maxOf(breaks, MAX_BREAKS)) {
             // 최저치는 위로 올릴 때만 (아래 강에 쓰면 반대로 '가장 높았을 경우'가 된다)
             val s = Calculator.statsAtBreaks(cur, base, breaks, k, worst && k > breaks)
             val t = Calculator.total(s, base)
             val g = Calculator.statGrades(s, base)
-            if (g.any { Calculator.isBeyondGame(it) }) beyond = true
             val c = (if (showCombat()) Calculator.combat(s, base, growthAmp()) else null)
             rows += listOf(if (k == breaks) "${k}강\n현재" else "${k}강") + (0..3).map { "${s[it]}\n${g[it]}" } +
                 (fmt(Calculator.abilityScore(s), 1) + (c?.let { "\n" + combatPct(it.avg, it.approx) } ?: "")) +
@@ -688,7 +685,6 @@ class MainWindow(
             val k = rowBreak.getOrNull(r) ?: return@table
             if (showCombat()) { expandedBreak = if (expandedBreak == k) null else k; recompute() }
         })
-        if (beyond) enhance.add(wrapNote(Calculator.BEYOND_NOTE))
         enhance.add(note(when {
             breaks >= MAX_BREAKS -> "이미 최대 강화(+${MAX_BREAKS}강)입니다."
             worst -> "최저치: 소수점을 모두 낮게 잡은 값 (실제는 이보다 낮지 않음)"
@@ -716,6 +712,18 @@ class MainWindow(
     private fun ampText(a: Double): String {
         val p = Math.round(a * 1000) / 10.0
         return if (p == Math.floor(p)) p.toLong().toString() else p.toString()
+    }
+
+    /** 설정 > 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 (기본 꺼짐) */
+    private fun showDisplaySettings() {
+        val box = JCheckBox("SS++ 넘는 등급을 SSS(무지개)로 표시", prefs.getBoolean("showSss", false)).apply { putClientProperty("html.disable", true) }
+        val panel = JPanel(java.awt.BorderLayout(0, 8)).apply {
+            add(box, java.awt.BorderLayout.NORTH)
+            add(JLabel("<html><div style='width:300px'>" + esc(Calculator.BEYOND_HELP).replace("\n", "<br>") + "</div></html>"), java.awt.BorderLayout.CENTER)
+        }
+        if (JOptionPane.showConfirmDialog(this, panel, "표시 설정", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return
+        prefs.putBoolean("showSss", box.isSelected)
+        recompute()
     }
 
     /** 설정 > 내 성장증폭: 종 대비 전투 능력치를 내 캐릭터 기준으로 */
@@ -759,9 +767,7 @@ class MainWindow(
             })
             add(ampItem)
             addSeparator()
-            add(javax.swing.JCheckBoxMenuItem("SS++ 넘는 등급을 SSS(무지개)로 표시", prefs.getBoolean("showSss", true)).apply {
-                addActionListener { prefs.putBoolean("showSss", isSelected); recompute() }
-            })
+            add(JMenuItem("표시 설정…").apply { addActionListener { showDisplaySettings() } })
         })
         add(JMenu("도움말").apply {
             add(javax.swing.JCheckBoxMenuItem("문제 확인용: 마지막 계산 화면 저장", prefs.getBoolean("saveLastScan", false)).apply {

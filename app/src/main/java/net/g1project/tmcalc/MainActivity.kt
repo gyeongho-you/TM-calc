@@ -187,8 +187,7 @@ class MainActivity : Activity() {
             setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
             addView(sw)
             addView(TextView(context).apply {
-                text = "\n게임은 SS++ 가 마지막 등급이지만, 그보다 더 높은 능력치가 있습니다. 켜면 2%씩 SSS(×1.11) · SSS+(×1.13) · SSS++(×1.15) 로 " +
-                    "무지개 색으로 보여 줍니다. 게임에 없는 계산기 전용 등급이라 게임 화면에서는 SS++ 로 보입니다."
+                text = "\n" + Calculator.BEYOND_HELP
                 textSize = 12f
             })
         }

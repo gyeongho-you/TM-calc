@@ -21,11 +21,12 @@ object Calculator {
     /** 게임에 없는 계산기 전용 등급인지 (SS++ 를 넘음) */
     fun isBeyondGame(grade: String) = grade.contains("SSS")
 
-    /** 설정에서 끄면 SSS 대신 게임처럼 SS++ 로 보여 준다 (화면을 그리기 전에 폰/PC 가 설정값으로 맞춘다) */
-    @Volatile var showBeyondGame = true
+    /** 표시 설정에서 켠 사람만 SSS 를 본다 (기본은 게임처럼 SS++ 까지). 화면을 그리기 전에 폰/PC 가 설정값으로 맞춘다 */
+    @Volatile var showBeyondGame = false
 
-    /** SSS 가 나오면 함께 보여 줄 설명 */
-    const val BEYOND_NOTE = "SSS = 게임에 없는 계산기 전용 등급 (SS++ 를 넘은 값, 게임에선 SS++ 로 보임)"
+    /** 표시 설정 화면의 설명 (폰·PC 같이 씀) */
+    const val BEYOND_HELP = "게임은 SS++ 가 마지막 등급이지만, 그보다 더 높은 능력치가 있습니다. 켜면 2%씩 SSS(×1.11) · SSS+(×1.13) · " +
+        "SSS++(×1.15) 로 무지개 색으로 보여 줍니다.\n게임에 없는 계산기 전용 등급이라 게임 화면에서는 SS++ 로 보입니다."
 
     private fun capGrade(g: String) = if (!showBeyondGame && isBeyondGame(g)) g.replace(Regex("SSS\\+{0,2}"), "SS++") else g
 
