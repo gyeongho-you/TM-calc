@@ -177,10 +177,21 @@ class MainActivity : Activity() {
     /** 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 보여 줄지 */
     private fun openDisplaySettings() {
         val dp = resources.displayMetrics.density
+        // 성장증폭 설정의 스위치와 같은 모양: 파란 스위치 + 글자로 켜짐/꺼짐
+        val on = Color.parseColor("#4FC3F7"); val off = Color.parseColor("#8A8D93")
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
         val sw = Switch(this).apply {
-            text = "SS++ 넘는 등급을 SSS(무지개)로 표시"
             textSize = 15f
+            setPadding(0, (6 * dp).toInt(), 0, (6 * dp).toInt())
+            thumbTintList = ColorStateList(states, intArrayOf(on, Color.parseColor("#D0D2D6")))
+            trackTintList = ColorStateList(states, intArrayOf(Color.parseColor("#804FC3F7"), Color.parseColor("#80555960")))
             isChecked = AppPrefs.showSss(this@MainActivity)
+            fun paint(checked: Boolean) {
+                text = "SSS 등급(무지개) 표시  " + if (checked) "켜짐" else "꺼짐"
+                setTextColor(if (checked) on else off)
+            }
+            paint(isChecked)
+            setOnCheckedChangeListener { _, checked -> paint(checked) }
         }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
