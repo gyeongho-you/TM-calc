@@ -236,9 +236,9 @@ class MainActivity : Activity() {
         val cur = AppPrefs.labSession(this)?.let { n -> sessions.firstOrNull { it.name == n } }
         val info = TextView(this).apply {
             textSize = 12f
-            text = "\n켜면 레이어 버튼이 [연구]로 바뀝니다. 누를 때마다 지금 화면과 읽은 글자·숫자를 기록합니다 " +
-                "(상태창, 소환수, 전투 능력치 등 아무 화면).\n\n" +
-                "지금 세션: " + (cur?.let { (LabStore.memo(it).ifBlank { it.name }) + " · ${LabStore.count(it)}장" } ?: "없음 (처음 누를 때 만들어짐)") +
+            text = "\n켜면 레이어 버튼이 [연구]로 바뀝니다. 누를 때마다 지금 화면과 읽은 글자·숫자를 기록하고, " +
+                "무엇을 바꿨는지 한 줄 메모를 달 수 있습니다.\n[새 세션]에서 실험을 고르면 무엇을 찍을지 안내합니다.\n\n" +
+                "지금 세션: " + (cur?.let { LabStore.label(it) + " · ${LabStore.count(it)}장" } ?: "없음 ([새 세션]으로 실험을 고르세요)") +
                 "\n전체: 세션 ${sessions.size}개 · ${sessions.sumOf { LabStore.count(it) }}장"
         }
         val box = LinearLayout(this).apply {
@@ -255,18 +255,30 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** 새 세션: 실험을 고르고 → 안내를 보고 → 메모(선택)를 적고 시작 */
     private fun newLabSession() {
-        val memo = EditText(this).apply { hint = "메모 (예: 허수아비, 공 1520)"; setSingleLine() }
-        val dp = resources.displayMetrics.density
         AlertDialog.Builder(this)
-            .setTitle("새 세션")
-            .setMessage("이후 기록은 새 세션에 모입니다. 무슨 실험인지 적어 두면 나중에 구분하기 쉽습니다.")
+            .setTitle("어떤 실험인가요?")
+            .setItems(LabStore.EXPERIMENTS.map { it.title }.toTypedArray()) { _, which -> startLabSession(LabStore.EXPERIMENTS[which]) }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun startLabSession(exp: LabExperiment) {
+        val dp = resources.displayMetrics.density
+        val memo = EditText(this).apply { hint = "메모 (선택, 예: 화혼랑 5강)"; setSingleLine() }
+        AlertDialog.Builder(this)
+            .setTitle(exp.title)
             .setView(LinearLayout(this).apply {
-                setPadding((24 * dp).toInt(), 0, (24 * dp).toInt(), 0); addView(memo, LinearLayout.LayoutParams(-1, -2))
+                orientation = LinearLayout.VERTICAL
+                setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+                addView(TextView(context).apply { text = exp.guide + "\n"; textSize = 13f })
+                addView(memo, LinearLayout.LayoutParams(-1, -2))
             })
             .setPositiveButton("시작") { _, _ ->
-                LabStore.newSession(this, memo.text.toString())
-                toast("새 세션을 시작했습니다.")
+                LabStore.newSession(this, exp.id, memo.text.toString())
+                if (!AppPrefs.labMode(this)) AppPrefs.setLabMode(this, true)
+                toast("${exp.short} 시작. 레이어의 [연구]를 누르면 기록됩니다.")
             }
             .setNegativeButton("취소", null)
             .show()
@@ -336,7 +348,7 @@ class MainActivity : Activity() {
                     val sessions = LabStore.sessions(this)
                     toast("내보내는 중…")
                     Thread {
-                        val r = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { LabStore.exportZip(this, sessions, it) } }
+                        val r = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { LabStore.exportZip(sessions, it) } }
                         runOnUiThread { r.onSuccess { toast("내보냈습니다.") }.onFailure { toast("내보내지 못했습니다: ${it.message}") } }
                     }.start()
                 }

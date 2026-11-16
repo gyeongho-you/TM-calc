@@ -122,6 +122,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         running = false
+        closeNote(save = true)
         getSharedPreferences("settings", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
         runCatching { wm.removeView(bubble) }
         runCatching { wm.removeView(panel) }
@@ -174,6 +175,7 @@ class OverlayService : Service() {
         busy = true
         bubble.text = "…"
         val lab = labMode()
+        if (lab) closeNote(save = true) // 메모 칸이 떠 있으면 적은 대로 저장하고 닫는다
         // 레이어가 스크린샷에 찍히지 않도록 잠깐 숨기고, 숨긴 화면이 그려진 뒤에 한 장만 찍는다
         val panelWasShown = panel.visibility == View.VISIBLE
         bubble.visibility = View.INVISIBLE
@@ -252,7 +254,9 @@ class OverlayService : Service() {
                     val n = runCatching { LabStore.save(app, bmp, kind, lines, values) }
                     bmp.recycle()
                     main.post {
-                        n.onSuccess { toast("연구 기록 #$it ($kind, 값 ${values.size}개)") }
+                        if (!running) return@post
+                        refreshLabCount()
+                        n.onSuccess { showNote(it, kind, values.size) }
                             .onFailure { toast("기록 실패: ${it.message}") }
                     }
                 }.start()
@@ -262,6 +266,93 @@ class OverlayService : Service() {
     }
 
     private fun labMode() = AppPrefs.labMode(this)
+
+    /** 지금 세션 장수 (버튼에 작게 표시) */
+    private var labCount = 0
+
+    private fun refreshLabCount() {
+        labCount = LabStore.currentOrNull(this)?.let { LabStore.count(it) } ?: 0
+        updateBubble()
+    }
+
+    // ---------------------------------------------------------------- 연구실: 찍은 뒤 한 줄 메모
+
+    private var noteView: LinearLayout? = null
+    private var noteParams: WindowManager.LayoutParams? = null
+    private var noteEdit: EditText? = null
+    private var noteNo = 0
+
+    /** 방금 찍은 기록에 "무엇을 바꿨는지" 적는 작은 칸. 비워 두고 닫아도 된다 */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun showNote(n: Int, kind: String, valueCount: Int) {
+        closeNote(save = true)
+        noteNo = n
+        val session = LabStore.currentOrNull(this)?.let { LabStore.label(it) } ?: ""
+        val edit = EditText(ui).apply {
+            hint = "무엇을 바꿨나요? (비워도 됨)"
+            textSize = 14f
+            setSingleLine()
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#777A80"))
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setOnTouchListener { v, ev ->
+                if (ev.action == MotionEvent.ACTION_DOWN) setNoteFocusable(true)
+                v.post { v.requestFocus(); getSystemService(InputMethodManager::class.java).showSoftInput(v, 0) }
+                false
+            }
+            setOnEditorActionListener { _, _, _ -> closeNote(save = true); true }
+        }
+        noteEdit = edit
+        val v = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            background = round(0xF22B2D31.toInt(), 12)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            addView(TextView(ui).apply {
+                text = "#$n $kind · 값 ${valueCount}개" + if (session.isNotEmpty()) "  ($session)" else ""
+                textSize = 12f
+                setTextColor(Color.parseColor("#B39DDB"))
+            })
+            addView(edit, LinearLayout.LayoutParams(-1, -2))
+            addView(LinearLayout(ui).apply {
+                gravity = Gravity.END
+                addView(headerButton("기록 취소") {
+                    LabStore.delete(this@OverlayService, noteNo)
+                    closeNote(save = false)
+                    refreshLabCount()
+                    toast("#$noteNo 기록을 지웠습니다.")
+                })
+                addView(View(ui), LinearLayout.LayoutParams(dp(8), 1))
+                addView(headerButton("확인") { closeNote(save = true) })
+            })
+        }
+        val p = WindowManager.LayoutParams(
+            resources.displayMetrics.widthPixels - dp(32), WindowManager.LayoutParams.WRAP_CONTENT, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(36)
+        }
+        noteView = v; noteParams = p
+        wm.addView(v, p)
+    }
+
+    private fun setNoteFocusable(on: Boolean) {
+        val v = noteView ?: return; val p = noteParams ?: return
+        val f = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv() else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        if (f == p.flags) return
+        p.flags = f
+        runCatching { wm.updateViewLayout(v, p) }
+    }
+
+    private fun closeNote(save: Boolean) {
+        val v = noteView ?: return
+        if (save) noteEdit?.text?.toString()?.takeIf { it.isNotBlank() }?.let { LabStore.setNote(this, noteNo, it) }
+        noteEdit?.let { getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(it.windowToken, 0) }
+        runCatching { wm.removeView(v) }
+        noteView = null; noteParams = null; noteEdit = null
+    }
 
     private fun finishScan() {
         busy = false
@@ -279,8 +370,8 @@ class OverlayService : Service() {
         if (busy) return
         val open = panel.visibility == View.VISIBLE
         val lab = labMode()
-        bubble.text = if (open) "✕" else if (lab) "연구" else "계산"
-        bubble.textSize = if (open) 20f else 13f
+        bubble.text = if (open) "✕" else if (lab) "연구\n$labCount" else "계산"
+        bubble.textSize = if (open) 20f else if (lab) 12f else 13f
         (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab && !open) "#B39DDB" else "#F2B84B"))
     }
 
@@ -832,13 +923,17 @@ class OverlayService : Service() {
 
         buildPanel()
         wm.addView(panel, panelParams)
-        updateBubble()
+        refreshLabCount()
         // 앱에서 연구실 모드를 켜고 끄면 버튼 글자/색을 바로 바꾼다
         getSharedPreferences("settings", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "labMode") main.post { if (running) updateBubble() }
+        if (key == "labMode" || key == "labSession") main.post {
+            if (!running) return@post
+            if (key == "labMode" && !labMode()) closeNote(save = true)
+            refreshLabCount()
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
