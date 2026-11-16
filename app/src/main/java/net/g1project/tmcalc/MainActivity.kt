@@ -241,16 +241,59 @@ class MainActivity : Activity() {
                 "지금 세션: " + (cur?.let { LabStore.label(it) + " · ${LabStore.count(it)}장" } ?: "없음 ([새 세션]으로 실험을 고르세요)") +
                 "\n전체: 세션 ${sessions.size}개 · ${sessions.sumOf { LabStore.count(it) }}장"
         }
+        val guide = TextView(this).apply {
+            text = "▶ 알아야 할 것 / 찍는 법 보기"
+            textSize = 15f
+            setTextColor(on)
+            setPadding(0, (14 * dp).toInt(), 0, (6 * dp).toInt())
+            setOnClickListener { openLabTopics() }
+        }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
-            addView(sw); addView(info)
+            addView(sw); addView(guide); addView(info)
         }
         AlertDialog.Builder(this)
             .setTitle("연구실")
             .setView(box)
             .setPositiveButton("새 세션") { _, _ -> newLabSession() }
             .setNeutralButton("내보내기 / 지우기") { _, _ -> labFiles() }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
+    /** 알아야 할 것 목록: 무엇을 알아내는지 + 어떻게 찍는지. 지금 연구 버튼으로 되는 것과 화면 녹화가 필요한 것 구분 */
+    private fun openLabTopics() {
+        val dp = resources.displayMetrics.density
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), (8 * dp).toInt())
+            addView(TextView(context).apply {
+                text = "위에서부터 차례로 풀어야 합니다 (앞의 공식을 알아야 뒤를 맞출 수 있음).\n" +
+                    "'지금 가능'은 [연구] 버튼으로, '화면 녹화'는 폰 기본 화면 녹화 영상으로 모읍니다."
+                textSize = 12f
+                setTextColor(Color.parseColor("#9A9DA3"))
+            })
+            for (t in LabStore.TOPICS) {
+                addView(TextView(context).apply {
+                    text = t.title + if (t.ready) "   · 지금 가능" else "   · 화면 녹화"
+                    textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (t.ready) "#B39DDB" else "#C8CACE"))
+                    setPadding(0, (16 * dp).toInt(), 0, (4 * dp).toInt())
+                })
+                addView(TextView(context).apply { text = "알아낼 것: " + t.what; textSize = 13f })
+                addView(TextView(context).apply {
+                    text = "찍는 법: " + t.how
+                    textSize = 13f
+                    setPadding(0, (4 * dp).toInt(), 0, 0)
+                })
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("알아야 할 것 / 찍는 법")
+            .setView(ScrollView(this).apply { addView(list) })
+            .setPositiveButton("새 세션 시작") { _, _ -> newLabSession() }
             .setNegativeButton("닫기", null)
             .show()
     }
