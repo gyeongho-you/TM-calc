@@ -38,6 +38,25 @@ object AppPrefs {
         c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(SHOW_SSS, on).apply()
     }
 
+    private const val LAB_MODE = "labMode"
+    private const val LAB_SESSION = "labSession"
+
+    /** 연구실 모드: 켜면 레이어 버튼이 '연구'가 되어, 누를 때마다 화면을 기록한다 (기본 꺼짐) */
+    fun labMode(c: Context): Boolean = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(LAB_MODE, false)
+
+    fun setLabMode(c: Context, on: Boolean) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(LAB_MODE, on).apply()
+    }
+
+    /** 지금 기록 중인 연구실 세션 폴더 이름 */
+    fun labSession(c: Context): String? = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(LAB_SESSION, null)
+
+    fun setLabSession(c: Context, name: String?) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().apply {
+            if (name == null) remove(LAB_SESSION) else putString(LAB_SESSION, name)
+        }.apply()
+    }
+
     private const val PRESETS = "presets"
 
     /** 저장한 소환수 (프리셋). 폰 안에만 저장 */

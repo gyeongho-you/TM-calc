@@ -162,13 +162,14 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기")) { _, which ->
+            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "연구실")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
                     2 -> openSettings()
                     3 -> openDisplaySettings()
-                    else -> openPresetFiles()
+                    4 -> openPresetFiles()
+                    else -> openLab()
                 }
             }
             .show()
@@ -210,6 +211,92 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /**
+     * 연구실: 켜면 레이어 버튼이 '연구'로 바뀌고, 누를 때마다 화면(이미지 + 글자 + 뽑은 값)을 기록한다.
+     * 공식(피해, 전투 능력치 등)을 맞추기 위한 자료 모으기용. 기록은 폰 안에만 있고 내보내기로 zip 을 만든다.
+     */
+    private fun openLab() {
+        val dp = resources.displayMetrics.density
+        val on = Color.parseColor("#B39DDB"); val off = Color.parseColor("#8A8D93")
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        val sw = Switch(this).apply {
+            textSize = 15f
+            setPadding(0, (6 * dp).toInt(), 0, (6 * dp).toInt())
+            thumbTintList = ColorStateList(states, intArrayOf(on, Color.parseColor("#D0D2D6")))
+            trackTintList = ColorStateList(states, intArrayOf(Color.parseColor("#80B39DDB"), Color.parseColor("#80555960")))
+            isChecked = AppPrefs.labMode(this@MainActivity)
+            fun paint(checked: Boolean) {
+                text = "연구실 모드  " + if (checked) "켜짐" else "꺼짐"
+                setTextColor(if (checked) on else off)
+            }
+            paint(isChecked)
+            setOnCheckedChangeListener { _, checked -> paint(checked); AppPrefs.setLabMode(this@MainActivity, checked) }
+        }
+        val sessions = LabStore.sessions(this)
+        val cur = AppPrefs.labSession(this)?.let { n -> sessions.firstOrNull { it.name == n } }
+        val info = TextView(this).apply {
+            textSize = 12f
+            text = "\n켜면 레이어 버튼이 [연구]로 바뀝니다. 누를 때마다 지금 화면과 읽은 글자·숫자를 기록합니다 " +
+                "(상태창, 소환수, 전투 능력치 등 아무 화면).\n\n" +
+                "지금 세션: " + (cur?.let { (LabStore.memo(it).ifBlank { it.name }) + " · ${LabStore.count(it)}장" } ?: "없음 (처음 누를 때 만들어짐)") +
+                "\n전체: 세션 ${sessions.size}개 · ${sessions.sumOf { LabStore.count(it) }}장"
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)
+            addView(sw); addView(info)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("연구실")
+            .setView(box)
+            .setPositiveButton("새 세션") { _, _ -> newLabSession() }
+            .setNeutralButton("내보내기 / 지우기") { _, _ -> labFiles() }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
+    private fun newLabSession() {
+        val memo = EditText(this).apply { hint = "메모 (예: 허수아비, 공 1520)"; setSingleLine() }
+        val dp = resources.displayMetrics.density
+        AlertDialog.Builder(this)
+            .setTitle("새 세션")
+            .setMessage("이후 기록은 새 세션에 모입니다. 무슨 실험인지 적어 두면 나중에 구분하기 쉽습니다.")
+            .setView(LinearLayout(this).apply {
+                setPadding((24 * dp).toInt(), 0, (24 * dp).toInt(), 0); addView(memo, LinearLayout.LayoutParams(-1, -2))
+            })
+            .setPositiveButton("시작") { _, _ ->
+                LabStore.newSession(this, memo.text.toString())
+                toast("새 세션을 시작했습니다.")
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun labFiles() {
+        val sessions = LabStore.sessions(this)
+        val n = sessions.sumOf { LabStore.count(it) }
+        AlertDialog.Builder(this)
+            .setTitle("연구 기록 내보내기 / 지우기")
+            .setMessage("세션 ${sessions.size}개 · ${n}장.\n\n내보내기: 전부 zip 파일 하나로 저장 (이미지, 글자, 값 표 values.csv)\n" +
+                "지우기: 폰에 있는 연구 기록을 모두 지웁니다")
+            .setPositiveButton("내보내기") { _, _ ->
+                if (n == 0) toast("기록이 없습니다.")
+                else startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+                    putExtra(Intent.EXTRA_TITLE, "연구기록_" + java.text.SimpleDateFormat("MMdd_HHmm", java.util.Locale.US).format(java.util.Date()) + ".zip")
+                }, REQ_LAB_EXPORT)
+            }
+            .setNeutralButton("모두 지우기") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setMessage("연구 기록 ${n}장을 모두 지울까요? 되돌릴 수 없습니다.")
+                    .setPositiveButton("지우기") { _, _ -> LabStore.deleteAll(this); toast("지웠습니다.") }
+                    .setNegativeButton("취소", null)
+                    .show()
+            }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
     /** 저장 목록(계산 레이어의 [저장])을 JSON 파일로 내보내거나 올린다. PC 프로그램과 같은 형식 */
     private fun openPresetFiles() {
         val n = AppPrefs.presets(this).size
@@ -243,6 +330,15 @@ class MainActivity : Activity() {
                     val list = AppPrefs.presets(this)
                     contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(Preset.listToJson(list)) }
                     toast("${list.size}개를 저장했습니다.")
+                }
+                REQ_LAB_EXPORT -> {
+                    // 이미지가 많으면 오래 걸릴 수 있어 뒤에서
+                    val sessions = LabStore.sessions(this)
+                    toast("내보내는 중…")
+                    Thread {
+                        val r = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { LabStore.exportZip(this, sessions, it) } }
+                        runOnUiThread { r.onSuccess { toast("내보냈습니다.") }.onFailure { toast("내보내지 못했습니다: ${it.message}") } }
+                    }.start()
                 }
                 REQ_PRESET_IMPORT -> {
                     // 엉뚱한 큰 파일을 골라도 멈추지 않게 1MB 까지만 읽는다
@@ -402,6 +498,7 @@ class MainActivity : Activity() {
     private companion object {
         const val REQ_PRESET_EXPORT = 11
         const val REQ_PRESET_IMPORT = 12
+        const val REQ_LAB_EXPORT = 13
     }
 
     private fun startOverlay() {

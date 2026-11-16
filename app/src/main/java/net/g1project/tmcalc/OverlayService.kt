@@ -122,6 +122,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         running = false
+        getSharedPreferences("settings", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
         runCatching { wm.removeView(bubble) }
         runCatching { wm.removeView(panel) }
         runCatching { wm.removeView(trash) }
@@ -172,6 +173,7 @@ class OverlayService : Service() {
         }
         busy = true
         bubble.text = "…"
+        val lab = labMode()
         // 레이어가 스크린샷에 찍히지 않도록 잠깐 숨기고, 숨긴 화면이 그려진 뒤에 한 장만 찍는다
         val panelWasShown = panel.visibility == View.VISIBLE
         bubble.visibility = View.INVISIBLE
@@ -189,7 +191,7 @@ class OverlayService : Service() {
                     })
                     return@capture
                 }
-                runOcr(bmp)
+                if (lab) runLab(bmp) else runOcr(bmp)
             }
         }, HIDE_DELAY_MS)
     }
@@ -233,6 +235,34 @@ class OverlayService : Service() {
             }
     }
 
+    /** 연구실 모드: 화면 + 글자 + 뽑은 값을 세션 폴더에 저장 (계산 창은 띄우지 않음) */
+    private fun runLab(bmp: Bitmap) {
+        recognizer.process(InputImage.fromBitmap(bmp, 0))
+            .addOnSuccessListener { text ->
+                if (!running) { bmp.recycle(); return@addOnSuccessListener }
+                val lines = text.textBlocks.flatMap { b -> b.lines }.mapNotNull { l ->
+                    val r = l.boundingBox ?: return@mapNotNull null
+                    OcrLine(l.text, r.left, r.top, r.right, r.bottom)
+                }
+                val kind = LabParser.kind(lines)
+                val values = LabParser.values(lines)
+                val app = applicationContext
+                // jpg 저장은 조금 걸리므로 뒤에서
+                Thread {
+                    val n = runCatching { LabStore.save(app, bmp, kind, lines, values) }
+                    bmp.recycle()
+                    main.post {
+                        n.onSuccess { toast("연구 기록 #$it ($kind, 값 ${values.size}개)") }
+                            .onFailure { toast("기록 실패: ${it.message}") }
+                    }
+                }.start()
+            }
+            .addOnFailureListener { e -> bmp.recycle(); if (running) toast("글자 인식 실패: ${e.message}") }
+            .addOnCompleteListener { finishScan() }
+    }
+
+    private fun labMode() = AppPrefs.labMode(this)
+
     private fun finishScan() {
         busy = false
         updateBubble()
@@ -248,8 +278,10 @@ class OverlayService : Service() {
     private fun updateBubble() {
         if (busy) return
         val open = panel.visibility == View.VISIBLE
-        bubble.text = if (open) "✕" else "계산"
+        val lab = labMode()
+        bubble.text = if (open) "✕" else if (lab) "연구" else "계산"
         bubble.textSize = if (open) 20f else 13f
+        (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab && !open) "#B39DDB" else "#F2B84B"))
     }
 
     /** 박스 안의 채도 높은 픽셀이 빨강 계열이면 -1, 초록 계열이면 +1, 애매하면 0. */
@@ -800,6 +832,13 @@ class OverlayService : Service() {
 
         buildPanel()
         wm.addView(panel, panelParams)
+        updateBubble()
+        // 앱에서 연구실 모드를 켜고 끄면 버튼 글자/색을 바로 바꾼다
+        getSharedPreferences("settings", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "labMode") main.post { if (running) updateBubble() }
     }
 
     @SuppressLint("ClickableViewAccessibility")
