@@ -154,33 +154,51 @@ function lm(f,p0,X,y,iters=400){
  * vars: [{id,name,cat,unit:'flat'|'pct',reduce:bool}], X: 행마다 vars 순서의 값, y: 결과
  * 반환: 후보마다 {name,desc,k,predict(x),formula,sse,...} (잘 맞는 순)
  */
+/**
+ * 공식 모양(spec) → 계산 함수 f(p, x). 찾은 공식을 저장했다가 최적화에서 다시 계산할 때 쓴다.
+ * x 는 변수 값 배열, p 는 계수 배열.
+ */
+function makeF(sp){
+  const sum=(idx,p,o,x,div=1)=>idx.reduce((s,i,j)=>s+p[o+j]*x[i]/div,0)
+  switch(sp.type){
+    case'lin':return(p,x)=>p[0]+x.reduce((s,v,i)=>s+p[i+1]*v,0)
+    case'mul':return(p,x)=>(p[0]+sum(sp.F,p,1,x))*(1+sum(sp.P,p,1+sp.F.length,x,100))
+    case'grp':return(p,x)=>{let m=p[0]+sum(sp.F,p,1,x),o=1+sp.F.length;for(const g of sp.g){m*=1+sum(g,p,o,x,100);o+=g.length}return m}
+    case'pow':return(p,x)=>Math.exp(p[0]+x.reduce((s,v,i)=>s+p[i+1]*Math.log(v),0))
+    case'red':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.O,p,1,x))*K/(K+x[sp.d])}
+    case'red6':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.Fo,p,1,x))*(1+sum(sp.P,p,1+sp.Fo.length,x,100))*K/(K+x[sp.d])}
+    case'gp':{const fn=new Function('c','x',`return c[${sp.k}]+c[${sp.k+1}]*${sp.body}`);return fn}
+  }
+  return null
+}
 function fitModels(vars,X,y,tol){
   const n=y.length,out=[]
   const idx=f=>vars.map((v,i)=>f(v)?i:-1).filter(i=>i>=0)
   const N=i=>vars[i].name
   const lin=ols(X,y)
   const term=(a,i)=>(a<0?' − ':' + ')+coef(Math.abs(a))+'×'+N(i)
-  const add=(name,desc,f,p,form,snap=true)=>{
+  const add=(name,desc,f,p,form,snap=true,spec=null)=>{
     const k=p.length
     if(n<=k)return out.push({name,desc,k,skip:`기록이 ${k+1}개 이상 필요 (지금 ${n}개)`})
     const pr=X.map(x=>f(p,x)),res=pr.map((v,i)=>v-y[i])
     if(res.some(v=>!isFinite(v)))return
     const sse=res.reduce((s,v)=>s+v*v,0)
-    out.push({name,desc,k,f,p,form,snap,predict:x=>f(p,x),formula:pretty(form(p)),pr,res,sse})
+    const m={name,desc,k,f,p,form,snap,spec,formula:pretty(form(p)),pr,res,sse};m.predict=x=>m.f(m.p,x)
+    out.push(m)
   }
   const pc=i=>vars[i].name.includes('%')?'':'%'
   // 1) 합
-  if(lin) add('합 (선형)','결과 = 상수 + 각 변수 × 계수',(p,x)=>p[0]+x.reduce((s,v,i)=>s+p[i+1]*v,0),lin,
-    p=>'결과 = '+coef(p[0])+vars.map((_,i)=>term(p[i+1],i)).join(''))
+  if(lin) add('합 (선형)','결과 = 상수 + 각 변수 × 계수',makeF({type:'lin'}),lin,
+    p=>'결과 = '+coef(p[0])+vars.map((_,i)=>term(p[i+1],i)).join(''),true,{type:'lin'})
   const F=idx(v=>v.unit!=='pct'),P=idx(v=>v.unit==='pct'),D=idx(v=>v.reduce)
   const meanY=y.reduce((s,v)=>s+v,0)/n||1
   // 2) (고정 합) × (1 + % 합)
   if(P.length&&lin){
-    const f=(p,x)=>(p[0]+F.reduce((s,i,j)=>s+p[1+j]*x[i],0))*(1+P.reduce((s,i,j)=>s+p[1+F.length+j]*x[i]/100,0))
+    const sp2={type:'mul',F,P},f=makeF(sp2)
     const p0=[lin[0],...F.map(i=>lin[i+1]),...P.map(i=>lin[i+1]*100/meanY)]
     const {p}=lm(f,p0,X,y)
     add('고정 합 × (1 + % 합)','고정값끼리 더한 뒤, %끼리 더한 배율을 한 번 곱함',f,p,
-      p=>'결과 = ('+coef(p[0])+F.map((i,j)=>term(p[1+j],i)).join('')+') × (1'+P.map((i,j)=>term(p[1+F.length+j],i)+pc(i)).join('')+')')
+      p=>'결과 = ('+coef(p[0])+F.map((i,j)=>term(p[1+j],i)).join('')+') × (1'+P.map((i,j)=>term(p[1+F.length+j],i)+pc(i)).join('')+')',true,sp2)
     // 3) %를 묶어서 곱: 분류별 / 항목별 / 하나하나 (같은 묶음 안의 %는 더함)
     const seen=new Set([JSON.stringify([P])])
     for(const [mname,mdesc,key] of [
@@ -191,24 +209,23 @@ function fitModels(vars,X,y,tol){
       if(keys.length<2)continue
       const g=keys.map(k=>P.filter(i=>key(i)===k))
       const sig=JSON.stringify(g);if(seen.has(sig))continue;seen.add(sig)
-      const f3=(q,x)=>{let m=q[0]+F.reduce((s,i,j)=>s+q[1+j]*x[i],0);let o=1+F.length
-        for(const grp of g){m*=1+grp.reduce((s,i,j)=>s+q[o+j]*x[i]/100,0);o+=grp.length}return m}
+      const sp3={type:'grp',F,g},f3=makeF(sp3)
       const q0=[p[0],...F.map((_,j)=>p[1+j]),...g.flat().map(i=>p[1+F.length+P.indexOf(i)])]
       const r3=lm(f3,q0,X,y)
       add(mname,mdesc,f3,r3.p,q=>{
         let o=1+F.length
         const parts=g.map(grp=>{const s='(1'+grp.map((i,j)=>term(q[o+j],i)+pc(i)).join('')+')';o+=grp.length;return s})
-        return '결과 = ('+coef(q[0])+F.map((i,j)=>term(q[1+j],i)).join('')+') × '+parts.join(' × ')})
+        return '결과 = ('+coef(q[0])+F.map((i,j)=>term(q[1+j],i)).join('')+') × '+parts.join(' × ')},true,sp3)
     }
   }
   // 4) 거듭제곱 (모두 곱): 값이 모두 양수일 때
   if(vars.length&&y.every(v=>v>0)&&X.every(r=>r.every(v=>v>0))){
     const l=ols(X.map(r=>r.map(Math.log)),y.map(Math.log))
     if(l){
-      const f=(p,x)=>Math.exp(p[0]+x.reduce((s,v,i)=>s+p[i+1]*Math.log(v),0))
+      const f=makeF({type:'pow'})
       const {p}=lm(f,l,X,y)
       add('거듭제곱 (모두 곱)','결과 = 상수 × 변수1^a × 변수2^b …',f,p,
-        p=>'결과 = '+coef(Math.exp(p[0]))+vars.map((_,i)=>' × '+N(i)+'^'+coef(p[i+1])).join(''),false)
+        p=>'결과 = '+coef(Math.exp(p[0]))+vars.map((_,i)=>' × '+N(i)+'^'+coef(p[i+1])).join(''),false,{type:'pow'})
     }
   }
   // 5) 감소형: (나머지) × K / (K + 방어)
@@ -218,25 +235,25 @@ function fitModels(vars,X,y,tol){
     const md=X.reduce((s,r)=>s+Math.abs(r[d]),0)/n||1,mx=Math.max(...X.map(r=>Math.abs(r[d])))
     // K>0: 값이 클수록 줄어듦 (적 방어) / K<0: 값이 클수록 늘어남 (방깎: K/(K−x) 꼴)
     const Ks=[md*0.3,md,md*3,md*10,-(mx*1.5+md),-(mx*3+md*3),-(mx*10+md*10)]
-    const f=(p,x)=>{const K=p[p.length-1];return(p[0]+O.reduce((s,i,j)=>s+p[1+j]*x[i],0))*K/(K+x[d])}
+    const sp5={type:'red',O,d},f=makeF(sp5)
     let best=null
     for(const K of Ks){
       const r=lm(f,[...lo.map(v=>v*(K+md)/K),K],X,y)
       if(!best||r.sse<best.sse)best=r
     }
     add(`감소형 (${N(d)})`,`결과 = (나머지 합) × K / (K + ${N(d)})  · K 가 음수면 깎을수록 늘어나는 방깎 꼴`,f,best.p,p=>{const K=p[p.length-1]
-      return '결과 = ('+coef(p[0])+O.map((i,j)=>term(p[1+j],i)).join('')+`) × ${coef(K)} / (${coef(K)} + ${N(d)})`})
+      return '결과 = ('+coef(p[0])+O.map((i,j)=>term(p[1+j],i)).join('')+`) × ${coef(K)} / (${coef(K)} + ${N(d)})`},true,sp5)
     // 6) % 배율까지 있는 감소형
     const Fo=F.filter(i=>i!==d)
     if(P.length){
-      const f6=(q,x)=>{const K=q[q.length-1];return(q[0]+Fo.reduce((s,i,j)=>s+q[1+j]*x[i],0))*(1+P.reduce((s,i,j)=>s+q[1+Fo.length+j]*x[i]/100,0))*K/(K+x[d])}
+      const sp6={type:'red6',Fo,P,d},f6=makeF(sp6)
       let b6=null
       for(const K of Ks){
         const r=lm(f6,[lo[0]*(K+md)/K,...Fo.map(i=>lo[1+O.indexOf(i)]*(K+md)/K),...P.map(()=>0),K],X,y)
         if(!b6||r.sse<b6.sse)b6=r
       }
       add(`고정 합 × (1 + % 합) × 감소 (${N(d)})`,'%배율과 방어 감소를 모두 곱함',f6,b6.p,q=>{const K6=q[q.length-1]
-        return '결과 = ('+coef(q[0])+Fo.map((i,j)=>term(q[1+j],i)).join('')+') × (1'+P.map((i,j)=>term(q[1+Fo.length+j],i)+pc(i)).join('')+`) × ${coef(K6)} / (${coef(K6)} + ${N(d)})`})
+        return '결과 = ('+coef(q[0])+Fo.map((i,j)=>term(q[1+j],i)).join('')+') × (1'+P.map((i,j)=>term(q[1+Fo.length+j],i)+pc(i)).join('')+`) × ${coef(K6)} / (${coef(K6)} + ${N(d)})`},true,sp6)
     }
   }
   // 점수: AICc (오차가 작고 계수가 적을수록 좋음)
@@ -503,7 +520,8 @@ function gpEngine(vars,X,y,opt={}){
 function gpModel(e,vars,X,y,Xt,yt,quick,tol,tolT){
   const names=vars.map(v=>v.name),k=e.k
   const form=p=>{const cs=p.slice(0,k);return pretty('결과 = '+coef(p[k])+' + '+coef(p[k+1])+'×('+gpStr(e.tree,names,cs)+')')}
-  const m={name:'크기 '+e.size,desc:'',k:e.k+2,size:e.size,f:e.fn,p:e.p.slice(),form,snap:true,predict:x=>e.fn(m.p,x)}
+  const m={name:'크기 '+e.size,desc:'',k:e.k+2,size:e.size,f:e.fn,p:e.p.slice(),form,snap:true,predict:x=>e.fn(m.p,x),
+    spec:{type:'gp',body:gpCompile(e.tree).body,k:e.k}}
   m.formula=form(m.p)
   const unit=roundUnit(y)
   m.pr=X.map(x=>m.f(m.p,x));m.res=m.pr.map((v,i)=>v-y[i]);m.sse=m.res.reduce((s,v)=>s+v*v,0)
@@ -577,7 +595,7 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart})[c.v](c,$('#view'))
+  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt})[c.v](c,$('#view'))
 }
 
 // ---------------------------------------------------------------- 처음 화면: 세션 + 틀
@@ -595,6 +613,7 @@ function vHome(c,v){
         <button data-recs="${s.id}">기록</button>
         <button data-start="${s.id}">시작 상태${Object.keys(s.start||{}).length?' ✓':''}</button>
         <button data-find="${s.id}">공식 찾기</button>
+        <button data-opt="${s.id}">최적화</button>
         <span style="flex:1"></span>
         <button class="sm" data-ren="${s.id}">이름</button>
         <button class="sm" data-exp="${s.id}">내보내기</button>
@@ -620,6 +639,7 @@ function vHome(c,v){
   v.querySelectorAll('[data-recs]').forEach(b=>b.onclick=()=>go({v:'recs',id:b.dataset.recs}))
   v.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>go({v:'start',id:b.dataset.start}))
   v.querySelectorAll('[data-find]').forEach(b=>b.onclick=()=>go({v:'find',id:b.dataset.find}))
+  v.querySelectorAll('[data-opt]').forEach(b=>b.onclick=()=>go({v:'opt',id:b.dataset.opt}))
   v.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.ren),n=prompt('세션 이름',s.name)
     if(n&&n.trim()){mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.name=n.trim()});render()}})
   v.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.del)
@@ -917,7 +937,8 @@ function showSaved(c){
     <div class="mut">${esc(f.targetName)} · ${f.kind==='deep'?'심도':'빠른'} 탐색 · 기록 ${f.records}개 · ${fdate(f.time)}${f.exact?' · <span class="good">완전 일치</span>':''}</div>
     <div class="formula">${esc(f.formula)}</div>
     <div class="row"><span class="mut" style="flex:1">최대 오차 ${fmt(f.maxAbs)}${f.testAbs!=null?` · 검증 ${fmt(f.testAbs)}`:''}</span>
-      <button class="sm" data-cp="${esc(f.formula)}">복사</button><button class="sm danger" data-sdel="${f.id}">✕</button></div></div>`).join(''):''
+      ${f.calc?`<button class="sm" data-go-opt="${f.id}">최적화</button>`:''}<button class="sm" data-cp="${esc(f.formula)}">복사</button><button class="sm danger" data-sdel="${f.id}">✕</button></div></div>`).join(''):''
+  el.querySelectorAll('[data-go-opt]').forEach(b=>b.onclick=()=>{mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x){x.opt=x.opt||{};x.opt.formula=b.dataset.goOpt}});go({v:'opt',id:c.id})})
   el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp))
   el.querySelectorAll('[data-sdel]').forEach(b=>b.onclick=()=>{if(!confirm('저장한 공식을 지울까요?'))return
     mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x)x.saved=(x.saved||[]).filter(q=>q.id!==b.dataset.sdel)});showSaved(c)})
@@ -937,7 +958,7 @@ function showPast(c){
 }
 /** 후보 카드의 [복사] [저장] */
 function pinBtns(f,m){
-  const pin={kind:f.kind,target:f.target,targetName:f.targetName,records:f.records,formula:m.formula,maxAbs:m.maxAbs,exact:m.exact,testAbs:m.testAbs}
+  const pin={kind:f.kind,target:f.target,targetName:f.targetName,records:f.records,formula:m.formula,maxAbs:m.maxAbs,exact:m.exact,testAbs:m.testAbs,calc:m.calc||null}
   return`<button class="sm" data-cp="${esc(m.formula)}">복사</button><button class="sm" data-pin="${esc(JSON.stringify(pin))}">저장</button>`
 }
 function bindPins(c,o){
@@ -947,11 +968,17 @@ function bindPins(c,o){
       if(!x.saved.some(q=>q.formula===f.formula&&q.target===f.target))x.saved.push({id:uid(),time:Date.now(),...f})})
     toast('저장한 공식에 넣었어요.');showSaved(c)})
 }
+/** 모델이 쓰는 변수 id (곱연산 누적은 id 뒤에 *) */
+function modelVarIds(m,P){
+  const vs=m.vars||P.vars
+  return vs.map((x,i)=>x.id.endsWith('*')||!/\(곱\)$/.test(x.name)?x.id:x.id+'*')
+}
 /** 찾은 후보를 세션에 남긴다 (대상·탐색 종류별 마지막 결과). 내보내기 JSON 에도 들어감 */
 function storeResult(c,R){
   const f={kind:R.kind,target:c.target,targetName:R.P.tname,inputs:R.P.vars.map(v=>v.name),records:ses(c.id).records.length,used:R.P.rows.length,time:Date.now(),
     candidates:R.models.map((m,i)=>({rank:i+1,name:R.kind==='quick'?m.name:'크기 '+m.size,formula:(m.tidy||m.formula).replace('결과',R.P.tname),
-      maxAbs:m.maxAbs,maxRel:m.maxRel,exact:!!m.exact,testAbs:m.testAbs??null,testExact:m.testExact??null}))}
+      maxAbs:m.maxAbs,maxRel:m.maxRel,exact:!!m.exact,testAbs:m.testAbs??null,testExact:m.testExact??null,
+      calc:m.spec?{spec:m.spec,p:m.p,vars:modelVarIds(m,R.P)}:null}))}
   // 의심 기록: 추천 공식과의 차이가 허용 오차와 '보통 차이(중앙값)×4' 보다 모두 큰 기록
   const m=R.models[0]
   if(R.dropped&&R.dropped.length)f.suspects=R.dropped.slice()
@@ -1060,9 +1087,181 @@ function showRes(c){
       <details${i===0?'':''}><summary>기록별 예측</summary><div class="scroll"><table><tr><th class="l">#</th><th>실제</th><th>예측</th><th>차이</th></tr>
         ${P.rows.map((r,j)=>{const pr=m.predict((m.X||P.X)[j]),d=pr-P.y[j],out=(R.dropped||[]).includes(r.r.id);return`<tr class="${Math.abs(d)>Math.max(roundUnit(P.y),(P.tol&&P.tol[j])||0)*1.0000001+1e-9?'worst':''}"><td class="l">${out?'⚠':''}${r.no}</td><td>${fmt(P.y[j])}</td><td>${fmt(pr)}</td><td>${fmt(d)}</td></tr>`}).join('')}
       </table></div></details>
-      ${i===0?gainTable(m,{...P,vars:m.vars||P.vars,X:m.X||P.X}):''}</div>`).join('')
+      ${i===0?gainTable(m,{...P,vars:m.vars||P.vars,X:m.X||P.X}):''}
+      <details data-graph="${i}"><summary>그래프</summary><div class="gbox"></div></details></div>`).join('')
+  o.querySelectorAll('[data-graph]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)drawGraphs(d.querySelector('.gbox'),R.models[+d.dataset.graph],R)}))
   bindPins(c,o)
 }
+// ---------------------------------------------------------------- 최적화: 저장한 공식으로 내 상태 → 바꿔 보기 → 최적 셋팅
+/** 최적화에 쓸 수 있는 공식: 저장한 공식 + 지난 탐색의 추천 */
+function optFormulas(s){
+  const L=(s.saved||[]).filter(f=>f.calc).map(f=>({key:f.id,label:'저장: '+f.formula,f:{...f.calc,target:f.target,targetName:f.targetName,formula:f.formula}}))
+  for(const f of s.findings||[]){const m=f.candidates[0];if(m&&m.calc)L.push({key:'find:'+f.kind+':'+f.target,label:`지난 ${f.kind==='deep'?'심도':'빠른'} 탐색 추천: `+m.formula,f:{...m.calc,target:f.target,targetName:f.targetName,formula:m.formula}})}
+  return L
+}
+/** 변수 상태에 변경 하나 적용 (% 는 곱연산 누적값 id* 도 같이) */
+function applyChange(st,vid,op,val,pct){
+  const v=st[vid]||0,cv=st[vid+'*']??v
+  if(op==='='){st[vid]=val;if(pct)st[vid+'*']=val;return}
+  const d=op==='-'?-val:val
+  st[vid]=v+d
+  if(pct)st[vid+'*']=op==='-'?((1+cv/100)/(1+val/100)-1)*100:((1+cv/100)*(1+val/100)-1)*100
+}
+/** 특수 효과 규칙: 대상 += 식 ([이름] 으로 다른 값 참조) */
+function applyRules(st,rules,names){
+  for(const r of rules||[]){
+    if(!r.target||!r.expr)continue
+    try{
+      const js=r.expr.replace(/\[([^\]]+)\]/g,(_,n)=>{const id=names[n.trim()];return id?`(${+(st[id]||0)})`:'0'})
+      if(/[^0-9+\-*/().\s]/.test(js))continue
+      const val=Function('return ('+js+')')()
+      if(isFinite(val))applyChange(st,r.target,r.op||'+',val,r.pct)
+    }catch(e){}
+  }
+  return st
+}
+function vOpt(c,v){
+  const s=ses(c.id);if(!s)return back()
+  const D=sessionData(s),t=D.t
+  $('#title').textContent=s.name+' · 최적화'
+  const FL=optFormulas(s)
+  if(!FL.length){v.innerHTML='<div class="card empty">먼저 [공식 찾기]로 공식을 찾아 주세요.<br>찾은 추천 공식이나 [저장]한 공식으로 계산해요.</div>';return}
+  const o=s.opt||{}
+  const pick=FL.find(x=>x.key===o.formula)||FL[0],F=pick.f,fn=makeF(F.spec)
+  // 변수: 세션 변수 (분류별 누적) + 잰 값
+  const allVars=[...D.gvars,...D.mvars],byId=Object.fromEntries(allVars.map(x=>[x.id,x]))
+  const names=Object.fromEntries(allVars.map(x=>[x.name,x.id]))
+  const baseId=id=>id.replace(/\*$/,'')
+  const used=[...new Set(F.vars.map(baseId))]
+  // 내 상태: 마지막(빼지 않은) 기록 + 직접 고친 값
+  const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
+  const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}return st}
+  const isPct=id=>(byId[baseId(id)]||{}).unit==='pct'
+  const evalSt=st=>{const z=applyRules({...st},o.rules,names);const r=fn(F.p,F.vars.map(id=>z[id]??z[baseId(id)]??0));return isFinite(r)?r:NaN}
+  const now=evalSt(state0())
+  const pctTxt=x=>`<span class="${x>0?'good':x<0?'bad':''}">${x>=0?'+':''}${fmt(x*100,2)}%</span>`
+  const varSel=(sel,cls)=>`<select class="${cls}">${allVars.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
+  const rowsUI=(rows,key)=>(rows||[]).map((r,k)=>`<div class="list-row" data-row="${key}:${k}">${varSel(r.vid,'rv')}
+    <select class="rop">${['+','-','='].map(q=>`<option${q===r.op?' selected':''}>${q}</option>`).join('')}</select>
+    <input type="text" class="rval" value="${r.val??''}" style="width:90px" inputmode="decimal"><button class="sm danger rdel">✕</button></div>`).join('')
+  const applyRows=(st,rows,sign=1)=>{for(const r of rows||[]){const val=num(r.val);if(!isFinite(val)||!r.vid)continue
+    const op=sign<0&&r.op!=='='?(r.op==='+'?'-':'+'):r.op;applyChange(st,r.vid,op,val,isPct(r.vid))}return st}
+  // 바꿔 보기 결과
+  const whatIf=(o.whatif||[]).map(w=>{const r=evalSt(applyRows(state0(),w.rows));return{w,r,g:(r-now)/now}})
+  // 최적 셋팅
+  const inv=o.inv||[],limits=o.limits||{}
+  let best=null,note=''
+  if(c.solve&&inv.length){
+    const base=state0();inv.filter(it=>it.on).forEach(it=>applyRows(base,it.rows,-1))   // 지금 낀 것 빼기
+    const slots=[...new Set(inv.map(it=>it.slot||'기타'))]
+    const lim=sl=>{const n=num(limits[sl]);return isFinite(n)?n:inv.filter(it=>(it.slot||'기타')===sl).length}
+    const score=set=>{const st={...base};set.forEach(i=>applyRows(st,inv[i].rows));return evalSt(st)}
+    // 칸마다 고를 수 있는 조합
+    const choose=(arr,k)=>{const out=[[]];for(const i of arr){const n=out.length;for(let j=0;j<n;j++)if(out[j].length<k)out.push([...out[j],i])}return out}
+    const per=slots.map(sl=>choose(inv.map((it,i)=>i).filter(i=>(inv[i].slot||'기타')===sl),lim(sl)))
+    const total=per.reduce((a,b)=>a*b.length,1)
+    if(total<=60000){
+      const rec=(k,acc)=>{if(k===per.length){const r=score(acc);if(!best||r>best.r)best={r,set:acc};return}for(const opt of per[k])rec(k+1,acc.concat(opt))}
+      rec(0,[]);note=`조합 ${total.toLocaleString()}가지를 모두 계산했어요.`
+    }else{
+      // 너무 많으면: 지금 셋팅에서 시작해 넣기·빼기·바꾸기를 더 좋아질 때까지 반복
+      let cur=inv.map((it,i)=>i).filter(i=>inv[i].on),r=score(cur),improved=true,steps=0
+      const ok=set=>slots.every(sl=>set.filter(i=>(inv[i].slot||'기타')===sl).length<=lim(sl))
+      while(improved&&steps++<200){improved=false
+        const cands=[];inv.forEach((_,i)=>{if(cur.includes(i))cands.push(cur.filter(q=>q!==i));else{cands.push([...cur,i]);cur.forEach(q=>cands.push([...cur.filter(z=>z!==q),i]))}})
+        for(const cs of cands)if(ok(cs)){const v2=score(cs);if(v2>r+1e-9){r=v2;cur=cs;improved=true}}}
+      best={r,set:cur};note=`조합이 ${total.toLocaleString()}가지라 지금 셋팅에서 넣기·빼기·바꾸기로 좋아질 때까지 찾았어요 (가장 좋은 조합이 아닐 수도 있어요).`
+    }
+  }
+  v.innerHTML=`<div class="card"><label class="f">쓸 공식<select id="of">${FL.map(x=>`<option value="${x.key}"${x===pick?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label>
+    <div class="formula">${esc(F.formula)}</div></div>
+  <div class="card"><div class="big">내 상태</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
+    <div class="grid" style="margin-top:8px">${used.map(id=>`<label class="f">${esc((byId[id]||{name:id}).name)}<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}"></label>`).join('')}</div>
+    <div class="big" style="margin-top:10px">예상 ${esc(F.targetName)}: ${fmt(now)}</div></div>
+  <div class="card"><div class="big">특수 효과</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
+    ${(o.rules||[]).map((r,k)=>`<div class="list-row" data-rule="${k}">${varSel(r.target,'rt')}<select class="rop2">${['+','='].map(q=>`<option${q===(r.op||'+')?' selected':''}>${q}</option>`).join('')}</select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rrm">✕</button></div>`).join('')}
+    <button class="sm" id="addRule">+ 효과</button></div>
+  <div class="card"><div class="big">바꿔 보기</div><div class="mut">무엇을 바꾸면 얼마나 변하는지. 여러 줄을 한 묶음으로 (예: 룬 A 빼고 B 끼기).</div>
+    ${(o.whatif||[]).map((w,k)=>{const q=whatIf[k];return`<div class="card" style="background:var(--card2)" data-wi="${k}"><div class="list-row"><input type="text" class="wn" value="${esc(w.name||'')}" placeholder="이름 (예: 룬 B로 교체)" style="flex:1"><b>${isFinite(q.r)?pctTxt(q.g):'-'}</b><button class="sm danger wdel">✕</button></div>
+      ${rowsUI(w.rows,'w'+k)}<button class="sm ghost wadd">+ 바뀌는 값</button><div class="mut">→ ${fmt(q.r)}</div></div>`}).join('')}
+    <button class="sm" id="addWi">+ 바꿔 보기</button></div>
+  <div class="card"><div class="big">최적 셋팅</div><div class="mut">가진 옵션(룬, 장비 …)을 넣고 칸(슬롯)마다 낄 수 있는 개수를 정하면, 가장 높은 조합을 찾아요. 지금 낀 것은 '낌'에 체크하세요.</div>
+    ${inv.map((it,k)=>`<div class="card" style="background:var(--card2)" data-iv="${k}"><div class="list-row"><input type="text" class="in" value="${esc(it.name||'')}" placeholder="이름 (예: 공격 룬 +8.5만)" style="flex:1">
+      <input type="text" class="isl" value="${esc(it.slot||'')}" placeholder="칸 (룬)" style="width:70px"><label class="row mut" style="gap:4px"><input type="checkbox" class="ion"${it.on?' checked':''}>낌</label><button class="sm danger idel">✕</button></div>
+      ${rowsUI(it.rows,'i'+k)}<button class="sm ghost iadd">+ 바뀌는 값</button></div>`).join('')}
+    <button class="sm" id="addInv">+ 옵션</button>
+    ${inv.length?`<div class="row" style="margin-top:8px">${[...new Set(inv.map(it=>it.slot||'기타'))].map(sl=>`<label class="row mut" style="gap:4px">${esc(sl)} 최대<input type="text" data-lim="${esc(sl)}" value="${limits[sl]??''}" placeholder="${inv.filter(it=>(it.slot||'기타')===sl).length}" style="width:50px"></label>`).join('')}</div>
+      <div class="row" style="margin-top:10px"><button class="pri" id="solve">최적 조합 찾기</button></div>`:''}
+    ${best?(()=>{const on=inv.map((it,i)=>i).filter(i=>inv[i].on),add=best.set.filter(i=>!on.includes(i)),rm=on.filter(i=>!best.set.includes(i))
+      return`<div class="card model best" style="margin-top:10px"><div class="big">최적: ${esc(F.targetName)} ${fmt(best.r)} ${pctTxt((best.r-now)/now)}</div>
+        <div>끼기: ${best.set.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'-'}</div>
+        <div class="good">넣기: ${add.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'없음'}</div><div class="bad">빼기: ${rm.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'없음'}</div>
+        <div class="mut">${esc(note)}</div></div>`})():''}
+  </div>`
+  const save=f=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=false;render()}
+  $('#of').onchange=e=>save(op=>op.formula=e.target.value)
+  v.querySelectorAll('[data-st]').forEach(e=>e.onchange=()=>save(op=>{op.state=op.state||{};const n=num(e.value);if(isFinite(n))op.state[e.dataset.st]=n;else delete op.state[e.dataset.st]}))
+  // 규칙
+  $('#addRule').onclick=()=>save(op=>(op.rules=op.rules||[]).push({target:allVars[0]&&allVars[0].id,op:'+',expr:''}))
+  v.querySelectorAll('[data-rule]').forEach(el=>{const k=+el.dataset.rule
+    const upd=()=>save(op=>{const r=op.rules[k];r.target=el.querySelector('.rt').value;r.pct=isPct(r.target);r.op=el.querySelector('.rop2').value;r.expr=el.querySelector('.rex').value})
+    el.querySelector('.rt').onchange=upd;el.querySelector('.rop2').onchange=upd;el.querySelector('.rex').onchange=upd
+    el.querySelector('.rrm').onclick=()=>save(op=>op.rules.splice(k,1))})
+  // 줄 편집 (바꿔 보기 / 옵션 공통)
+  const listOf=(op,key)=>key[0]==='w'?op.whatif[+key.slice(1)]:op.inv[+key.slice(1)]
+  v.querySelectorAll('[data-row]').forEach(el=>{const [key,k]=el.dataset.row.split(':')
+    const upd=()=>save(op=>{const r=listOf(op,key).rows[+k];r.vid=el.querySelector('.rv').value;r.op=el.querySelector('.rop').value;r.val=el.querySelector('.rval').value})
+    el.querySelector('.rv').onchange=upd;el.querySelector('.rop').onchange=upd;el.querySelector('.rval').onchange=upd
+    el.querySelector('.rdel').onclick=()=>save(op=>listOf(op,key).rows.splice(+k,1))})
+  const firstVar=used[0]||(allVars[0]&&allVars[0].id)
+  $('#addWi').onclick=()=>save(op=>(op.whatif=op.whatif||[]).push({name:'',rows:[{vid:firstVar,op:'+',val:''}]}))
+  v.querySelectorAll('[data-wi]').forEach(el=>{const k=+el.dataset.wi
+    el.querySelector('.wn').onchange=e=>save(op=>op.whatif[k].name=e.target.value)
+    el.querySelector('.wdel').onclick=()=>save(op=>op.whatif.splice(k,1))
+    el.querySelector('.wadd').onclick=()=>save(op=>op.whatif[k].rows.push({vid:firstVar,op:'+',val:''}))})
+  $('#addInv').onclick=()=>save(op=>(op.inv=op.inv||[]).push({name:'',slot:'',on:false,rows:[{vid:firstVar,op:'+',val:''}]}))
+  v.querySelectorAll('[data-iv]').forEach(el=>{const k=+el.dataset.iv
+    el.querySelector('.in').onchange=e=>save(op=>op.inv[k].name=e.target.value)
+    el.querySelector('.isl').onchange=e=>save(op=>op.inv[k].slot=e.target.value.trim())
+    el.querySelector('.ion').onchange=e=>save(op=>op.inv[k].on=e.target.checked)
+    el.querySelector('.idel').onclick=()=>save(op=>op.inv.splice(k,1))
+    el.querySelector('.iadd').onclick=()=>save(op=>op.inv[k].rows.push({vid:firstVar,op:'+',val:''}))})
+  v.querySelectorAll('[data-lim]').forEach(e=>e.onchange=()=>save(op=>{op.limits=op.limits||{};op.limits[e.dataset.lim]=e.value}))
+  const sv=$('#solve');if(sv)sv.onclick=()=>{c.solve=true;render()}
+}
+
+// ---------------------------------------------------------------- 그래프 (SVG)
+function svgPlot(pts,line,xl,yl,diag){
+  const W=320,H=210,L=52,B=28,T=10,Rr=10
+  const xs=pts.map(p=>p[0]).concat(line?line.map(p=>p[0]):[]),ys=pts.map(p=>p[1]).concat(line?line.map(p=>p[1]):[])
+  let x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys)
+  if(x1===x0){x0-=1;x1+=1}if(y1===y0){y0-=1;y1+=1}
+  const px=x=>L+(x-x0)/(x1-x0)*(W-L-Rr),py=y=>H-B-(y-y0)/(y1-y0)*(H-B-T)
+  const sh=v=>Math.abs(v)>=1e4?fmt(v/1e4,1)+'만':fmt(v,2)
+  let g=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:420px;display:block;margin:8px 0">
+    <line x1="${L}" y1="${H-B}" x2="${W-Rr}" y2="${H-B}" stroke="var(--line)"/><line x1="${L}" y1="${T}" x2="${L}" y2="${H-B}" stroke="var(--line)"/>
+    <text x="${L}" y="${H-8}" font-size="10" fill="var(--mut)">${sh(x0)}</text><text x="${W-Rr}" y="${H-8}" font-size="10" fill="var(--mut)" text-anchor="end">${sh(x1)}</text>
+    <text x="${L-4}" y="${H-B}" font-size="10" fill="var(--mut)" text-anchor="end">${sh(y0)}</text><text x="${L-4}" y="${T+8}" font-size="10" fill="var(--mut)" text-anchor="end">${sh(y1)}</text>
+    <text x="${(L+W)/2}" y="${H-8}" font-size="11" fill="var(--mut)" text-anchor="middle">${esc(xl)}</text>
+    <text x="10" y="${(H-B)/2}" font-size="11" fill="var(--mut)" transform="rotate(-90 10 ${(H-B)/2})" text-anchor="middle">${esc(yl)}</text>`
+  if(diag){const a=Math.max(x0,y0),b=Math.min(x1,y1);g+=`<line x1="${px(a)}" y1="${py(a)}" x2="${px(b)}" y2="${py(b)}" stroke="var(--acc)" stroke-dasharray="4 3"/>`}
+  if(line)g+=`<polyline fill="none" stroke="var(--acc)" stroke-width="2" points="${line.map(p=>px(p[0]).toFixed(1)+','+py(p[1]).toFixed(1)).join(' ')}"/>`
+  for(const p of pts)g+=`<circle cx="${px(p[0]).toFixed(1)}" cy="${py(p[1]).toFixed(1)}" r="${p[2]?5:3.5}" fill="${p[2]?'var(--bad)':'var(--fg)'}" fill-opacity="${p[2]?1:.7}"><title>#${p[3]}: ${fmt(p[1])}</title></circle>`
+  return g+'</svg>'
+}
+function drawGraphs(box,m,R){
+  const P=R.P,X=m.X||P.X,vars=m.vars||P.vars,drop=R.dropped||[]
+  const pts=P.rows.map((r,j)=>[m.predict(X[j]),P.y[j],drop.includes(r.r.id),r.no])
+  let h=`<div class="mut">예측(가로) vs 실제(세로). 점선 위에 있으면 공식과 맞아요. 빨간 점은 뺀 기록.</div>`+svgPlot(pts,null,'예측','실제',true)
+  h+=`<label class="f" style="margin-top:6px">변수별로 보기<select class="gv">${vars.map((x,i)=>`<option value="${i}">${esc(x.name)}</option>`).join('')}</select></label><div class="g2"></div>`
+  box.innerHTML=h
+  const one=()=>{const i=+box.querySelector('.gv').value,col=X.map(x=>x[i]),lo=Math.min(...col),hi=Math.max(...col),last=X[X.length-1]
+    const line=[];for(let k=0;k<=40;k++){const z=last.slice();z[i]=lo+(hi-lo)*k/40;line.push([z[i],m.predict(z)])}
+    box.querySelector('.g2').innerHTML=`<div class="mut">선: 다른 값은 마지막 기록 그대로 두고 '${esc(vars[i].name)}'만 바꿨을 때의 공식. 점: 기록 (다른 값도 바뀐 기록은 선에서 떨어져 보일 수 있어요).</div>`+
+      svgPlot(P.rows.map((r,j)=>[X[j][i],P.y[j],drop.includes(r.r.id),r.no]),line,vars[i].name,P.tname,false)}
+  box.querySelector('.gv').onchange=one;one()
+}
+
 /** 추천 공식으로: 지금(마지막 기록) 상태에서 하나씩 조금 올리면 얼마나 오르나 */
 function gainTable(m,P){
   if(!P.rows.length)return''
