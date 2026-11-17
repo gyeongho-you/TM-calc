@@ -858,6 +858,8 @@ class OverlayService : Service() {
     /** 고른 분류 id (null = 기준, 변경 없음) */
     private var labGroup: String? = null
     private var labPct = false
+    /** 고른 항목 id (분류에 항목이 있을 때) */
+    private var labItem: String? = null
     /** 수정 중인 기록 id (null = 새 기록) */
     private var labEditId: String? = null
     private var labListOpen = false
@@ -937,13 +939,15 @@ class OverlayService : Service() {
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
     }
 
-    /** 기록 한 줄 글자: "#3 룬 +5% → 데미지 12,345 · 공격력 1,234 (메모)" */
+    /** 기록 한 줄 글자: "#3 스킬 데미지 +5% → 데미지 12,345 · 공격력 1,234 (메모)" */
     private fun labRecText(no: Int, r: JSONObject, groups: List<JSONObject>, measures: List<JSONObject>): String {
         val gid = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() }
         val kind = if (gid == null) "기준" else {
-            val name = groups.firstOrNull { it.optString("id") == gid }?.optString("name") ?: "(지운 분류)"
+            val g = groups.firstOrNull { it.optString("id") == gid }
+            val iid = r.optString("itemId").takeIf { !r.isNull("itemId") && it.isNotEmpty() }
+            val item = iid?.let { id -> labArr(g, "items").firstOrNull { it.optString("id") == id }?.optString("name") ?: "(지운 항목)" }
             val ch = r.optDouble("change", 0.0)
-            "$name ${if (ch >= 0) "+" else ""}${LabData.fmt(ch)}${if (r.optString("unit") == "pct") "%" else ""}"
+            "${g?.optString("name") ?: "(지운 분류)"}${item?.let { " $it" } ?: ""} ${if (ch >= 0) "+" else ""}${LabData.fmt(ch)}${if (r.optString("unit") == "pct") "%" else ""}"
         }
         val vals = r.optJSONObject("values")
         val vs = measures.mapNotNull { m -> vals?.takeIf { it.has(m.optString("id")) }?.let { "${m.optString("name")} ${LabData.fmt(it.optDouble(m.optString("id")))}" } }
@@ -996,6 +1000,9 @@ class OverlayService : Service() {
         val editing = labEditId?.let { id -> recs.firstOrNull { it.optString("id") == id } }
         if (labEditId != null && editing == null) labEditId = null
         if (labGroup != null && groups.none { it.optString("id") == labGroup }) labGroup = null
+        val itemsOf = { gid: String? -> labArr(groups.firstOrNull { it.optString("id") == gid }, "items") }
+        if (labItem != null && itemsOf(labGroup).none { it.optString("id") == labItem }) labItem = null
+        if (labItem == null) labItem = itemsOf(labGroup).firstOrNull()?.optString("id")
         labTitle.text = "연구 · " + s.optString("name")
         if (t == null || measures.isEmpty()) {
             labBody.addView(note("이 세션의 틀이 없거나 '잴 것'이 비어 있습니다. 앱 > 메뉴 > 연구실에서 틀을 고쳐 주세요."))
@@ -1008,6 +1015,15 @@ class OverlayService : Service() {
         val chipRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
         val chipScroll = android.widget.HorizontalScrollView(ui).apply { isHorizontalScrollBarEnabled = false; addView(chipRow) }
         labBody.addView(chipScroll)
+        // 항목 (분류에 항목이 있을 때만)
+        val itemRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+        val itemBox = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(labLabel("항목"))
+            addView(android.widget.HorizontalScrollView(ui).apply { isHorizontalScrollBarEnabled = false; addView(itemRow) })
+        }
+        labBody.addView(itemBox)
+        val tid = t.optString("id")
 
         // 변경 값 + 값/%
         val changeRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -1028,14 +1044,51 @@ class OverlayService : Service() {
             unitRow.addView(labChip("값", !labPct) { labPct = false; paintUnits() })
             unitRow.addView(labChip("%", labPct) { labPct = true; paintUnits() })
         }
+        fun paintItems() {
+            itemRow.removeAllViews()
+            val items = itemsOf(labGroup)
+            for (it in items) {
+                val id = it.optString("id")
+                itemRow.addView(labChip(it.optString("name"), labItem == id) { labItem = id; paintItems() })
+            }
+            // 게임하다 새 항목을 만나면 여기서 바로 추가 (감소형 등 자세한 건 앱 > 연구실 > 틀)
+            itemRow.addView(labChip("+ 항목", false) {
+                val g = labGroup ?: return@labChip
+                labAskName("'${groups.firstOrNull { it.optString("id") == g }?.optString("name")}'에 항목 추가") { name ->
+                    val nid = LabData.newId()
+                    LabData.update(this@OverlayService) { d ->
+                        val gg = LabData.template(d, tid)?.optJSONArray("groups")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.firstOrNull { it.optString("id") == g } } ?: return@update
+                        (gg.optJSONArray("items") ?: org.json.JSONArray().also { gg.put("items", it) }).put(JSONObject().put("id", nid).put("name", name))
+                    }
+                    labItem = nid
+                    renderLab()
+                }
+            })
+            itemBox.visibility = if (labGroup == null) View.GONE else View.VISIBLE
+        }
         fun paintChips() {
             chipRow.removeAllViews()
-            chipRow.addView(labChip("기준 (변경 없음)", labGroup == null) { labGroup = null; paintChips() })
+            chipRow.addView(labChip("기준 (변경 없음)", labGroup == null) { labGroup = null; labItem = null; paintChips() })
             for (g in groups) {
                 val id = g.optString("id")
-                chipRow.addView(labChip(g.optString("name"), labGroup == id) { labGroup = id; paintChips() })
+                chipRow.addView(labChip(g.optString("name"), labGroup == id) {
+                    labGroup = id; labItem = itemsOf(id).firstOrNull()?.optString("id"); paintChips()
+                })
             }
+            chipRow.addView(labChip("+ 분류", false) {
+                labAskName("분류 추가 (예: 스킬, 장비)") { name ->
+                    val nid = LabData.newId()
+                    LabData.update(this@OverlayService) { d ->
+                        val tt = LabData.template(d, tid) ?: return@update
+                        (tt.optJSONArray("groups") ?: org.json.JSONArray().also { tt.put("groups", it) })
+                            .put(JSONObject().put("id", nid).put("name", name).put("items", org.json.JSONArray()))
+                    }
+                    labGroup = nid; labItem = null
+                    renderLab()
+                }
+            })
             changeBox.visibility = if (labGroup == null) View.GONE else View.VISIBLE
+            paintItems()
         }
         paintChips(); paintUnits()
 
@@ -1084,6 +1137,7 @@ class OverlayService : Service() {
                     .put("id", rid)
                     .put("time", editing?.optLong("time") ?: System.currentTimeMillis())
                     .put("groupId", g ?: JSONObject.NULL)
+                    .put("itemId", (if (g == null) null else labItem) ?: JSONObject.NULL)
                     .put("change", if (g == null) 0.0 else ch)
                     .put("unit", if (labPct) "pct" else "flat")
                     .put("values", values)
@@ -1127,6 +1181,7 @@ class OverlayService : Service() {
                     addView(headerButton("수정") {
                         labEditId = r.optString("id")
                         labGroup = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() }
+                        labItem = r.optString("itemId").takeIf { !r.isNull("itemId") && it.isNotEmpty() }
                         labPct = r.optString("unit") == "pct"
                         renderLab()
                     })
@@ -1147,6 +1202,16 @@ class OverlayService : Service() {
                 })
             }
         }
+    }
+
+    /** 이름 하나 묻기 (분류/항목 바로 추가) */
+    private fun labAskName(title: String, onOk: (String) -> Unit) {
+        val e = labInput("이름")
+        overlayDialog(android.app.AlertDialog.Builder(ui)
+            .setTitle(title)
+            .setView(LinearLayout(ui).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(e, LinearLayout.LayoutParams(-1, -2)) })
+            .setPositiveButton("추가") { _, _ -> e.text.toString().trim().takeIf { it.isNotEmpty() }?.let(onOk) }
+            .setNegativeButton("취소", null))
     }
 
     /** 게임 위(레이어)에서는 보통 대화상자를 못 띄우므로 레이어 종류로 띄운다 */
