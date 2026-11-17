@@ -154,7 +154,7 @@ function lm(f,p0,X,y,iters=400){
  * vars: [{id,name,cat,unit:'flat'|'pct',reduce:bool}], X: 행마다 vars 순서의 값, y: 결과
  * 반환: 후보마다 {name,desc,k,predict(x),formula,sse,...} (잘 맞는 순)
  */
-function fitModels(vars,X,y){
+function fitModels(vars,X,y,tol){
   const n=y.length,out=[]
   const idx=f=>vars.map((v,i)=>f(v)?i:-1).filter(i=>i>=0)
   const N=i=>vars[i].name
@@ -249,9 +249,9 @@ function fitModels(vars,X,y){
     m.maxAbs=Math.max(...m.res.map(Math.abs))
     m.maxRel=Math.max(...m.res.map((v,i)=>Math.abs(v)/(Math.abs(y[i])||1)))
     m.r2=ss>0?1-m.sse/ss:NaN
-    m.exact=m.maxAbs<=unit*1.0000001+1e-9
+    m.exact=within(m.res,unit,tol)
     m.score=n*Math.log(Math.max(m.sse,floor)/n)+2*m.k+(n-m.k-1>0?2*m.k*(m.k+1)/(n-m.k-1):1e6)
-    if(m.exact&&m.snap)tidy(m,X,y,unit)
+    if(m.exact&&m.snap)tidy(m,X,y,unit,tol)
   }
   out.sort((a,b)=>(a.skip?1:0)-(b.skip?1:0)||(b.exact-a.exact)||(a.exact&&b.exact?a.k-b.k:0)||a.score-b.score)
   return out
@@ -260,8 +260,10 @@ function fitModels(vars,X,y){
  * 반올림 안에서 딱 맞는 공식이면 계수를 깔끔한 값(0, 1, 0.5 …)으로 바꿔 본다.
  * 하나씩 바꾸고 나머지를 다시 맞춰서, 여전히 모든 기록이 반올림 안에 들면 그 값으로 둔다.
  */
-function tidy(m,X,y,unit){
-  const fits=q=>X.every((x,i)=>Math.abs(m.f(q,x)-y[i])<=unit*1.0000001+1e-9)
+/** 모든 기록이 허용 오차 안인가 (tol[i] 가 있으면 기록마다, 없으면 반올림 단위) */
+function within(res,unit,tol){return res.every((r,i)=>Math.abs(r)<=Math.max(unit,tol&&tol[i]||0)*1.0000001+1e-9)}
+function tidy(m,X,y,unit,tol){
+  const fits=q=>within(X.map((x,i)=>m.f(q,x)-y[i]),unit,tol)
   let p=m.p.slice(),fixed=new Set()
   // 단순한 숫자부터 (0 → 1000 → 1200 → 998 …): 유효숫자가 적은 순, 같으면 가까운 순
   const sig=c=>c===0?0:String(Math.abs(c)).replace('.','').replace(/^0+/,'').replace(/0+$/,'').length
@@ -498,7 +500,7 @@ function gpEngine(vars,X,y,opt={}){
   }
 }
 /** 심도 탐색 결과 하나를 빠른 탐색 결과와 같은 모양의 모델로 (정리·예측·표시에 같이 씀) */
-function gpModel(e,vars,X,y,Xt,yt,quick){
+function gpModel(e,vars,X,y,Xt,yt,quick,tol,tolT){
   const names=vars.map(v=>v.name),k=e.k
   const form=p=>{const cs=p.slice(0,k);return pretty('결과 = '+coef(p[k])+' + '+coef(p[k+1])+'×('+gpStr(e.tree,names,cs)+')')}
   const m={name:'크기 '+e.size,desc:'',k:e.k+2,size:e.size,f:e.fn,p:e.p.slice(),form,snap:true,predict:x=>e.fn(m.p,x)}
@@ -507,12 +509,12 @@ function gpModel(e,vars,X,y,Xt,yt,quick){
   m.pr=X.map(x=>m.f(m.p,x));m.res=m.pr.map((v,i)=>v-y[i]);m.sse=m.res.reduce((s,v)=>s+v*v,0)
   m.rmse=Math.sqrt(m.sse/y.length);m.maxAbs=Math.max(...m.res.map(Math.abs))
   m.maxRel=Math.max(...m.res.map((v,i)=>Math.abs(v)/(Math.abs(y[i])||1)))
-  m.exact=m.maxAbs<=unit*1.0000001+1e-9
-  if(m.exact&&!quick)tidy(m,X,y,unit)
+  m.exact=within(m.res,unit,tol)
+  if(m.exact&&!quick)tidy(m,X,y,unit,tol)
   if(Xt&&Xt.length){
     const r=Xt.map((x,i)=>m.f(m.p,x)-yt[i])
     m.testAbs=Math.max(...r.map(Math.abs));m.testRel=Math.max(...r.map((v,i)=>Math.abs(v)/(Math.abs(yt[i])||1)))
-    m.testExact=m.testAbs<=roundUnit(yt)*1.0000001+1e-9
+    m.testExact=within(r,roundUnit(yt),tolT)
   }
   return m
 }
@@ -553,6 +555,11 @@ function copyText(t){
   if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(done,fallback)
   fallback()
 }
+/** 잰 값 칸: 여러 번 잰 숫자 → [숫자…] (띄어쓰기·/ 로 구분, 쉼표는 천 단위 구분) */
+function nums(text){return String(text||'').trim().split(/[\s/]+/).map(num).filter(isFinite)}
+/** 기록의 잰 값 하나: 여러 번이면 평균 */
+const mval=(r,mid)=>{const a=r.samples&&r.samples[mid];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:r.values[mid]}
+const mtext=(r,mid)=>{const a=r.samples&&r.samples[mid];return a&&a.length>1?`${fmt(mval(r,mid))} <span class="mut">(${a.length}회)</span>`:fmt(r.values[mid])}
 const tpl=id=>data.templates.find(t=>t.id===id)
 const ses=id=>data.sessions.find(s=>s.id===id)
 const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
@@ -775,6 +782,7 @@ function vRecs(c,v){
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   $('#title').textContent=s.name+' · 기록'
   const ed=c.edit?s.records.find(r=>r.id===c.edit):null
+  const sus=new Set((s.findings||[]).flatMap(f=>f.suspects||[]))
   const last=s.records[s.records.length-1]
   const unit=ed?ed.unit:(c.unit||'flat'),gid=ed?ed.groupId:(c.group??null)
   const items=gid?((t.groups.find(g=>g.id===gid)||{}).items||[]):[]
@@ -789,13 +797,15 @@ function vRecs(c,v){
     <div class="row" style="margin-top:10px${gid==null?';display:none':''}" id="chg">
       <input type="text" inputmode="decimal" id="cv" placeholder="변경 값 (+5, -100, 1.2만)" value="${ed&&ed.groupId?ed.change:''}" style="flex:1">
       <span class="seg"><button data-u="flat" class="${unit!=='pct'?'on':''}">값</button><button data-u="pct" class="${unit==='pct'?'on':''}">%</button></span></div>
-    <div class="grid" style="margin-top:10px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" inputmode="decimal" data-mv="${m.id}" value="${ed&&isFinite(ed.values[m.id])?ed.values[m.id]:''}" placeholder="${last&&isFinite(last.values[m.id])?fmt(last.values[m.id]):''}"></label>`).join('')}
+    <div class="grid" style="margin-top:10px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-mv="${m.id}" value="${ed?((ed.samples&&ed.samples[m.id])||[ed.values[m.id]]).filter(isFinite).join(' '):''}" placeholder="${last&&isFinite(last.values[m.id])?fmt(mval(last,m.id)):''}"></label>`).join('')}
       <label class="f">메모<input type="text" id="note" value="${ed?esc(ed.note):''}"></label></div>
+    <div class="mut" style="margin-top:6px">데미지처럼 흔들리는 값은 여러 번 재서 띄어 적으세요 (예: 1234 1250 1241) → 평균으로 계산하고, 흔들린 만큼은 오차로 보지 않아요. 치명타는 빼고 적어요 (치명타만 재려면 잴 것에 '치명 데미지'를 따로).</div>
     <div class="row" style="margin-top:12px"><button class="pri" id="rs">${ed?'수정 저장':'저장'}</button>${ed?'<button id="rc">취소</button>':''}</div></div>
   <h2>기록 내역 ${s.records.length}개</h2>
+  ${sus.size?`<div class="card"><span class="bad">⚠ 표시</span> <span class="mut">= 마지막으로 찾은 공식과 크게 어긋난 기록이에요. 입력 실수나 기록 안 한 변화가 없었는지 확인하고, 고치거나 [빼기]로 공식 찾기에서 빼세요.</span></div>`:''}
   ${s.records.length?`<div class="card scroll"><table><tr><th class="l">#</th><th class="l">종류</th>${t.measures.map(m=>`<th>${esc(m.name)}</th>`).join('')}<th class="l">메모</th><th></th></tr>
-    ${s.records.map((r,i)=>`<tr><td class="l">${i+1}</td><td class="l">${esc(recText(t,r))}</td>${t.measures.map(m=>`<td><b>${fmt(r.values[m.id])}</b></td>`).join('')}<td class="l">${esc(r.note)}</td>
-      <td><button class="sm" data-re="${r.id}">수정</button> <button class="sm danger" data-rd="${r.id}">✕</button></td></tr>`).join('')}</table></div>`:'<div class="card empty">아직 기록이 없어요.</div>'}`
+    ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l">${esc(recText(t,r))}</td>${t.measures.map(m=>`<td><b>${mtext(r,m.id)}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
+      <td><button class="sm" data-rk="${r.id}">${r.skip?'넣기':'빼기'}</button> <button class="sm" data-re="${r.id}">수정</button> <button class="sm danger" data-rd="${r.id}">✕</button></td></tr>`).join('')}</table></div>`:'<div class="card empty">아직 기록이 없어요.</div>'}`
   v.querySelectorAll('[data-gc]').forEach(b=>b.onclick=()=>{if(ed){ed.groupId=b.dataset.gc||null;ed.itemId=null}else{c.group=b.dataset.gc||null;c.item=null};keep(()=>render())})
   v.querySelectorAll('[data-ic]').forEach(b=>b.onclick=()=>{if(ed)ed.itemId=b.dataset.ic;else c.item=b.dataset.ic;keep(()=>render())})
   v.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{if(ed)ed.unit=b.dataset.u;else c.unit=b.dataset.u;keep(()=>render())})
@@ -807,12 +817,14 @@ function vRecs(c,v){
   $('#rs').onclick=()=>{
     const g=ed?ed.groupId:(c.group??null),ch=num($('#cv').value)
     if(g&&!isFinite(ch))return alert('변경 값을 적어 주세요.')
-    const values={};v.querySelectorAll('[data-mv]').forEach(e=>{const n=num(e.value);if(isFinite(n))values[e.dataset.mv]=n})
+    const values={},samples={};v.querySelectorAll('[data-mv]').forEach(e=>{const a=nums(e.value);if(!a.length)return
+      values[e.dataset.mv]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)samples[e.dataset.mv]=a})
     if(!Object.keys(values).length)return alert('잰 값을 하나 이상 적어 주세요.')
-    const r={id:ed?ed.id:uid(),time:ed?ed.time:Date.now(),groupId:g,itemId:g?iid:null,change:g?ch:0,unit:ed?ed.unit:(c.unit||'flat'),values,note:$('#note').value.trim()}
+    const r={id:ed?ed.id:uid(),samples,skip:ed?!!ed.skip:false,time:ed?ed.time:Date.now(),groupId:g,itemId:g?iid:null,change:g?ch:0,unit:ed?ed.unit:(c.unit||'flat'),values,note:$('#note').value.trim()}
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;const i=x.records.findIndex(q=>q.id===r.id);if(i>=0)x.records[i]=r;else x.records.push(r)})
     c.edit=null;render()}
   v.querySelectorAll('[data-re]').forEach(b=>b.onclick=()=>{c.edit=b.dataset.re;render();scrollTo(0,0)})
+  v.querySelectorAll('[data-rk]').forEach(b=>b.onclick=()=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id),r=x&&x.records.find(q=>q.id===b.dataset.rk);if(r)r.skip=!r.skip});render()})
   v.querySelectorAll('[data-rd]').forEach(b=>b.onclick=()=>{if(!confirm('이 기록을 지울까요?'))return
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.records=x.records.filter(q=>q.id!==b.dataset.rd)});render()})
 }
@@ -838,8 +850,11 @@ function sessionData(s){
   const rows=s.records.map((r,i)=>{
     if(r.groupId&&r.change){const k='g:'+keyOf(r);acc[k]=(acc[k]||0)+r.change;accC[k]=((1+(accC[k]||0)/100)*(1+r.change/100)-1)*100}
     const v={};gvars.forEach(x=>{v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0})
-    t.measures.forEach(m=>{if(isFinite(r.values[m.id]))v['m:'+m.id]=r.values[m.id]})
-    return{no:i+1,r,v}})
+    const tol={}
+    t.measures.forEach(m=>{const a=r.samples&&r.samples[m.id]
+      if(a&&a.length){v['m:'+m.id]=mval(r,m.id);if(a.length>1)tol['m:'+m.id]=(Math.max(...a)-Math.min(...a))/2}
+      else if(isFinite(r.values[m.id]))v['m:'+m.id]=r.values[m.id]})
+    return{no:i+1,r,v,tol}})
   return{t,gvars,mvars,rows}
 }
 function vFind(c,v){
@@ -871,16 +886,25 @@ function vFind(c,v){
   $('#hold').onchange=e=>c.hold=e.target.checked
   const prep=()=>{
     const vars=all.filter(x=>c.use.includes(x.id)),tk='m:'+c.target
-    const rows=D.rows.filter(r=>isFinite(r.v[tk])&&vars.every(x=>isFinite(r.v[x.id])))
-    return{vars,rows,X:rows.map(r=>vars.map(x=>r.v[x.id])),y:rows.map(r=>r.v[tk]),tname:t.measures.find(m=>m.id===c.target).name}
+    const rows=D.rows.filter(r=>!r.r.skip&&isFinite(r.v[tk])&&vars.every(x=>isFinite(r.v[x.id])))
+    // 흔들림은 기록마다 비슷하다고 보고, 여러 번 잰 기록 중 가장 큰 흔들림 비율을 모든 기록에 적용 (3번만 재면 폭이 작게 잡힐 수 있어서)
+    const rel=Math.max(0,...rows.map(r=>(r.tol[tk]||0)/(Math.abs(r.v[tk])||1)))
+    const tol=rows.map(r=>rel*Math.abs(r.v[tk]))
+    return{vars,rows,X:rows.map(r=>vars.map(x=>r.v[x.id])),y:rows.map(r=>r.v[tk]),tol:tol.some(x=>x)?tol:null,
+      skipped:D.rows.filter(r=>r.r.skip).length,tname:t.measures.find(m=>m.id===c.target).name}
   }
   $('#qk').onclick=()=>{const P=prep();if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
     if(P.rows.length<3)return alert('이 값이 들어 있는 기록이 3개 이상 필요해요.')
-    const models=quickAll(P)
+    const QA=quickAll(P),models=QA.models
+    c.dropped=QA.dropped.map(i=>P.rows[i].r.id)
     const H=hints(P.vars,P.X,P.y,models)
+    if(QA.dropped.length)H.unshift(`⚠ 크게 어긋나는 기록 ${QA.dropped.map(i=>'#'+P.rows[i].no).join(', ')} 은(는) 빼고 계산했어요. 입력 실수인지 [기록]에서 확인해 보세요.`)
+    if(P.tol){const w=Math.max(...P.tol.map((d,i)=>d/(Math.abs(P.y[i])||1)))
+      H.unshift(`여러 번 잰 기록의 흔들림: 최대 ±${fmt(w*100,2)}% (이 안의 차이는 오차로 보지 않아요).`)}
+    if(P.skipped)H.push(`[빼기]한 기록 ${P.skipped}개는 빼고 찾았어요.`)
     const unk=P.vars.filter(x=>x.known===false)
     if(unk.length)H.push(`시작 상태가 비어 있는 항목: ${unk.map(x=>x.name).join(', ')}. 세션의 [시작 상태]에 처음 값을 적으면 계수가 깔끔해지고 합연산/곱연산을 더 정확히 가려요.`)
-    c.res={kind:'quick',P,models,hints:H};if(models.length)storeResult(c,c.res);showRes(c)}
+    c.res={kind:'quick',P,models,hints:H,dropped:c.dropped};if(models.length)storeResult(c,c.res);showRes(c)}
   $('#dp').onclick=()=>runDeep(c,prep())
   if(c.res)showRes(c)
   else showPast(c)
@@ -928,6 +952,14 @@ function storeResult(c,R){
   const f={kind:R.kind,target:c.target,targetName:R.P.tname,inputs:R.P.vars.map(v=>v.name),records:ses(c.id).records.length,used:R.P.rows.length,time:Date.now(),
     candidates:R.models.map((m,i)=>({rank:i+1,name:R.kind==='quick'?m.name:'크기 '+m.size,formula:(m.tidy||m.formula).replace('결과',R.P.tname),
       maxAbs:m.maxAbs,maxRel:m.maxRel,exact:!!m.exact,testAbs:m.testAbs??null,testExact:m.testExact??null}))}
+  // 의심 기록: 추천 공식과의 차이가 허용 오차와 '보통 차이(중앙값)×4' 보다 모두 큰 기록
+  const m=R.models[0]
+  if(R.dropped&&R.dropped.length)f.suspects=R.dropped.slice()
+  else if(m&&!m.exact){
+    const X=m.X||R.P.X,res=R.P.rows.map((r,j)=>m.predict(X[j])-R.P.y[j]),a=res.map(Math.abs),med=[...a].sort((p,q)=>p-q)[a.length>>1]
+    const unit=roundUnit(R.P.y)
+    f.suspects=R.P.rows.filter((r,j)=>a[j]>Math.max(unit,(R.P.tol&&R.P.tol[j])||0)*1.5&&a[j]>med*4).map(r=>r.r.id)
+  }else f.suspects=[]
   mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(!x)return
     x.findings=(x.findings||[]).filter(q=>!(q.kind===f.kind&&q.target===f.target));x.findings.push(f)})
   R.stored=f
@@ -937,14 +969,28 @@ function storeResult(c,R){
  * 모든 결과를 합쳐 잘 맞는 순으로 6개
  */
 function quickAll(P){
+  // 크게 어긋나는 기록(입력 실수 등)이 공식을 끌어당기지 않게: 하나씩 빼 보며 다시 맞춘다 (최대 기록의 20%)
+  let keep=P.rows.map((_,i)=>i);const dropped=[]
+  for(;;){
+    const sub={...P,rows:keep.map(i=>P.rows[i]),y:keep.map(i=>P.y[i]),tol:P.tol?keep.map(i=>P.tol[i]):null}
+    const ms=quickFit(sub,P),m=ms[0]
+    if(!m||m.exact||dropped.length>=Math.floor(P.rows.length*0.2)||keep.length<6)return{models:ms,dropped}
+    const unit=roundUnit(sub.y),a=m.res.map(Math.abs),med=[...a].sort((p,q)=>p-q)[a.length>>1]
+    const j=a.reduce((b,v,i)=>v>a[b]?i:b,0)
+    if(!(a[j]>Math.max(unit,(sub.tol&&sub.tol[j])||0)*2&&a[j]>med*6))return{models:ms,dropped}
+    dropped.push(keep[j]);keep.splice(j,1)
+  }
+}
+/** 두 번 이상 쌓은 % 는 합연산/곱연산 누적을 둘 다 (최대 4개 → 16가지 조합), 모두 합쳐 잘 맞는 순 6개 */
+function quickFit(sub,P){
   const st=P.vars.map((x,i)=>i).filter(i=>P.vars[i].unit==='pct'&&P.vars[i].stack>=2).slice(0,4)
   const all=[]
   for(let mask=0;mask<(1<<st.length);mask++){
     const comp=st.filter((_,b)=>mask&(1<<b))
     const vars=P.vars.map((x,i)=>comp.includes(i)?{...x,name:x.name+'(곱)'}:x)
-    const X=P.rows.map(r=>P.vars.map((x,i)=>comp.includes(i)?r.v[x.id+'*']:r.v[x.id]))
-    for(const m of fitModels(vars,X,P.y)){if(m.skip)continue
-      m.vars=vars;m.X=X;m.comp=comp.length
+    const xs=r=>P.vars.map((x,i)=>comp.includes(i)?r.v[x.id+'*']:r.v[x.id])
+    for(const m of fitModels(vars,sub.rows.map(xs),sub.y,sub.tol)){if(m.skip)continue
+      m.vars=vars;m.X=P.rows.map(xs);m.comp=comp.length   // 표시·예측은 모든 기록으로
       if(comp.length)m.name+=' · 곱연산: '+comp.map(i=>P.vars[i].name).join(', ')
       all.push(m)}
   }
@@ -955,12 +1001,15 @@ function runDeep(c,P){
   if(deepRun){deepRun.stop=true;return}
   if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
   if(P.rows.length<5)return alert('심도 탐색은 기록 5개 이상이 필요해요.')
+  if(c.dropped&&c.dropped.length){const keep=P.rows.map((r,i)=>i).filter(i=>!c.dropped.includes(P.rows[i].r.id))
+    P={...P,rows:keep.map(i=>P.rows[i]),y:keep.map(i=>P.y[i]),X:keep.map(i=>P.X[i]),tol:P.tol?keep.map(i=>P.tol[i]):null}}
   const extra=P.vars.filter(x=>x.unit==='pct'&&x.stack>=2)
   if(extra.length){P={...P,vars:[...P.vars,...extra.map(x=>({...x,id:x.id+'*',name:x.name+'(곱)'}))]}
     P.X=P.rows.map(r=>P.vars.map(x=>r.v[x.id]))}
   const hold=$('#hold').checked&&P.rows.length>=10,tr=[],te=[]
   P.rows.forEach((_,i)=>(hold&&i%5===4?te:tr).push(i))
   const X=tr.map(i=>P.X[i]),y=tr.map(i=>P.y[i]),Xt=te.map(i=>P.X[i]),yt=te.map(i=>P.y[i])
+  const tol=P.tol?tr.map(i=>P.tol[i]):null,tolT=P.tol?te.map(i=>P.tol[i]):null
   const E=gpEngine(P.vars,X,y),secs=+$('#dt').value,t0=Date.now(),run=deepRun={stop:false}
   let lastShow=0
   $('#dp').textContent='정지'
@@ -969,7 +1018,7 @@ function runDeep(c,P){
   const finish=()=>{
     if(deepRun===run)deepRun=null
     const models=[]
-    for(const e of E.front()){const m=gpModel(e,P.vars,X,y,Xt,yt);m.errN=e.errN;models.push(m);if(m.exact)break}
+    for(const e of E.front()){const m=gpModel(e,P.vars,X,y,Xt,yt,false,tol,tolT);m.errN=e.errN;models.push(m);if(m.exact)break}
     // 추천: 검증 기록까지 맞는 것 중 가장 단순한 것. 없으면 오차·단순함 점수 (검증 기록이 있으면 그 오차도 반영)
     let rec=models.find(m=>m.exact&&m.testExact!==false)
     const sc=m=>Math.log10(Math.max(m.errN,E.floor))+0.035*m.size+(m.testAbs!=null&&!m.testExact?0.5:0)
@@ -996,7 +1045,10 @@ function showRes(c){
   const best=R.models[0]
   const head=R.kind==='quick'?`<h2>빠른 탐색 결과 <span class="mut">오차 적은 순</span></h2>`
     :`<h2>심도 탐색 결과 <span class="mut">${R.secs}초 · ${R.checked.toLocaleString()}개 확인${R.test?` · 검증용 ${R.test}개`:''}</span></h2>`
+  const sus=R.stored&&R.stored.suspects||[]
+  const susNo=R.P.rows.filter(r=>sus.includes(r.r.id)).map(r=>'#'+r.no)
   const hint=(R.hints||[]).concat(best.exact?[]:['기록과 딱 맞는 공식은 아직 없어요. 기록을 더 모으거나, 심도 탐색 시간을 늘려 다시 찾아 보세요.'])
+    .concat(susNo.length&&!(R.dropped&&R.dropped.length)?[`⚠ 의심 기록 ${susNo.join(', ')}: 추천 공식과 크게 어긋나요. [기록]에서 입력 실수인지 확인하고, 고치거나 [빼기] 후 다시 찾아 보세요.`]:[])
   o.innerHTML=head+(hint.length?`<div class="card"><div class="big">다음에 할 것</div><ul class="hints">${hint.map(h=>`<li>${esc(h)}</li>`).join('')}</ul></div>`:'')+
     R.models.map((m,i)=>`<div class="card model${i===0?' best':''}">
       <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
@@ -1006,7 +1058,7 @@ function showRes(c){
         ${R.stored?pinBtns(R.stored,R.stored.candidates[i]):''}</div>
       ${m.tidy?`<details><summary>정리 전 계수</summary><div class="formula">${esc(m.formula.replace('결과',P.tname))}</div></details>`:''}
       <details${i===0?'':''}><summary>기록별 예측</summary><div class="scroll"><table><tr><th class="l">#</th><th>실제</th><th>예측</th><th>차이</th></tr>
-        ${P.rows.map((r,j)=>{const pr=m.predict((m.X||P.X)[j]),d=pr-P.y[j];return`<tr class="${Math.abs(d)>roundUnit(P.y)*1.0000001+1e-9?'worst':''}"><td class="l">${r.no}</td><td>${fmt(P.y[j])}</td><td>${fmt(pr)}</td><td>${fmt(d)}</td></tr>`}).join('')}
+        ${P.rows.map((r,j)=>{const pr=m.predict((m.X||P.X)[j]),d=pr-P.y[j],out=(R.dropped||[]).includes(r.r.id);return`<tr class="${Math.abs(d)>Math.max(roundUnit(P.y),(P.tol&&P.tol[j])||0)*1.0000001+1e-9?'worst':''}"><td class="l">${out?'⚠':''}${r.no}</td><td>${fmt(P.y[j])}</td><td>${fmt(pr)}</td><td>${fmt(d)}</td></tr>`}).join('')}
       </table></div></details>
       ${i===0?gainTable(m,{...P,vars:m.vars||P.vars,X:m.X||P.X}):''}</div>`).join('')
   bindPins(c,o)
