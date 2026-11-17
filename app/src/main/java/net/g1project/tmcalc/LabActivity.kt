@@ -71,6 +71,12 @@ class LabActivity : Activity() {
 
         @JavascriptInterface fun toast(msg: String) = this@LabActivity.toast(msg)
 
+        @JavascriptInterface fun copy(text: String) = runOnUiThread {
+            getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("공식", text))
+            Toast.makeText(this@LabActivity, "복사했습니다.", Toast.LENGTH_SHORT).show()
+        }
+
         @JavascriptInterface fun saveFile(name: String, text: String) = runOnUiThread {
             pendingSave = text
             @Suppress("DEPRECATION")

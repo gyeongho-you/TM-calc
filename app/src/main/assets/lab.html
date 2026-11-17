@@ -534,6 +534,13 @@ function setActive(id){
   if(BR)TMCalc.setActive(active);else try{localStorage.setItem('tmcalcLabActive',active)}catch(e){}
 }
 function toast(m){if(BR)TMCalc.toast(m);else{const t=document.createElement('div');t.textContent=m;t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:8px 14px;border-radius:10px;font-size:14px;z-index:9';document.body.append(t);setTimeout(()=>t.remove(),2200)}}
+function copyText(t){
+  if(BR)return TMCalc.copy(t)
+  const done=()=>toast('복사했어요.')
+  const fallback=()=>{const a=document.createElement('textarea');a.value=t;document.body.append(a);a.select();try{document.execCommand('copy');done()}catch(e){prompt('복사해서 쓰세요',t)}a.remove()}
+  if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(done,fallback)
+  fallback()
+}
 const tpl=id=>data.templates.find(t=>t.id===id)
 const ses=id=>data.sessions.find(s=>s.id===id)
 const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
@@ -563,7 +570,7 @@ function vHome(c,v){
   ${ss.length?ss.map(s=>{const t=tpl(s.templateId),on=s.id===active
     return`<div class="card${on?' on':''}">
       <div class="big">${esc(s.name)}${on?'<span class="badge">진행 중</span>':''}</div>
-      <div class="mut">틀: ${esc(t?t.name:'(지운 틀)')} · 기록 ${s.records.length}개 · ${fdate(s.created)}</div>
+      <div class="mut">틀: ${esc(t?t.name:'(지운 틀)')} · 기록 ${s.records.length}개${(s.saved||[]).length?` · 저장한 공식 ${s.saved.length}개`:''} · ${fdate(s.created)}</div>
       <div class="row" style="margin-top:10px">
         <button class="${on?'':'pri'}" data-act="${s.id}">${on?'멈추기':'시작'}</button>
         <button data-recs="${s.id}">기록</button>
@@ -598,7 +605,12 @@ function vHome(c,v){
     if(!confirm(`'${s.name}' 세션과 기록 ${s.records.length}개를 지울까요? 되돌릴 수 없어요.`))return
     mutate(d=>d.sessions=d.sessions.filter(q=>q.id!==s.id));if(active===s.id)setActive('');render()})
   v.querySelectorAll('[data-exp]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.exp)
-    const text=JSON.stringify({kind:'tmcalc-lab-session',template:tpl(s.templateId)||null,session:s},null,1)
+    // 맨 위 formulas 는 사람이 읽기 쉬운 요약 (불러올 때는 session 만 씀)
+    const text=JSON.stringify({kind:'tmcalc-lab-session',exported:new Date().toISOString(),template:tpl(s.templateId)||null,
+      formulas:{saved:(s.saved||[]).map(f=>({target:f.targetName,formula:f.formula,maxError:f.maxAbs,exact:f.exact})),
+        candidates:(s.findings||[]).map(f=>({target:f.targetName,search:f.kind==='deep'?'심도':'빠른',time:new Date(f.time).toISOString(),records:f.records,
+          list:f.candidates.map(m=>({rank:m.rank,formula:m.formula,maxError:m.maxAbs,exact:m.exact,validation:m.testAbs}))}))},
+      session:s},null,1)
     const name=s.name.replace(/[\\/:*?"<>|]/g,'_')+'.json'
     if(BR)return TMCalc.saveFile(name,text)
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()})
@@ -764,8 +776,10 @@ function vFind(c,v){
     <details><summary>설명</summary><div class="mut">빠른 탐색: 자주 쓰는 공식 틀 6가지를 맞춰 보고 오차가 적은 순으로 보여 줘요 (바로 끝남).<br>
       심도 탐색: 틀 없이 변수·숫자·＋−×÷·(1+%)·max 를 조합해서 공식 자체를 찾아요. 단순하면서 오차가 적은 것을 추천해요.<br>
       검증용 기록 남기기: 5개 중 1개는 찾는 데 안 쓰고, 찾은 공식이 처음 보는 기록도 맞히는지 확인해요 (기록 10개 이상일 때).<br>
-      버튼을 다시 누르면 다시 찾아요. 후보는 최대 6개씩 보여 줘요.</div></details></div>
-  <div id="out"></div>`
+      버튼을 다시 누르면 다시 찾아요. 후보는 최대 6개씩 보여 줘요.<br>
+      찾은 후보는 세션에 자동으로 남고(대상·탐색 종류별 마지막 결과), [저장]한 공식은 따로 모여요. 세션 [내보내기] 파일에 둘 다 들어가요.</div></details></div>
+  <div id="saved"></div><div id="out"></div>`
+  showSaved(c)
   $('#ft').onchange=e=>{c.target=e.target.value;c.res=null;render()}
   v.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{const id=b.dataset.use;c.use=c.use.includes(id)?c.use.filter(q=>q!==id):[...c.use,id];c.res=null;render()})
   $('#dt').onchange=e=>c.secs=+e.target.value
@@ -778,9 +792,57 @@ function vFind(c,v){
   $('#qk').onclick=()=>{const P=prep();if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
     if(P.rows.length<3)return alert('이 값이 들어 있는 기록이 3개 이상 필요해요.')
     const models=fitModels(P.vars,P.X,P.y).filter(m=>!m.skip).slice(0,6)
-    c.res={kind:'quick',P,models,hints:hints(P.vars,P.X,P.y,models)};showRes(c)}
+    c.res={kind:'quick',P,models,hints:hints(P.vars,P.X,P.y,models)};if(models.length)storeResult(c,c.res);showRes(c)}
   $('#dp').onclick=()=>runDeep(c,prep())
   if(c.res)showRes(c)
+  else showPast(c)
+}
+/** 저장한 공식 (세션에 남고, 내보내기에도 들어감) */
+function showSaved(c){
+  const s=ses(c.id),el=$('#saved');if(!el||!s)return
+  const L=s.saved||[]
+  el.innerHTML=L.length?`<h2>저장한 공식 <span class="mut">${L.length}개</span></h2>`+L.map(f=>`<div class="card">
+    <div class="mut">${esc(f.targetName)} · ${f.kind==='deep'?'심도':'빠른'} 탐색 · 기록 ${f.records}개 · ${fdate(f.time)}${f.exact?' · <span class="good">완전 일치</span>':''}</div>
+    <div class="formula">${esc(f.formula)}</div>
+    <div class="row"><span class="mut" style="flex:1">최대 오차 ${fmt(f.maxAbs)}${f.testAbs!=null?` · 검증 ${fmt(f.testAbs)}`:''}</span>
+      <button class="sm" data-cp="${esc(f.formula)}">복사</button><button class="sm danger" data-sdel="${f.id}">✕</button></div></div>`).join(''):''
+  el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp))
+  el.querySelectorAll('[data-sdel]').forEach(b=>b.onclick=()=>{if(!confirm('저장한 공식을 지울까요?'))return
+    mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x)x.saved=(x.saved||[]).filter(q=>q.id!==b.dataset.sdel)});showSaved(c)})
+}
+/** 지난 탐색 결과 (이 화면에서 아직 안 찾았을 때) */
+function showPast(c){
+  const s=ses(c.id),o=$('#out');if(!o||!s)return
+  const F=(s.findings||[]).filter(f=>f.target===c.target)
+  if(!F.length){o.innerHTML='';return}
+  o.innerHTML=F.map(f=>`<h2>지난 ${f.kind==='deep'?'심도':'빠른'} 탐색 <span class="mut">${fdate(f.time)} · 기록 ${f.records}개</span></h2>
+    <div class="mut">계산에 쓴 것: ${esc(f.inputs.join(', '))}${f.records!==s.records.length?' · <span class="bad">그 뒤로 기록이 바뀌었어요. 다시 찾아 보세요.</span>':''}</div>`+
+    f.candidates.map(m=>`<div class="card model${m.rank===1?' best':''}"><div class="big">${m.rank===1?'추천':'후보 '+m.rank} <span class="mut">${esc(m.name)}</span></div>
+      <div>${m.exact?'<span class="tag">반올림 안에서 완전 일치</span>':''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
+      <div class="formula">${esc(m.formula)}</div>
+      <div class="row"><span class="mut" style="flex:1">최대 오차 ${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</span>${pinBtns(f,m)}</div></div>`).join('')).join('')
+  bindPins(c,o)
+}
+/** 후보 카드의 [복사] [저장] */
+function pinBtns(f,m){
+  const pin={kind:f.kind,target:f.target,targetName:f.targetName,records:f.records,formula:m.formula,maxAbs:m.maxAbs,exact:m.exact,testAbs:m.testAbs}
+  return`<button class="sm" data-cp="${esc(m.formula)}">복사</button><button class="sm" data-pin="${esc(JSON.stringify(pin))}">저장</button>`
+}
+function bindPins(c,o){
+  o.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp))
+  o.querySelectorAll('[data-pin]').forEach(b=>b.onclick=()=>{const f=JSON.parse(b.dataset.pin)
+    mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(!x)return;x.saved=x.saved||[]
+      if(!x.saved.some(q=>q.formula===f.formula&&q.target===f.target))x.saved.push({id:uid(),time:Date.now(),...f})})
+    toast('저장한 공식에 넣었어요.');showSaved(c)})
+}
+/** 찾은 후보를 세션에 남긴다 (대상·탐색 종류별 마지막 결과). 내보내기 JSON 에도 들어감 */
+function storeResult(c,R){
+  const f={kind:R.kind,target:c.target,targetName:R.P.tname,inputs:R.P.vars.map(v=>v.name),records:ses(c.id).records.length,used:R.P.rows.length,time:Date.now(),
+    candidates:R.models.map((m,i)=>({rank:i+1,name:R.kind==='quick'?m.name:'크기 '+m.size,formula:(m.tidy||m.formula).replace('결과',R.P.tname),
+      maxAbs:m.maxAbs,maxRel:m.maxRel,exact:!!m.exact,testAbs:m.testAbs??null,testExact:m.testExact??null}))}
+  mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(!x)return
+    x.findings=(x.findings||[]).filter(q=>!(q.kind===f.kind&&q.target===f.target));x.findings.push(f)})
+  R.stored=f
 }
 function runDeep(c,P){
   if(deepRun){deepRun.stop=true;return}
@@ -804,6 +866,7 @@ function runDeep(c,P){
     if(!rec)rec=models.reduce((b,m)=>!b||sc(m)<sc(b)?m:b,null)
     const others=models.filter(m=>m!==rec).reverse().slice(0,5)
     c.res={kind:'deep',P,models:rec?[rec,...others]:[],test:te.length,checked:E.step(0).checked,secs:Math.round((Date.now()-t0)/1000)}
+    if(c.res.models.length)storeResult(c,c.res)
     if(document.body.contains(out)){$('#dp').textContent='심도 탐색';showRes(c)}
   }
   const tick=()=>{
@@ -829,12 +892,14 @@ function showRes(c){
       <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
       <div>${m.exact?'<span class="tag">반올림 안에서 완전 일치</span>':''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
       <div class="formula">${esc((m.tidy||m.formula).replace('결과',P.tname))}</div>
-      <div class="mut">최대 오차 <b class="${m.exact?'good':m.maxRel>0.01?'bad':''}">${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</b>${m.testAbs!=null?` · 검증 최대 오차 <b class="${m.testExact?'good':'bad'}">${fmt(m.testAbs)}</b>`:''}</div>
+      <div class="row"><div class="mut" style="flex:1">최대 오차 <b class="${m.exact?'good':m.maxRel>0.01?'bad':''}">${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</b>${m.testAbs!=null?` · 검증 최대 오차 <b class="${m.testExact?'good':'bad'}">${fmt(m.testAbs)}</b>`:''}</div>
+        ${R.stored?pinBtns(R.stored,R.stored.candidates[i]):''}</div>
       ${m.tidy?`<details><summary>정리 전 계수</summary><div class="formula">${esc(m.formula.replace('결과',P.tname))}</div></details>`:''}
       <details${i===0?'':''}><summary>기록별 예측</summary><div class="scroll"><table><tr><th class="l">#</th><th>실제</th><th>예측</th><th>차이</th></tr>
         ${P.rows.map((r,j)=>{const pr=m.predict(P.X[j]),d=pr-P.y[j];return`<tr class="${Math.abs(d)>roundUnit(P.y)*1.0000001+1e-9?'worst':''}"><td class="l">${r.no}</td><td>${fmt(P.y[j])}</td><td>${fmt(pr)}</td><td>${fmt(d)}</td></tr>`}).join('')}
       </table></div></details>
       ${i===0?gainTable(m,P):''}</div>`).join('')
+  bindPins(c,o)
 }
 /** 추천 공식으로: 지금(마지막 기록) 상태에서 하나씩 조금 올리면 얼마나 오르나 */
 function gainTable(m,P){
