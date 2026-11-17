@@ -863,6 +863,7 @@ class OverlayService : Service() {
     /** 수정 중인 기록 id (null = 새 기록) */
     private var labEditId: String? = null
     private var labListOpen = false
+    private var labStartOpen = false
 
     private fun labOpen() = labPanel?.visibility == View.VISIBLE
 
@@ -1155,6 +1156,53 @@ class OverlayService : Service() {
             }
         })
         labBody.addView(btnRow)
+
+        // 시작 상태: 세션을 시작할 때 이미 붙어 있던 양 (분류·항목 × 값/%)
+        val start = s.optJSONObject("start") ?: JSONObject()
+        labBody.addView(TextView(ui).apply {
+            text = "시작 상태 ${if (start.length() > 0) "(${start.length()}칸 적음) " else "(안 적음) "}" + if (labStartOpen) "▲" else "▼"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(12), 0, dp(4))
+            setOnClickListener { labStartOpen = !labStartOpen; renderLab() }
+        })
+        if (labStartOpen) {
+            labBody.addView(note("처음에 이미 붙어 있던 값을 적어요 (상태창 등). 모르면 비워 두세요. 적어 두면 공식이 더 정확해져요."))
+            val edits = LinkedHashMap<String, EditText>()
+            for (g in groups) {
+                val its = labArr(g, "items").ifEmpty { listOf(null) }
+                for (it in its) {
+                    val key = g.optString("id") + ":" + (it?.optString("id") ?: "")
+                    val label = g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
+                    fun cur(u: String) = if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
+                    val ef = labInput("값", cur("flat")); val ep = labInput("%", cur("pct"))
+                    edits["$key:flat"] = ef; edits["$key:pct"] = ep
+                    labBody.addView(LinearLayout(ui).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(TextView(ui).apply {
+                            text = label; textSize = 12f; setTextColor(Color.parseColor("#D0D2D6"))
+                            layoutParams = LinearLayout.LayoutParams(0, -2, 1.2f)
+                        })
+                        addView(ef, LinearLayout.LayoutParams(0, -2, 1f))
+                        addView(ep, LinearLayout.LayoutParams(0, -2, 0.7f))
+                    })
+                }
+            }
+            labBody.addView(LinearLayout(ui).apply {
+                gravity = Gravity.END
+                addView(headerButton("시작 상태 저장") {
+                    val o = JSONObject()
+                    edits.forEach { (key, e) -> LabData.number(e.text.toString())?.let { o.put(key, it) } }
+                    val sid = s.optString("id")
+                    LabData.update(this@OverlayService) { d -> LabData.session(d, sid)?.put("start", o) }
+                    toast("시작 상태를 저장했습니다.")
+                    labStartOpen = false
+                    renderLab()
+                })
+            })
+        }
 
         // 기록 내역
         labBody.addView(TextView(ui).apply {

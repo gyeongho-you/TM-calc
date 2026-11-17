@@ -166,7 +166,7 @@ function fitModels(vars,X,y){
     const pr=X.map(x=>f(p,x)),res=pr.map((v,i)=>v-y[i])
     if(res.some(v=>!isFinite(v)))return
     const sse=res.reduce((s,v)=>s+v*v,0)
-    out.push({name,desc,k,f,p,form,snap,predict:x=>f(p,x),formula:form(p),pr,res,sse})
+    out.push({name,desc,k,f,p,form,snap,predict:x=>f(p,x),formula:pretty(form(p)),pr,res,sse})
   }
   const pc=i=>vars[i].name.includes('%')?'':'%'
   // 1) 합
@@ -570,7 +570,7 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind})[c.v](c,$('#view'))
+  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart})[c.v](c,$('#view'))
 }
 
 // ---------------------------------------------------------------- 처음 화면: 세션 + 틀
@@ -586,6 +586,7 @@ function vHome(c,v){
       <div class="row" style="margin-top:10px">
         <button class="${on?'':'pri'}" data-act="${s.id}">${on?'멈추기':'시작'}</button>
         <button data-recs="${s.id}">기록</button>
+        <button data-start="${s.id}">시작 상태${Object.keys(s.start||{}).length?' ✓':''}</button>
         <button data-find="${s.id}">공식 찾기</button>
         <span style="flex:1"></span>
         <button class="sm" data-ren="${s.id}">이름</button>
@@ -610,6 +611,7 @@ function vHome(c,v){
     else{setActive(id);toast(`'${ses(id).name}' 진행 중. 게임 위 버튼이 [연구]로 바뀌었어요.`)}
     render()})
   v.querySelectorAll('[data-recs]').forEach(b=>b.onclick=()=>go({v:'recs',id:b.dataset.recs}))
+  v.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>go({v:'start',id:b.dataset.start}))
   v.querySelectorAll('[data-find]').forEach(b=>b.onclick=()=>go({v:'find',id:b.dataset.find}))
   v.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.ren),n=prompt('세션 이름',s.name)
     if(n&&n.trim()){mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.name=n.trim()});render()}})
@@ -725,8 +727,40 @@ function vNewSes(c,v){
   const make=start=>{const name=$('#sn').value.trim()||'세션';const s={id:uid(),name,templateId:$('#st').value,created:Date.now(),records:[]}
     mutate(d=>d.sessions.push(s))
     if(start){setActive(s.id);toast(`'${name}' 진행 중. 게임 위 버튼이 [연구]로 바뀌었어요.`)}
-    nav=[{v:'home'}];render()}
+    nav=[{v:'home'},{v:'start',id:s.id,fresh:true}];render()}
   $('#sgo').onclick=()=>make(true);$('#smk').onclick=()=>make(false)
+}
+
+// ---------------------------------------------------------------- 시작 상태: 세션을 시작할 때 이미 붙어 있던 양
+/** 시작 상태 칸 목록: 분류(항목) × 값/% → key "분류id:항목id:flat|pct" */
+function startSlots(t){
+  const out=[]
+  for(const g of t.groups){
+    const its=(g.items||[]).length?g.items:[null]
+    for(const it of its)out.push({label:g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})
+  }
+  return out
+}
+function vStart(c,v){
+  const s=ses(c.id);if(!s)return back()
+  const t=tpl(s.templateId)||{groups:[]},st=s.start||{}
+  $('#title').textContent=s.name+' · 시작 상태'
+  const sl=startSlots(t)
+  v.innerHTML=`<div class="card"><div class="big">세션을 시작할 때 이미 붙어 있던 양</div>
+    <div class="mut">상태창 등에서 보이는 지금 값을 적어요. 모르는 칸은 비워 두면 그 항목은 바꾼 양(변화량)만으로 계산해요.<br>
+    적어 두면 공식 찾기가 실제 총량으로 계산해서 계수가 깔끔해지고, 합연산/곱연산도 더 정확히 가려요.</div>
+    ${c.fresh?'<div class="mut good" style="margin-top:6px">세션을 만들었어요. 시작 상태를 적고 저장하세요 (나중에 해도 돼요).</div>':''}
+    ${sl.length?`<div class="scroll" style="margin-top:10px"><table><tr><th class="l">분류 · 항목</th><th>값 (+공격력 등)</th><th>%</th></tr>
+      ${sl.map(x=>`<tr><td class="l">${esc(x.label)}</td>
+        <td><input type="text" inputmode="decimal" data-sk="${x.key}:flat" value="${isFinite(st[x.key+':flat'])?st[x.key+':flat']:''}" style="width:110px;text-align:right" placeholder="모름"></td>
+        <td><input type="text" inputmode="decimal" data-sk="${x.key}:pct" value="${isFinite(st[x.key+':pct'])?st[x.key+':pct']:''}" style="width:80px;text-align:right" placeholder="모름"></td></tr>`).join('')}</table></div>`
+      :'<div class="empty">틀에 분류가 없어요.</div>'}
+    <div class="row" style="margin-top:12px"><button class="pri" id="ss">저장</button><button id="sc">${c.fresh?'나중에':'취소'}</button></div></div>`
+  $('#sc').onclick=()=>c.fresh?(nav=[{v:'home'}],render()):back()
+  $('#ss').onclick=()=>{
+    const o={};v.querySelectorAll('[data-sk]').forEach(e=>{const n=num(e.value);if(isFinite(n))o[e.dataset.sk]=n})
+    mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.start=o})
+    toast('시작 상태를 저장했어요.');c.fresh?(nav=[{v:'home'}],render()):back()}
 }
 
 // ---------------------------------------------------------------- 기록 보기/고치기
@@ -746,7 +780,9 @@ function vRecs(c,v){
   const items=gid?((t.groups.find(g=>g.id===gid)||{}).items||[]):[]
   let iid=ed?(ed.itemId||null):(c.item??null);if(iid&&!items.some(x=>x.id===iid))iid=null
   if(!iid&&items.length)iid=items[0].id
-  v.innerHTML=`<div class="card"><div class="big">${ed?'기록 수정':'기록 추가'}</div>
+  const stTxt=startSlots(t).flatMap(x=>['flat','pct'].filter(u=>isFinite((s.start||{})[x.key+':'+u])).map(u=>`${x.label} ${fmt(s.start[x.key+':'+u])}${u==='pct'?'%':''}`))
+  v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}</span><button class="sm" id="gost">시작 상태</button></div></div>
+  <div class="card"><div class="big">${ed?'기록 수정':'기록 추가'}</div>
     <div class="mut" style="margin-top:6px">종류</div>
     <div class="chips"><button class="chip${gid==null?' on':''}" data-gc="">기준 (변경 없음)</button>${t.groups.map(g=>`<button class="chip${gid===g.id?' on':''}" data-gc="${g.id}">${esc(g.name)}</button>`).join('')}</div>
     ${items.length?`<div class="mut" style="margin-top:8px">항목</div><div class="chips">${items.map(x=>`<button class="chip${iid===x.id?' on':''}" data-ic="${x.id}">${esc(x.name)}</button>`).join('')}</div>`:''}
@@ -767,6 +803,7 @@ function vRecs(c,v){
   function keep(f){const vals={cv:$('#cv').value,note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value)
     f();$('#cv').value=vals.cv;$('#note').value=vals.note;v.querySelectorAll('[data-mv]').forEach(e=>e.value=vals[e.dataset.mv]??'')}
   const rc=$('#rc');if(rc)rc.onclick=()=>{c.edit=null;loadData();render()}
+  $('#gost').onclick=()=>go({v:'start',id:s.id})
   $('#rs').onclick=()=>{
     const g=ed?ed.groupId:(c.group??null),ch=num($('#cv').value)
     if(g&&!isFinite(ch))return alert('변경 값을 적어 주세요.')
@@ -791,10 +828,13 @@ function sessionData(s){
   for(const r of s.records)if(r.groupId&&r.change){const k=keyOf(r);if(!keys.includes(k))keys.push(k);stack[k]=(stack[k]||0)+1}
   const gvars=keys.map(k=>{const [g,i,u]=k.split(':'),G=t.groups.find(x=>x.id===g),it=i?iname(g,i):null
     const IT=i&&G?(G.items||[]).find(x=>x.id===i):null
-    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':' 변화'),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k]}})
+    const known=isFinite((s.start||{})[k])
+    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known}})
   const mvars=t.measures.map(m=>({id:'m:'+m.id,name:m.name,cat:'잰 값',unit:'flat'}))
   // % 는 두 가지로 누적: 더해서(합연산) / 곱해서(곱연산, ×(1+a%)×(1+b%)…)
+  // 시작 상태를 적었으면 거기서부터 누적 (실제 총량), 아니면 0 부터 (변화량)
   const acc={},accC={}
+  for(const x of gvars){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0)){acc[x.id]=s0;accC[x.id]=s0}}
   const rows=s.records.map((r,i)=>{
     if(r.groupId&&r.change){const k='g:'+keyOf(r);acc[k]=(acc[k]||0)+r.change;accC[k]=((1+(accC[k]||0)/100)*(1+r.change/100)-1)*100}
     const v={};gvars.forEach(x=>{v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0})
@@ -837,7 +877,10 @@ function vFind(c,v){
   $('#qk').onclick=()=>{const P=prep();if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
     if(P.rows.length<3)return alert('이 값이 들어 있는 기록이 3개 이상 필요해요.')
     const models=quickAll(P)
-    c.res={kind:'quick',P,models,hints:hints(P.vars,P.X,P.y,models)};if(models.length)storeResult(c,c.res);showRes(c)}
+    const H=hints(P.vars,P.X,P.y,models)
+    const unk=P.vars.filter(x=>x.known===false)
+    if(unk.length)H.push(`시작 상태가 비어 있는 항목: ${unk.map(x=>x.name).join(', ')}. 세션의 [시작 상태]에 처음 값을 적으면 계수가 깔끔해지고 합연산/곱연산을 더 정확히 가려요.`)
+    c.res={kind:'quick',P,models,hints:H};if(models.length)storeResult(c,c.res);showRes(c)}
   $('#dp').onclick=()=>runDeep(c,prep())
   if(c.res)showRes(c)
   else showPast(c)
