@@ -657,7 +657,14 @@ function vTpl(c,v){
     ${t.groups.map((g,i)=>`<div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
       <label class="row mut" style="gap:4px" title="적 방어처럼 높을수록 결과가 줄어드는 것"><input type="checkbox" data-gr="${i}"${g.reduce?' checked':''}>감소형</label>
       <button class="sm danger" data-gd="${i}">✕</button></div>`).join('')}
-    <button class="sm" id="ga">+ 분류</button></div>
+    <button class="sm" id="ga">+ 분류</button>
+    <details><summary>감소형이란?</summary><div class="mut" style="margin-top:6px">
+      값이 커질수록 결과가 <b>줄어드는</b> 분류에 체크해요. 예: 적 방어, 받는 피해 감소, 저항.<br>
+      게임은 방어를 그냥 빼기보다 <b>비율로 깎는</b> 경우가 많아요.<br>
+      · 빼기형: 데미지 = 공격 − 방어<br>
+      · 비율형: 데미지 = 공격 × K / (K + 방어) &nbsp;(K=1000 이면 방어 1000일 때 절반)<br>
+      체크하면 빠른 탐색이 비율형 틀도 시험하고 K 값도 찾아 줘요. 체크 안 해도 빼기형은 찾고, 심도 탐색은 조합으로 찾을 수 있지만 체크해 두면 더 빨라요.<br>
+      룬·무기처럼 올리는 쪽은 체크하지 마세요.</div></details></div>
   <div class="card"><div class="big">잴 것</div><div class="mut">매번 화면에서 읽어 적을 값 (데미지, 표시 공격력, 전투력 …). 이 값들의 공식을 찾아요.</div>
     ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="잴 것 이름"><button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
     <button class="sm" id="ma">+ 잴 것</button></div>
