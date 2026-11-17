@@ -42,6 +42,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import org.json.JSONObject
 import java.util.Locale
 
 class OverlayService : Service() {
@@ -122,8 +123,8 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         running = false
-        closeNote(save = true)
         getSharedPreferences("settings", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+        labPanel?.let { p -> runCatching { wm.removeView(p) } }
         runCatching { wm.removeView(bubble) }
         runCatching { wm.removeView(panel) }
         runCatching { wm.removeView(trash) }
@@ -174,8 +175,6 @@ class OverlayService : Service() {
         }
         busy = true
         bubble.text = "…"
-        val lab = labMode()
-        if (lab) closeNote(save = true) // 메모 칸이 떠 있으면 적은 대로 저장하고 닫는다
         // 레이어가 스크린샷에 찍히지 않도록 잠깐 숨기고, 숨긴 화면이 그려진 뒤에 한 장만 찍는다
         val panelWasShown = panel.visibility == View.VISIBLE
         bubble.visibility = View.INVISIBLE
@@ -193,7 +192,7 @@ class OverlayService : Service() {
                     })
                     return@capture
                 }
-                if (lab) runLab(bmp) else runOcr(bmp)
+                runOcr(bmp)
             }
         }, HIDE_DELAY_MS)
     }
@@ -237,123 +236,6 @@ class OverlayService : Service() {
             }
     }
 
-    /** 연구실 모드: 화면 + 글자 + 뽑은 값을 세션 폴더에 저장 (계산 창은 띄우지 않음) */
-    private fun runLab(bmp: Bitmap) {
-        recognizer.process(InputImage.fromBitmap(bmp, 0))
-            .addOnSuccessListener { text ->
-                if (!running) { bmp.recycle(); return@addOnSuccessListener }
-                val lines = text.textBlocks.flatMap { b -> b.lines }.mapNotNull { l ->
-                    val r = l.boundingBox ?: return@mapNotNull null
-                    OcrLine(l.text, r.left, r.top, r.right, r.bottom)
-                }
-                val kind = LabParser.kind(lines)
-                val values = LabParser.values(lines)
-                val app = applicationContext
-                // jpg 저장은 조금 걸리므로 뒤에서
-                Thread {
-                    val n = runCatching { LabStore.save(app, bmp, kind, lines, values) }
-                    bmp.recycle()
-                    main.post {
-                        if (!running) return@post
-                        refreshLabCount()
-                        n.onSuccess { showNote(it, kind, values.size) }
-                            .onFailure { toast("기록 실패: ${it.message}") }
-                    }
-                }.start()
-            }
-            .addOnFailureListener { e -> bmp.recycle(); if (running) toast("글자 인식 실패: ${e.message}") }
-            .addOnCompleteListener { finishScan() }
-    }
-
-    private fun labMode() = AppPrefs.labMode(this)
-
-    /** 지금 세션 장수 (버튼에 작게 표시) */
-    private var labCount = 0
-
-    private fun refreshLabCount() {
-        labCount = LabStore.currentOrNull(this)?.let { LabStore.count(it) } ?: 0
-        updateBubble()
-    }
-
-    // ---------------------------------------------------------------- 연구실: 찍은 뒤 한 줄 메모
-
-    private var noteView: LinearLayout? = null
-    private var noteParams: WindowManager.LayoutParams? = null
-    private var noteEdit: EditText? = null
-    private var noteNo = 0
-
-    /** 방금 찍은 기록에 "무엇을 바꿨는지" 적는 작은 칸. 비워 두고 닫아도 된다 */
-    @SuppressLint("ClickableViewAccessibility")
-    private fun showNote(n: Int, kind: String, valueCount: Int) {
-        closeNote(save = true)
-        noteNo = n
-        val session = LabStore.currentOrNull(this)?.let { LabStore.label(it) } ?: ""
-        val edit = EditText(ui).apply {
-            hint = "무엇을 바꿨나요? (비워도 됨)"
-            textSize = 14f
-            setSingleLine()
-            imeOptions = EditorInfo.IME_ACTION_DONE
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#777A80"))
-            setPadding(dp(6), dp(4), dp(6), dp(4))
-            setOnTouchListener { v, ev ->
-                if (ev.action == MotionEvent.ACTION_DOWN) setNoteFocusable(true)
-                v.post { v.requestFocus(); getSystemService(InputMethodManager::class.java).showSoftInput(v, 0) }
-                false
-            }
-            setOnEditorActionListener { _, _, _ -> closeNote(save = true); true }
-        }
-        noteEdit = edit
-        val v = LinearLayout(ui).apply {
-            orientation = LinearLayout.VERTICAL
-            background = round(0xF22B2D31.toInt(), 12)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            addView(TextView(ui).apply {
-                text = "#$n $kind · 값 ${valueCount}개" + if (session.isNotEmpty()) "  ($session)" else ""
-                textSize = 12f
-                setTextColor(Color.parseColor("#B39DDB"))
-            })
-            addView(edit, LinearLayout.LayoutParams(-1, -2))
-            addView(LinearLayout(ui).apply {
-                gravity = Gravity.END
-                addView(headerButton("기록 취소") {
-                    LabStore.delete(this@OverlayService, noteNo)
-                    closeNote(save = false)
-                    refreshLabCount()
-                    toast("#$noteNo 기록을 지웠습니다.")
-                })
-                addView(View(ui), LinearLayout.LayoutParams(dp(8), 1))
-                addView(headerButton("확인") { closeNote(save = true) })
-            })
-        }
-        val p = WindowManager.LayoutParams(
-            resources.displayMetrics.widthPixels - dp(32), WindowManager.LayoutParams.WRAP_CONTENT, overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(36)
-        }
-        noteView = v; noteParams = p
-        wm.addView(v, p)
-    }
-
-    private fun setNoteFocusable(on: Boolean) {
-        val v = noteView ?: return; val p = noteParams ?: return
-        val f = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv() else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        if (f == p.flags) return
-        p.flags = f
-        runCatching { wm.updateViewLayout(v, p) }
-    }
-
-    private fun closeNote(save: Boolean) {
-        val v = noteView ?: return
-        if (save) noteEdit?.text?.toString()?.takeIf { it.isNotBlank() }?.let { LabStore.setNote(this, noteNo, it) }
-        noteEdit?.let { getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(it.windowToken, 0) }
-        runCatching { wm.removeView(v) }
-        noteView = null; noteParams = null; noteEdit = null
-    }
-
     private fun finishScan() {
         busy = false
         updateBubble()
@@ -368,11 +250,11 @@ class OverlayService : Service() {
     /** 결과창이 떠 있으면 버튼을 ✕ 로, 아니면 "계산" 으로 */
     private fun updateBubble() {
         if (busy) return
-        val open = panel.visibility == View.VISIBLE
         val lab = labMode()
-        bubble.text = if (open) "✕" else if (lab) "연구\n$labCount" else "계산"
-        bubble.textSize = if (open) 20f else if (lab) 12f else 13f
-        (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab && !open) "#B39DDB" else "#F2B84B"))
+        val open = panel.visibility == View.VISIBLE || labOpen()
+        bubble.text = if (open) "✕" else if (lab) "연구" else "계산"
+        bubble.textSize = if (open) 20f else 13f
+        (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab) "#B39DDB" else "#F2B84B"))
     }
 
     /** 박스 안의 채도 높은 픽셀이 빨강 계열이면 -1, 초록 계열이면 +1, 애매하면 0. */
@@ -896,7 +778,14 @@ class OverlayService : Service() {
         // 짧게 누르면: 결과창이 떠 있으면 ✕(닫기), 닫혀 있으면 계산
         // 꾹 누르면: 아래에 쓰레기통이 나타나고, 거기에 끌어다 놓으면 레이어 종료
         bubble.setOnTouchListener(BubbleTouchListener(
-            onTap = { if (panel.visibility == View.VISIBLE) showPanel(false) else scan() },
+            onTap = {
+                when {
+                    labOpen() -> showLab(false)
+                    panel.visibility == View.VISIBLE -> showPanel(false)
+                    labMode() -> showLab(true)
+                    else -> scan()
+                }
+            },
         ))
         wm.addView(bubble, bubbleParams)
 
@@ -923,17 +812,348 @@ class OverlayService : Service() {
 
         buildPanel()
         wm.addView(panel, panelParams)
-        refreshLabCount()
+        updateBubble()
         // 앱에서 연구실 모드를 켜고 끄면 버튼 글자/색을 바로 바꾼다
         getSharedPreferences("settings", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "labMode" || key == "labSession") main.post {
+        if (key == "labActive") main.post {
             if (!running) return@post
-            if (key == "labMode" && !labMode()) closeNote(save = true)
-            refreshLabCount()
+            if (labOpen()) showLab(false)
+            if (panel.visibility == View.VISIBLE) showPanel(false)
+            updateBubble()
         }
+    }
+
+    /** 진행 중인 연구 세션이 있으면 버튼이 [연구] */
+    private fun labMode() = AppPrefs.labActive(this) != null
+
+    /** 누르고 있는 동안 창을 거의 투명하게 (뒤의 게임 화면 확인용) */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun eyeButton(target: View) = TextView(ui).apply {
+        text = "👁"
+        textSize = 16f
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        background = round(0xFF3A3D44.toInt(), 8)
+        setPadding(dp(8), dp(2), dp(8), dp(2))
+        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) }
+        setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> target.alpha = 0.12f
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> target.alpha = 1f
+            }
+            true
+        }
+    }
+
+    // ---------------------------------------------------------------- 연구실: 게임 위 기록 입력 창
+    // 진행 중인 세션의 틀대로: 종류(분류) 고르기 → 변경 값(값/%) → 잰 값들 → [저장]. 아래 '기록 내역 ▼' 에서 수정/삭제.
+
+    private var labPanel: LinearLayout? = null
+    private var labParams: WindowManager.LayoutParams? = null
+    private lateinit var labTitle: TextView
+    private lateinit var labBody: LinearLayout
+    /** 고른 분류 id (null = 기준, 변경 없음) */
+    private var labGroup: String? = null
+    private var labPct = false
+    /** 수정 중인 기록 id (null = 새 기록) */
+    private var labEditId: String? = null
+    private var labListOpen = false
+
+    private fun labOpen() = labPanel?.visibility == View.VISIBLE
+
+    private fun showLab(show: Boolean) {
+        if (show) {
+            if (labPanel == null) buildLab()
+            renderLab()
+        }
+        val v = labPanel ?: return
+        val p = labParams ?: return
+        v.visibility = if (show) View.VISIBLE else View.GONE
+        // 글자를 입력하려면 창이 포커스를 받아야 한다. 닫으면 다시 게임에 돌려준다 (창 밖 터치는 늘 게임으로)
+        p.flags = if (show) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        runCatching { wm.updateViewLayout(v, p) }
+        if (!show) getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0)
+        updateBubble()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun buildLab() {
+        val dm = resources.displayMetrics
+        val box = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            background = round(0xFF2B2D31.toInt(), 14)
+            setPadding(dp(12), dp(8), dp(12), dp(10))
+            visibility = View.GONE
+        }
+        val params = WindowManager.LayoutParams(
+            minOf(dm.widthPixels - dp(16), dp(420)), ViewGroup.LayoutParams.WRAP_CONTENT, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = dp(8)
+            y = dp(40)
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+        }
+        val header = LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        header.addView(eyeButton(box))
+        labTitle = TextView(ui).apply {
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(LAB_ACC)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        header.addView(labTitle)
+        header.addView(headerButton("접기") { showLab(false) })
+        header.setOnTouchListener(DragListener(params, box, onTap = {}, onLongPress = {}))
+        box.addView(header)
+
+        val maxH = (dm.heightPixels * 0.66).toInt()
+        val scroll = ScrollView(ui)
+        labBody = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(labBody)
+        box.addView(scroll, LinearLayout.LayoutParams(-1, -2))
+        // 기록 내역을 펼쳐 길어지면 화면의 66%까지만 늘리고 스크롤
+        box.viewTreeObserver.addOnGlobalLayoutListener {
+            val want = if (labBody.height > maxH) maxH else ViewGroup.LayoutParams.WRAP_CONTENT
+            if (scroll.layoutParams.height != want) scroll.layoutParams = scroll.layoutParams.apply { height = want }
+        }
+        labPanel = box; labParams = params
+        wm.addView(box, params)
+    }
+
+    private fun labArr(o: JSONObject?, key: String): List<JSONObject> {
+        val a = o?.optJSONArray(key) ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+    }
+
+    /** 기록 한 줄 글자: "#3 룬 +5% → 데미지 12,345 · 공격력 1,234 (메모)" */
+    private fun labRecText(no: Int, r: JSONObject, groups: List<JSONObject>, measures: List<JSONObject>): String {
+        val gid = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() }
+        val kind = if (gid == null) "기준" else {
+            val name = groups.firstOrNull { it.optString("id") == gid }?.optString("name") ?: "(지운 분류)"
+            val ch = r.optDouble("change", 0.0)
+            "$name ${if (ch >= 0) "+" else ""}${LabData.fmt(ch)}${if (r.optString("unit") == "pct") "%" else ""}"
+        }
+        val vals = r.optJSONObject("values")
+        val vs = measures.mapNotNull { m -> vals?.takeIf { it.has(m.optString("id")) }?.let { "${m.optString("name")} ${LabData.fmt(it.optDouble(m.optString("id")))}" } }
+        val note = r.optString("note")
+        return "#$no $kind → ${vs.joinToString(" · ")}" + if (note.isNotBlank()) "  ($note)" else ""
+    }
+
+    private fun labChip(label: String, on: Boolean, onClick: () -> Unit) = TextView(ui).apply {
+        text = label
+        textSize = 13f
+        setTextColor(if (on) Color.parseColor("#17181B") else Color.WHITE)
+        typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        setPadding(dp(12), dp(6), dp(12), dp(6))
+        background = round(if (on) LAB_ACC else 0xFF3A3D44.toInt(), 16)
+        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
+        setOnClickListener { onClick() }
+    }
+
+    private fun labInput(hint: String, text: String = "") = EditText(ui).apply {
+        this.hint = hint
+        setText(text)
+        textSize = 15f
+        setSingleLine()
+        inputType = InputType.TYPE_CLASS_TEXT
+        setTextColor(Color.WHITE)
+        setHintTextColor(Color.parseColor("#777A80"))
+        setPadding(dp(8), dp(6), dp(8), dp(6))
+    }
+
+    private fun labLabel(t: String) = TextView(ui).apply {
+        text = t
+        textSize = 11f
+        setTextColor(Color.parseColor("#9A9DA3"))
+        setPadding(0, dp(6), 0, 0)
+    }
+
+    private fun renderLab() {
+        val o = LabData.load(this)
+        val s = LabData.session(o, AppPrefs.labActive(this))
+        labBody.removeAllViews()
+        if (s == null) {
+            labTitle.text = "연구실"
+            labBody.addView(note("진행 중인 세션이 없습니다. 앱 > 메뉴 > 연구실에서 세션을 시작하세요."))
+            return
+        }
+        val t = LabData.template(o, s.optString("templateId"))
+        val groups = labArr(t, "groups")
+        val measures = labArr(t, "measures")
+        val recs = labArr(s, "records")
+        val editing = labEditId?.let { id -> recs.firstOrNull { it.optString("id") == id } }
+        if (labEditId != null && editing == null) labEditId = null
+        if (labGroup != null && groups.none { it.optString("id") == labGroup }) labGroup = null
+        labTitle.text = "연구 · " + s.optString("name")
+        if (t == null || measures.isEmpty()) {
+            labBody.addView(note("이 세션의 틀이 없거나 '잴 것'이 비어 있습니다. 앱 > 메뉴 > 연구실에서 틀을 고쳐 주세요."))
+            return
+        }
+        if (editing != null) labBody.addView(note("#${recs.indexOf(editing) + 1} 기록 수정 중"))
+
+        // 종류
+        labBody.addView(labLabel("종류"))
+        val chipRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+        val chipScroll = android.widget.HorizontalScrollView(ui).apply { isHorizontalScrollBarEnabled = false; addView(chipRow) }
+        labBody.addView(chipScroll)
+
+        // 변경 값 + 값/%
+        val changeRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val changeEdit = labInput("변경 값 (+5, -100, 1.2만)",
+            editing?.takeIf { !it.isNull("groupId") }?.let { LabData.fmt(it.optDouble("change")).replace(",", "") } ?: "")
+        changeRow.addView(changeEdit, LinearLayout.LayoutParams(0, -2, 1f))
+        val unitRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+        changeRow.addView(unitRow)
+        val changeBox = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(labLabel("변경 값"))
+            addView(changeRow)
+        }
+        labBody.addView(changeBox)
+
+        fun paintUnits() {
+            unitRow.removeAllViews()
+            unitRow.addView(labChip("값", !labPct) { labPct = false; paintUnits() })
+            unitRow.addView(labChip("%", labPct) { labPct = true; paintUnits() })
+        }
+        fun paintChips() {
+            chipRow.removeAllViews()
+            chipRow.addView(labChip("기준 (변경 없음)", labGroup == null) { labGroup = null; paintChips() })
+            for (g in groups) {
+                val id = g.optString("id")
+                chipRow.addView(labChip(g.optString("name"), labGroup == id) { labGroup = id; paintChips() })
+            }
+            changeBox.visibility = if (labGroup == null) View.GONE else View.VISIBLE
+        }
+        paintChips(); paintUnits()
+
+        // 잰 값들 (2칸씩)
+        val last = recs.lastOrNull()?.optJSONObject("values")
+        val measureEdits = LinkedHashMap<String, EditText>()
+        var line: LinearLayout? = null
+        measures.forEachIndexed { i, m ->
+            val id = m.optString("id")
+            if (i % 2 == 0) { line = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }; labBody.addView(line) }
+            val prev = last?.takeIf { it.has(id) }?.let { "이전 " + LabData.fmt(it.optDouble(id)) } ?: m.optString("name")
+            val e = labInput(prev, editing?.optJSONObject("values")?.takeIf { it.has(id) }?.let { LabData.fmt(it.optDouble(id)).replace(",", "") } ?: "")
+            measureEdits[id] = e
+            line!!.addView(LinearLayout(ui).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, if (i % 2 == 0) dp(6) else 0, 0)
+                addView(labLabel(m.optString("name")))
+                addView(e, LinearLayout.LayoutParams(-1, -2))
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        if (measures.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
+        val noteEdit = labInput("메모 (선택)", editing?.optString("note") ?: "")
+        labBody.addView(noteEdit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+
+        // 저장
+        val btnRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(8), 0, 0) }
+        if (editing != null) btnRow.addView(headerButton("취소") { labEditId = null; renderLab() })
+        btnRow.addView(TextView(ui).apply {
+            text = if (editing != null) "수정 저장" else "저장"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#17181B"))
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+            background = round(LAB_ACC, 10)
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) }
+            setOnClickListener {
+                val g = labGroup
+                val ch = LabData.number(changeEdit.text.toString())
+                if (g != null && ch == null) { toast("변경 값을 적어 주세요."); return@setOnClickListener }
+                val values = JSONObject()
+                measureEdits.forEach { (id, e) -> LabData.number(e.text.toString())?.let { values.put(id, it) } }
+                if (values.length() == 0) { toast("잰 값을 하나 이상 적어 주세요."); return@setOnClickListener }
+                val sid = s.optString("id")
+                val rid = editing?.optString("id") ?: LabData.newId()
+                val rec = JSONObject()
+                    .put("id", rid)
+                    .put("time", editing?.optLong("time") ?: System.currentTimeMillis())
+                    .put("groupId", g ?: JSONObject.NULL)
+                    .put("change", if (g == null) 0.0 else ch)
+                    .put("unit", if (labPct) "pct" else "flat")
+                    .put("values", values)
+                    .put("note", noteEdit.text.toString().trim())
+                var no = 0
+                LabData.update(this@OverlayService) { d ->
+                    val ss = LabData.session(d, sid) ?: return@update
+                    val arr = ss.optJSONArray("records") ?: org.json.JSONArray().also { ss.put("records", it) }
+                    val idx = (0 until arr.length()).firstOrNull { arr.optJSONObject(it)?.optString("id") == rid }
+                    if (idx != null) { arr.put(idx, rec); no = idx + 1 } else { arr.put(rec); no = arr.length() }
+                }
+                toast(if (editing != null) "#$no 수정했습니다." else "#$no 저장했습니다.")
+                labEditId = null
+                renderLab()
+            }
+        })
+        labBody.addView(btnRow)
+
+        // 기록 내역
+        labBody.addView(TextView(ui).apply {
+            text = "기록 내역 ${recs.size}개 " + if (labListOpen) "▲" else "▼"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(12), 0, dp(4))
+            setOnClickListener { labListOpen = !labListOpen; renderLab() }
+        })
+        if (labListOpen) {
+            if (recs.isEmpty()) labBody.addView(note("아직 기록이 없습니다."))
+            recs.withIndex().reversed().forEach { (i, r) ->
+                labBody.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(3), 0, dp(3))
+                    addView(TextView(ui).apply {
+                        text = labRecText(i + 1, r, groups, measures)
+                        textSize = 12f
+                        setTextColor(if (r.optString("id") == labEditId) LAB_ACC else Color.parseColor("#D0D2D6"))
+                        layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                    })
+                    addView(headerButton("수정") {
+                        labEditId = r.optString("id")
+                        labGroup = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() }
+                        labPct = r.optString("unit") == "pct"
+                        renderLab()
+                    })
+                    addView(headerButton("삭제") {
+                        overlayDialog(android.app.AlertDialog.Builder(ui)
+                            .setMessage("#${i + 1} 기록을 지울까요?")
+                            .setPositiveButton("지우기") { _, _ ->
+                                val rid = r.optString("id")
+                                LabData.update(this@OverlayService) { d ->
+                                    val arr = LabData.session(d, s.optString("id"))?.optJSONArray("records") ?: return@update
+                                    (0 until arr.length()).firstOrNull { arr.optJSONObject(it)?.optString("id") == rid }?.let { arr.remove(it) }
+                                }
+                                if (labEditId == rid) labEditId = null
+                                renderLab()
+                            }
+                            .setNegativeButton("취소", null))
+                    })
+                })
+            }
+        }
+    }
+
+    /** 게임 위(레이어)에서는 보통 대화상자를 못 띄우므로 레이어 종류로 띄운다 */
+    private fun overlayDialog(b: android.app.AlertDialog.Builder) {
+        val d = b.create()
+        d.window?.setType(overlayType())
+        d.show()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -963,6 +1183,7 @@ class OverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        header.addView(eyeButton(panel))
         header.addView(TextView(ui).apply {
             text = "성장률 계산"
             textSize = 15f
@@ -1382,6 +1603,8 @@ class OverlayService : Service() {
 
         @Volatile
         var running = false
+
+        private val LAB_ACC = Color.parseColor("#B39DDB")
     }
 }
 
