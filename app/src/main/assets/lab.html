@@ -54,6 +54,13 @@ details summary{cursor:pointer;color:var(--mut);font-size:13px;margin-top:6px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{border:none;border-radius:0;padding:8px 12px}
 .seg button.on{background:var(--acc);color:var(--acc-fg)}
+.qm{width:24px;height:24px;padding:0;border-radius:12px;font-size:13px;font-weight:700;line-height:22px;text-align:center;color:var(--acc);border-color:var(--acc);background:none;vertical-align:middle;flex:none}
+.hmask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.hbox{background:var(--card);color:var(--fg);width:100%;max-width:640px;max-height:82vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 18px 28px}
+.hbox h3{margin:0 0 10px;font-size:17px;color:var(--acc)}
+.hbox p{margin:8px 0}
+.hbox .ex{background:var(--card2);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
+.hbox .ex b{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -583,6 +590,98 @@ const tpl=id=>data.templates.find(t=>t.id===id)
 const ses=id=>data.sessions.find(s=>s.id===id)
 const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
 
+// ---------------------------------------------------------------- 도움말 (? 버튼)
+const HELP={
+  start:['연구실 사용법',`
+<p>게임의 숨은 계산식(데미지 공식 등)을 <b>직접 실험해서 알아내는</b> 곳이에요.</p>
+<p><b>1. 틀 만들기</b> - 무엇을 바꿔 가며 실험할지(분류), 무엇을 잴지(잴 것)를 정해요.<br>
+<b>2. 세션 시작</b> - 틀을 골라 실험을 시작해요. 게임 위 버튼이 보라색 [연구]로 바뀌어요.<br>
+<b>3. 기록</b> - 게임에서 하나를 바꾸고, 바뀐 숫자를 적어요. 이걸 여러 번 반복해요.<br>
+<b>4. 공식 찾기</b> - 모은 기록으로 공식을 찾아요.<br>
+<b>5. 최적화</b> - 찾은 공식으로 "뭘 바꾸면 얼마나 세지는지", "제일 센 셋팅"을 알려 줘요.</p>
+<div class="ex"><b>예시</b><br>틀: 분류 = 룬, 무기 / 잴 것 = 데미지<br>
+기록: 처음 데미지 1,000 → 룬 공격 +200 끼고 1,200 → 무기 +10% 바꾸고 1,320 …<br>
+공식 찾기 결과: <b>데미지 = (1000 + 룬) × (1 + 무기%)</b></div>
+<p>처음이면 아래 [예시 세션 넣기]로 한번 눌러 보세요.</p>`],
+  session:['세션이란?',`
+<p>실험 한 번의 묶음이에요. 세션마다 기록이 따로 모여요.</p>
+<p><b>시작</b>을 누르면 그 세션이 "진행 중"이 되고, 게임 위 버튼이 [연구]로 바뀌어요. 그 상태에서 버튼을 누르면 바로 기록할 수 있어요. <b>멈추기</b>를 누르면 다시 [계산] 버튼이에요.</p>
+<p><b>기록</b> 보기·고치기 / <b>시작 상태</b> 처음 값 적기 / <b>공식 찾기</b> / <b>최적화</b> / <b>내보내기</b> 파일로 저장(다른 폰·PC에서 불러오기 가능)</p>
+<div class="ex"><b>팁</b><br>실험 도중 기록 안 한 변화(장비를 몰래 바꿈, 버프가 끝남)가 생기면 기록이 어긋나요. 그럴 땐 새 세션을 만드는 게 좋아요.</div>`],
+  tpl:['틀이란?',`
+<p>실험의 <b>설계도</b>예요. 같은 틀로 세션을 여러 번 만들 수 있어요.</p>
+<p><b>분류</b>: 바꿔 가며 실험할 것 (룬, 무기, 스킬, 적 방어 …)<br>
+<b>항목</b>: 분류 안을 더 나눌 때 (스킬 → 공격력 / 데미지 / 방깎)<br>
+<b>잴 것</b>: 매번 화면에서 읽어 적을 숫자 (일반 데미지, 스킬 데미지, 전투력 …)</p>
+<div class="ex"><b>예시</b><br>분류 <b>스킬</b> (항목: 공격력, 데미지, 방깎[감소형])<br>분류 <b>룬</b> (항목: 공격력, 데미지)<br>잴 것: <b>일반 데미지</b>, <b>스킬 데미지</b></div>
+<p>틀을 고치면 그 틀을 쓰는 세션에도 바로 반영돼요. 실험 중에 새 분류·항목이 필요하면 게임 위 [연구] 창의 [+]로 바로 추가할 수도 있어요.</p>`],
+  measure:['잴 것 나누는 법',`
+<p>한 칸에는 <b>항상 같은 종류의 숫자</b>만 적어야 해요.</p>
+<div class="ex"><b>치명타가 섞이는 경우</b><br>"평타(일반)"과 "평타(치명)"으로 나눠서 각각 적어요. 둘을 비교하면 치명 배율도 나와요.</div>
+<div class="ex"><b>스킬이 치명이 안 터지는 경우</b><br>"스킬 데미지"를 따로 두고, 공식 찾기 때 치명 관련 값은 빼고 찾아요.</div>
+<div class="ex"><b>공격 속도를 알고 싶을 때</b><br>"30초 공격 횟수"를 잴 것으로 두고, 공속을 바꿔 가며 세어 적어요.</div>`],
+  startState:['시작 상태란?',`
+<p>세션을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창 등에 보이는 지금 값을 적어요.</p>
+<p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
+<div class="ex"><b>예시</b> (처음에 스킬 데미지 30%를 이미 갖고 있음)<br>
+시작 상태 안 적음 → 15000 × (1 + 0.667×스킬%) <span class="bad">(계수가 이상함)</span><br>
+시작 상태 30 적음 → <b>10000 × (1 + 스킬%)</b> (실제 공식 그대로)</div>
+<p>모르는 칸은 비워 두면 돼요. 그 항목만 바꾼 양으로 계산해요.</p>`],
+  record:['기록하는 법',`
+<p>게임에서 <b>하나만 바꾸고</b>, 바뀐 숫자를 적어요.</p>
+<p><b>종류</b>: 무엇을 바꿨는지 (처음엔 "기준(변경 없음)")<br>
+<b>변경 값</b>: 얼마나 바꿨는지. [값]은 +200 같은 고정 수치, [%]는 +10% 같은 퍼센트. 빼면 -200<br>
+<b>잴 것</b>: 바꾼 뒤 화면 숫자. 흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241)</p>
+<div class="ex"><b>예시</b><br>#1 기준 → 데미지 1000<br>#2 룬 +200 → 1200<br>#3 무기 +10% → 1320<br>#4 룬 +100 → 1430<br>#5 무기 +10% → 1560</div>
+<p><b>잘 찾게 하는 요령</b><br>· 한 번에 하나만 바꾸기<br>· 같은 항목을 크기 다르게 3번 이상 (+3%, +5%, +10%)<br>· 같은 항목을 겹쳐서도 (+5% 상태에서 +5% 더) → 합연산/곱연산을 가려요<br>· 기록 수는 많을수록 좋아요 (10개 이상 추천)</p>
+<p>⚠ 표시 = 공식과 크게 어긋난 기록. 입력 실수인지 확인하고 고치거나 [빼기]하세요.</p>`],
+  find:['공식 찾기',`
+<p><b>무엇의 공식?</b> 찾을 숫자(잴 것)를 골라요.<br><b>무엇으로 계산?</b> 그 숫자에 영향을 주는 것들을 골라요 (보라색 = 사용).</p>
+<p><b>빠른 탐색</b>: 게임에서 흔한 공식 모양(더하기, 곱하기, 분류별 곱, 방어 감소 …)을 바로 맞춰 봐요. 1초 안에 끝나요. 먼저 이걸 눌러 보세요.<br>
+<b>심도 탐색</b>: 모양을 정하지 않고 +, −, ×, ÷ 를 조합해서 공식 자체를 찾아요. 빠른 탐색으로 안 맞을 때 써요. 시간이 길수록 더 많이 찾아봐요.</p>
+<p><b>반올림 안에서 완전 일치</b> = 모든 기록과 딱 맞음 (거의 정답)<br>
+<b>검증용 기록 남기기</b> = 기록 일부를 일부러 안 보고 찾은 뒤, 그 기록도 맞히는지 시험해요. 맞히면 더 믿을 만해요.</p>
+<div class="ex"><b>결과 읽는 법</b><br>데미지 = (1000 + 룬) × (1 + 무기 %)<br>→ 기본 1000에 룬 고정 수치를 더하고, 무기 %만큼 곱해서 늘어난다는 뜻이에요.<br>
+"곱연산: 스킬 데미지 %" → 스킬 데미지 %는 겹칠 때 더하지 않고 곱해서 쌓인다는 뜻이에요.</div>
+<p>찾은 후보는 자동으로 남고, [저장]하면 최적화에서 쓸 수 있어요.</p>`],
+  cycle:['전투 주기란?',`
+<p>일반공격과 스킬이 섞여 나가는 게임에서, <b>한 바퀴(주기) 동안의 평균 데미지</b>로 비교하는 방법이에요.</p>
+<p>공식은 따로따로 찾아요: <b>일반 데미지 공식</b>, <b>스킬 데미지 공식</b>. 여기서 둘을 불러와 합쳐요.</p>
+<div class="ex"><b>예시</b> - 일반 10번당 스킬 1번, 치명 확률 30%, 치명 배율 2배, 스킬은 치명 없음<br>
+일반 1타 평균 = 1,000 × (1 + 0.3 × (2 − 1)) = 1,300<br>
+주기 = 1,300 × 10번 + 스킬 5,000 = <b>18,000</b></div>
+<p>이렇게 하면 "일반공격 +20%"는 10번분, "스킬 +60%"는 1번분으로 자동 계산돼서, 어느 쪽이 이득인지 정확히 나와요.</p>
+<p><b>치명 배율 칸</b>에는 식도 돼요: <code>1.5 + [치명피해 %] / 100</code> → 치명피해 옵션까지 반영<br>
+<b>공격 속도</b>: 공속 옵션이 있으면 넣어요. 간격(초)을 직접 넣거나, 따로 찾은 속도 공식(30초 공격 횟수 등)을 골라요. 그러면 시간당 데미지로 비교해요. 공속이 안 바뀌면 "넣지 않음"으로 두세요.</p>`],
+  state:['내 상태',`
+<p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
+<p>그 뒤로 게임에서 바뀐 게 있으면 여기서 고쳐요. 비우면 다시 마지막 기록 값이에요.</p>
+<div class="ex"><b>예시</b><br>룬 550 / 무기 % 35 → 예상 데미지 (1000+550) × 1.35 = 2,092</div>`],
+  rules:['특수 효과',`
+<p>게임 설명에 <b>"A의 몇 %만큼 B 증가"</b>처럼 적힌 효과를 식으로 넣는 곳이에요. 공식 계산 전에 먼저 적용돼요.</p>
+<p>대상(늘어날 값) · 방식(+ 더하기 / = 덮어쓰기) · 식. 다른 값은 [이름]으로 불러요.</p>
+<div class="ex"><b>예시</b> "마력의 10%만큼 공격력 증가"<br>대상: 공격력 변화 · + · <code>[마력] * 0.1</code></div>
+<div class="ex"><b>예시</b> "공격력 %가 데미지 %의 절반만큼 추가"<br>대상: 공격력 % · + · <code>[데미지 %] / 2</code></div>`],
+  whatif:['바꿔 보기',`
+<p>"이걸 바꾸면 얼마나 세질까?"를 바로 계산해요. 한 묶음에 여러 줄을 넣을 수 있어요.</p>
+<p>줄마다: 무엇을 · + 더하기 / − 빼기 / = 이 값으로 · 얼마나</p>
+<div class="ex"><b>예시</b> "룬 A(공격 +200) 빼고 룬 B(데미지 +15%) 끼기"<br>줄1: 룬 변화 − 200<br>줄2: 룬 % + 15<br>→ <b>+4.2%</b> 처럼 지금 대비 증감이 나와요.</div>`],
+  optimize:['최적 셋팅',`
+<p>가진 옵션들 중 <b>가장 센 조합</b>을 찾아 줘요.</p>
+<p>옵션마다: 이름 · <b>칸</b>(룬, 무기 … 같은 칸끼리 개수 제한) · <b>낌</b>(지금 끼고 있으면 체크) · 바뀌는 값<br>
+아래 "칸 최대"에 칸마다 낄 수 있는 개수를 적고 [최적 조합 찾기]를 눌러요.</p>
+<div class="ex"><b>예시</b> 룬 칸 2개, 가진 룬 4개<br>룬A 공격+200 (낌) / 룬B 공격%+15 / 룬C 공격+50 (낌) / 룬D 무기%+5<br>
+→ 결과: <b>넣기 룬B, 빼기 룬C, +8.7%</b></div>
+<p>옵션이 아주 많으면 지금 셋팅에서 하나씩 바꿔 보며 좋아지는 쪽으로 찾아요 (그때는 화면에 그렇게 표시돼요).</p>`],
+}
+function hb(k){return`<button class="qm" data-help="${k}" title="설명">?</button>`}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-help]');if(!b)return
+  const [t,body]=HELP[b.dataset.help]||['','']
+  const m=document.createElement('div');m.className='hmask'
+  m.innerHTML=`<div class="hbox"><h3>${t}</h3>${body}<div class="row" style="margin-top:14px"><button class="pri" style="flex:1">닫기</button></div></div>`
+  m.onclick=ev=>{if(ev.target===m||ev.target.tagName==='BUTTON')m.remove()}
+  document.body.append(m)})
+
 // ---------------------------------------------------------------- 화면 이동
 let nav=[{v:'home'}]
 const cur=()=>nav[nav.length-1]
@@ -604,7 +703,8 @@ function vHome(c,v){
   $('#title').textContent='연구실'
   const ss=[...data.sessions].sort((a,b)=>(b.id===active)-(a.id===active)||b.created-a.created)
   v.innerHTML=`
-  <h2>세션<span class="sp"></span><button class="pri sm" id="nS">+ 새 세션</button></h2>
+  <div class="card" style="display:flex;align-items:center;gap:10px"><span style="flex:1">처음이세요? 사용법과 예시를 보세요.</span><button class="sm pri" data-help="start">사용법</button></div>
+  <h2>세션 ${hb('session')}<span class="sp"></span><button class="pri sm" id="nS">+ 새 세션</button></h2>
   ${ss.length?ss.map(s=>{const t=tpl(s.templateId),on=s.id===active
     return`<div class="card${on?' on':''}">
       <div class="big">${esc(s.name)}${on?'<span class="badge">진행 중</span>':''}</div>
@@ -621,7 +721,7 @@ function vHome(c,v){
         <button class="sm danger" data-del="${s.id}">삭제</button>
       </div></div>`}).join(''):`<div class="card empty">세션이 없어요.<br>틀을 만든 뒤 [+ 새 세션]으로 시작하세요.</div>`}
   <p class="mut">시작한 세션이 있으면 게임 위 버튼이 보라색 [연구]로 바뀌어요. 누르면 종류·변경 값·잰 값을 바로 기록할 수 있어요. [멈추기]를 누르면 다시 [계산]이에요.</p>
-  <h2>틀<span class="sp"></span><button class="sm" id="nT">+ 새 틀</button></h2>
+  <h2>틀 ${hb('tpl')}<span class="sp"></span><button class="sm" id="nT">+ 새 틀</button></h2>
   ${data.templates.length?data.templates.map(t=>`<div class="card">
       <div class="big">${esc(t.name)}</div>
       <div class="mut">분류: ${t.groups.map(g=>esc(g.name)+((g.items||[]).length?'('+g.items.map(x=>esc(x.name)+(x.reduce?'[감소]':'')).join('·')+')':(g.reduce?'[감소]':''))).join(', ')||'-'}</div>
@@ -695,7 +795,7 @@ function vTpl(c,v){
   const t=c.draft
   $('#title').textContent=orig?'틀 수정':'새 틀'
   v.innerHTML=`<div class="card"><label class="f">틀 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 룬·무기 → 데미지"></label></div>
-  <div class="card"><div class="big">분류</div><div class="mut">바꿔 가며 실험할 것 (룬, 무기, 장비, 버프, 적 방어 …). 기록할 때 이 중에서 고르고 ±값이나 %를 적어요.</div>
+  <div class="card"><div class="big">분류 ${hb('tpl')}</div><div class="mut">바꿔 가며 실험할 것 (룬, 무기, 장비, 버프, 적 방어 …). 기록할 때 이 중에서 고르고 ±값이나 %를 적어요.</div>
     ${t.groups.map((g,i)=>`<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid var(--line)"><div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
       ${(g.items||[]).length?'':`<label class="row mut" style="gap:4px" title="방어 계산에 들어가는 값 (적 방어, 방깎 …)"><input type="checkbox" data-gr="${i}"${g.reduce?' checked':''}>감소형</label>`}
       <button class="sm danger" data-gd="${i}">✕</button></div>
@@ -715,7 +815,7 @@ function vTpl(c,v){
       게임은 방어를 그냥 빼기보다 <b>비율로</b> 계산하는 경우가 많아요: 데미지 = 공격 × K / (K + 방어). (K=1000 이면 방어 1000일 때 절반)<br>
       체크하면 빠른 탐색이 이 모양을 시험하고 K 값도 찾아 줘요 (방깎이면 K 가 음수로 나와요 = K/(K−방깎) 꼴). 체크 안 해도 빼기형은 찾고, 심도 탐색은 조합으로도 찾지만 체크해 두면 더 빨라요.<br>
       공격력·데미지처럼 그냥 오르는 것은 체크하지 마세요.</div></details></div>
-  <div class="card"><div class="big">잴 것</div><div class="mut">매번 화면에서 읽어 적을 값 (데미지, 표시 공격력, 전투력 …). 이 값들의 공식을 찾아요.</div>
+  <div class="card"><div class="big">잴 것 ${hb('measure')}</div><div class="mut">매번 화면에서 읽어 적을 값 (데미지, 표시 공격력, 전투력 …). 이 값들의 공식을 찾아요.</div>
     ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="잴 것 이름"><button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
     <button class="sm" id="ma">+ 잴 것</button></div>
   <p class="mut">틀을 고치면 이 틀을 쓰는 세션에도 바로 반영돼요.</p>
@@ -774,7 +874,7 @@ function vStart(c,v){
   const t=tpl(s.templateId)||{groups:[]},st=s.start||{}
   $('#title').textContent=s.name+' · 시작 상태'
   const sl=startSlots(t)
-  v.innerHTML=`<div class="card"><div class="big">세션을 시작할 때 이미 붙어 있던 양</div>
+  v.innerHTML=`<div class="card"><div class="big">세션을 시작할 때 이미 붙어 있던 양 ${hb('startState')}</div>
     <div class="mut">상태창 등에서 보이는 지금 값을 적어요. 모르는 칸은 비워 두면 그 항목은 바꾼 양(변화량)만으로 계산해요.<br>
     적어 두면 공식 찾기가 실제 총량으로 계산해서 계수가 깔끔해지고, 합연산/곱연산도 더 정확히 가려요.</div>
     ${c.fresh?'<div class="mut good" style="margin-top:6px">세션을 만들었어요. 시작 상태를 적고 저장하세요 (나중에 해도 돼요).</div>':''}
@@ -811,7 +911,7 @@ function vRecs(c,v){
   if(!iid&&items.length)iid=items[0].id
   const stTxt=startSlots(t).flatMap(x=>['flat','pct'].filter(u=>isFinite((s.start||{})[x.key+':'+u])).map(u=>`${x.label} ${fmt(s.start[x.key+':'+u])}${u==='pct'?'%':''}`))
   v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}</span><button class="sm" id="gost">시작 상태</button></div></div>
-  <div class="card"><div class="big">${ed?'기록 수정':'기록 추가'}</div>
+  <div class="card"><div class="big">${ed?'기록 수정':'기록 추가'} ${hb('record')}</div>
     <div class="mut" style="margin-top:6px">종류</div>
     <div class="chips"><button class="chip${gid==null?' on':''}" data-gc="">기준 (변경 없음)</button>${t.groups.map(g=>`<button class="chip${gid===g.id?' on':''}" data-gc="${g.id}">${esc(g.name)}</button>`).join('')}</div>
     ${items.length?`<div class="mut" style="margin-top:8px">항목</div><div class="chips">${items.map(x=>`<button class="chip${iid===x.id?' on':''}" data-ic="${x.id}">${esc(x.name)}</button>`).join('')}</div>`:''}
@@ -887,6 +987,7 @@ function vFind(c,v){
   const all=[...D.gvars,...D.mvars.filter(m=>m.id!=='m:'+c.target)]
   if(!c.use)c.use=D.gvars.filter(x=>new Set(D.rows.map(r=>r.v[x.id])).size>1).map(x=>x.id)
   v.innerHTML=`<div class="card">
+    <div style="float:right">${hb('find')}</div>
     <label class="f">무엇의 공식을 찾을까요?<select id="ft">${t.measures.map(m=>`<option value="${m.id}"${m.id===c.target?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
     <div class="mut" style="margin-top:10px">무엇으로 계산될까요? (분류별 변화량은 세션 처음부터 더한 값)</div>
     <div class="chips">${all.map(x=>`<button class="chip${c.use.includes(x.id)?' on':''}" data-use="${x.id}">${esc(x.name)}</button>`).join('')}</div>
@@ -1205,7 +1306,7 @@ function vOpt(c,v){
   }
   const fsel=(cls,sel,none)=>`<select class="${cls}">${none?`<option value="">${none}</option>`:''}${FL.map(x=>`<option value="${x.key}"${x.key===sel?' selected':''}>${esc(x.label)}</option>`).join('')}</select>`
   v.innerHTML=`<div class="card">
-    <label class="row" style="gap:6px"><input type="checkbox" id="cyOn"${cyc.on?' checked':''}><b>전투 주기로 계산</b> <span class="mut">(일반공격 N번당 스킬 1번, 치명 확률)</span></label>
+    <div class="row" style="gap:6px"><label class="row" style="gap:6px;flex:1"><input type="checkbox" id="cyOn"${cyc.on?' checked':''}><b>전투 주기로 계산</b> <span class="mut">(일반공격 N번당 스킬 1번, 치명 확률)</span></label>${hb('cycle')}</div>
     ${!cyc.on?`<label class="f" style="margin-top:8px">쓸 공식<select id="of">${FL.map(x=>`<option value="${x.key}"${x===pick?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label>
       <div class="formula">${esc(F.formula)}</div>`:`
       <label class="f" style="margin-top:8px">일반공격 공식${fsel('cyN',cyc.normal||pick.key)}</label>
@@ -1223,17 +1324,17 @@ function vOpt(c,v){
       ${cyc.speed==='fcount'||cyc.speed==='fint'?`<label class="f" style="margin-top:8px">속도 공식${fsel('cyv',cyc.speedF)}</label>${cyc.speed==='fint'?`<label class="f" style="margin-top:8px">스킬 시간(초, 선택)<input type="text" class="cyt" value="${esc(cyc.skillTime??'')}" placeholder="0"></label>`:''}`:''}
       ${parts?`<div class="formula">일반 ${fmt(parts.dN)} × 치명 보정 ${fmt(parts.kN,3)} × ${fmt(parts.n)}번 + 스킬 ${fmt(parts.dS)} × ${fmt(parts.kS,3)}<br>= 주기 ${fmt(parts.cycle)}${parts.per?` → ${fmt(parts.r)} ${parts.per}`:''}</div>`:''}`}
   </div>
-  <div class="card"><div class="big">내 상태</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
+  <div class="card"><div class="big">내 상태 ${hb('state')}</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
     <div class="grid" style="margin-top:8px">${used.map(id=>`<label class="f">${esc((byId[id]||{name:id}).name)}<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}"></label>`).join('')}</div>
     <div class="big" style="margin-top:10px">예상 ${esc(objName)}: ${fmt(now)}</div></div>
-  <div class="card"><div class="big">특수 효과</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
+  <div class="card"><div class="big">특수 효과 ${hb('rules')}</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
     ${(o.rules||[]).map((r,k)=>`<div class="list-row" data-rule="${k}">${varSel(r.target,'rt')}<select class="rop2">${['+','='].map(q=>`<option${q===(r.op||'+')?' selected':''}>${q}</option>`).join('')}</select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rrm">✕</button></div>`).join('')}
     <button class="sm" id="addRule">+ 효과</button></div>
-  <div class="card"><div class="big">바꿔 보기</div><div class="mut">무엇을 바꾸면 얼마나 변하는지. 여러 줄을 한 묶음으로 (예: 룬 A 빼고 B 끼기).</div>
+  <div class="card"><div class="big">바꿔 보기 ${hb('whatif')}</div><div class="mut">무엇을 바꾸면 얼마나 변하는지. 여러 줄을 한 묶음으로 (예: 룬 A 빼고 B 끼기).</div>
     ${(o.whatif||[]).map((w,k)=>{const q=whatIf[k];return`<div class="card" style="background:var(--card2)" data-wi="${k}"><div class="list-row"><input type="text" class="wn" value="${esc(w.name||'')}" placeholder="이름 (예: 룬 B로 교체)" style="flex:1"><b>${isFinite(q.r)?pctTxt(q.g):'-'}</b><button class="sm danger wdel">✕</button></div>
       ${rowsUI(w.rows,'w'+k)}<button class="sm ghost wadd">+ 바뀌는 값</button><div class="mut">→ ${fmt(q.r)}</div></div>`}).join('')}
     <button class="sm" id="addWi">+ 바꿔 보기</button></div>
-  <div class="card"><div class="big">최적 셋팅</div><div class="mut">가진 옵션(룬, 장비 …)을 넣고 칸(슬롯)마다 낄 수 있는 개수를 정하면, 가장 높은 조합을 찾아요. 지금 낀 것은 '낌'에 체크하세요.</div>
+  <div class="card"><div class="big">최적 셋팅 ${hb('optimize')}</div><div class="mut">가진 옵션(룬, 장비 …)을 넣고 칸(슬롯)마다 낄 수 있는 개수를 정하면, 가장 높은 조합을 찾아요. 지금 낀 것은 '낌'에 체크하세요.</div>
     ${inv.map((it,k)=>`<div class="card" style="background:var(--card2)" data-iv="${k}"><div class="list-row"><input type="text" class="in" value="${esc(it.name||'')}" placeholder="이름 (예: 공격 룬 +8.5만)" style="flex:1">
       <input type="text" class="isl" value="${esc(it.slot||'')}" placeholder="칸 (룬)" style="width:70px"><label class="row mut" style="gap:4px"><input type="checkbox" class="ion"${it.on?' checked':''}>낌</label><button class="sm danger idel">✕</button></div>
       ${rowsUI(it.rows,'i'+k)}<button class="sm ghost iadd">+ 바뀌는 값</button></div>`).join('')}
