@@ -863,6 +863,12 @@ class OverlayService : Service() {
     /** 수정 중인 기록 id (null = 새 기록) */
     private var labEditId: String? = null
     private var labListOpen = false
+    /** 아이템 끼기(+1)/빼기(-1), 이미 넣은 변화 줄, 이번만 */
+    private val labActs = HashMap<String, Int>()
+    private val labPending = ArrayList<JSONObject>()
+    private var labOnce = false
+    private var labLoadedEdit: String? = "-"
+
     private var labStartOpen = false
 
     private fun labOpen() = labPanel?.visibility == View.VISIBLE
@@ -940,16 +946,32 @@ class OverlayService : Service() {
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
     }
 
-    /** 기록 한 줄 글자: "#3 스킬 데미지 +5% → 데미지 12,345 · 공격력 1,234 (메모)" */
-    private fun labRecText(no: Int, r: JSONObject, groups: List<JSONObject>, measures: List<JSONObject>): String {
-        val gid = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() }
-        val kind = if (gid == null) "기준" else {
-            val g = groups.firstOrNull { it.optString("id") == gid }
-            val iid = r.optString("itemId").takeIf { !r.isNull("itemId") && it.isNotEmpty() }
-            val item = iid?.let { id -> labArr(g, "items").firstOrNull { it.optString("id") == id }?.optString("name") ?: "(지운 항목)" }
-            val ch = r.optDouble("change", 0.0)
-            "${g?.optString("name") ?: "(지운 분류)"}${item?.let { " $it" } ?: ""} ${if (ch >= 0) "+" else ""}${LabData.fmt(ch)}${if (r.optString("unit") == "pct") "%" else ""}"
-        }
+    /** 기록의 변화 목록 (예전 기록은 한 줄짜리) */
+    private fun labChanges(r: JSONObject): List<JSONObject> {
+        r.optJSONArray("changes")?.let { a -> return (0 until a.length()).mapNotNull { a.optJSONObject(it) } }
+        val gid = r.optString("groupId").takeIf { !r.isNull("groupId") && it.isNotEmpty() } ?: return emptyList()
+        if (r.optDouble("change", 0.0) == 0.0) return emptyList()
+        return listOf(JSONObject().put("groupId", gid).put("itemId", r.opt("itemId") ?: JSONObject.NULL)
+            .put("unit", r.optString("unit", "flat")).put("change", r.optDouble("change")))
+    }
+
+    private fun labChangeText(ch: JSONObject, groups: List<JSONObject>): String {
+        val g = groups.firstOrNull { it.optString("id") == ch.optString("groupId") }
+        val iid = ch.optString("itemId").takeIf { !ch.isNull("itemId") && it.isNotEmpty() }
+        val item = iid?.let { id -> labArr(g, "items").firstOrNull { it.optString("id") == id }?.optString("name") ?: "(지운 항목)" }
+        val c = ch.optDouble("change", 0.0)
+        return "${g?.optString("name") ?: "(지운 분류)"}${item?.let { " $it" } ?: ""} ${if (c >= 0) "+" else ""}${LabData.fmt(c)}" +
+            (if (ch.optString("unit") == "pct") "%" else "") + if (ch.optBoolean("once")) " (이번만)" else ""
+    }
+
+    /** 기록 한 줄 글자: "#3 스킬A 끼기, 룬 +5% → 데미지 12,345 (메모)" */
+    private fun labRecText(no: Int, r: JSONObject, groups: List<JSONObject>, measures: List<JSONObject>, items: List<JSONObject>): String {
+        val parts = ArrayList<String>()
+        if (r.has("reset") || r.has("equipSet")) parts += "상태 다시 적기"
+        for (a in labArr(r, "items")) parts += (items.firstOrNull { it.optString("id") == a.optString("itemId") }?.optString("name") ?: "(지운 아이템)") +
+            if (a.optInt("act") > 0) " 끼기" else " 빼기"
+        for (ch in labChanges(r)) if (!ch.has("from")) parts += labChangeText(ch, groups)
+        val kind = parts.joinToString(", ").ifEmpty { "기준" }
         val vals = r.optJSONObject("values")
         val sm = r.optJSONObject("samples")
         val vs = measures.mapNotNull { m -> val id = m.optString("id")
@@ -959,6 +981,30 @@ class OverlayService : Service() {
             } }
         val note = r.optString("note")
         return "#$no $kind → ${vs.joinToString(" · ")}" + if (note.isNotBlank()) "  ($note)" else ""
+    }
+
+    /** 지금 낀 아이템 개수: 시작 때 낀 것 + 기록의 끼기/빼기 (상태 다시 적기는 덮어씀) */
+    private fun labEquipNow(s: JSONObject, exclude: String?): HashMap<String, Int> {
+        val e = HashMap<String, Int>()
+        s.optJSONObject("equip0")?.let { o -> o.keys().forEach { key -> e[key] = o.optDouble(key).toInt() } }
+        for (r in labArr(s, "records")) {
+            if (r.optString("id") == exclude) continue
+            r.optJSONObject("equipSet")?.let { o -> e.clear(); o.keys().forEach { key -> e[key] = o.optDouble(key).toInt() } }
+            for (a in labArr(r, "items")) { val id = a.optString("itemId"); e[id] = maxOf(0, (e[id] ?: 0) + a.optInt("act")) }
+        }
+        return e
+    }
+
+    /** 아이템 끼기/빼기로 실제로 바뀌는 값들 (효과 중복 '하나만'이면 0↔1개일 때만) */
+    private fun labItemChanges(it: JSONObject, act: Int, had: Int): List<JSONObject> {
+        if (it.optString("dupEffect") == "one" && !((act > 0 && had == 0) || (act < 0 && had == 1))) return emptyList()
+        return labArr(it, "effects").mapNotNull { e ->
+            val p = e.optString("vid").split(":")
+            val n = LabData.number(e.optString("val")) ?: return@mapNotNull null
+            if (n == 0.0 || p.size < 4) return@mapNotNull null
+            JSONObject().put("groupId", p[1]).put("itemId", if (p[2].isEmpty()) JSONObject.NULL else p[2])
+                .put("unit", p[3]).put("change", n * act).put("from", it.optString("id"))
+        }
     }
 
     private fun labChip(label: String, on: Boolean, onClick: () -> Unit) = TextView(ui).apply {
@@ -1014,7 +1060,62 @@ class OverlayService : Service() {
             labBody.addView(note("이 세션의 틀이 없거나 '잴 것'이 비어 있습니다. 앱 > 메뉴 > 연구실에서 틀을 고쳐 주세요."))
             return
         }
+        if (labLoadedEdit != labEditId) {
+            labLoadedEdit = labEditId
+            labPending.clear(); labActs.clear(); labOnce = false; labGroup = null
+            if (editing != null) {
+                labChanges(editing).filter { !it.has("from") }.forEach { labPending += JSONObject(it.toString()) }
+                labArr(editing, "items").forEach { labActs[it.optString("itemId")] = it.optInt("act") }
+            }
+        }
         if (editing != null) labBody.addView(note("#${recs.indexOf(editing) + 1} 기록 수정 중"))
+        val tItems = labArr(t, "items")
+        val tSlots = labArr(t, "slots")
+        val eqNow = labEquipNow(s, editing?.optString("id"))
+
+        // 아이템: 누를 때마다 끼기 → 빼기 → 안 함
+        if (tItems.isNotEmpty() || tSlots.isNotEmpty()) {
+            labBody.addView(labLabel("아이템 (누를 때마다 끼기 → 빼기 → 안 함)"))
+            val slotIds = (tSlots.map { it.optString("id") } + tItems.map { it.optString("slotId") }).distinct()
+            for (sid in slotIds) {
+                val slotName = tSlots.firstOrNull { it.optString("id") == sid }?.optString("name") ?: "기타"
+                val row = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                row.addView(TextView(ui).apply { text = slotName; textSize = 11f; setTextColor(Color.parseColor("#9A9DA3")); setPadding(0, 0, dp(6), 0) })
+                for (it in tItems.filter { x -> x.optString("slotId") == sid }) {
+                    val id = it.optString("id"); val a = labActs[id] ?: 0; val had = eqNow[id] ?: 0
+                    row.addView(labChip((if (a > 0) "+ " else if (a < 0) "− " else "") + it.optString("name") + if (had > 0) " (낌$had)" else "", a != 0) {
+                        labActs[id] = if (a == 0) 1 else if (a > 0) -1 else 0
+                        renderLab()
+                    })
+                }
+                // 새 아이템 이름만 바로 추가 (효과는 앱 > 연구실 > 틀 > 아이템에서)
+                row.addView(labChip("+ 아이템", false) {
+                    labAskName("'$slotName' 칸에 아이템 추가 (이름)") { name ->
+                        LabData.update(this@OverlayService) { d ->
+                            val tt = LabData.template(d, t.optString("id")) ?: return@update
+                            (tt.optJSONArray("items") ?: org.json.JSONArray().also { tt.put("items", it) }).put(JSONObject().put("id", LabData.newId())
+                                .put("name", name).put("slotId", sid).put("owned", "1").put("dupMax", "1").put("dupEffect", "all")
+                                .put("effects", org.json.JSONArray()).put("rules", org.json.JSONArray()))
+                        }
+                        toast("'$name' 추가. 효과는 앱 > 연구실 > 틀 > 아이템에서 적어 주세요.")
+                        renderLab()
+                    }
+                })
+                labBody.addView(android.widget.HorizontalScrollView(ui).apply { isHorizontalScrollBarEnabled = false; addView(row) })
+            }
+        }
+
+        // 이미 넣은 변화 줄
+        if (labPending.isNotEmpty()) {
+            labBody.addView(labLabel("바뀐 값"))
+            labPending.toList().forEachIndexed { i, ch ->
+                labBody.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    addView(TextView(ui).apply { text = labChangeText(ch, groups); textSize = 13f; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                    addView(headerButton("✕") { labPending.removeAt(i); renderLab() })
+                })
+            }
+        }
 
         // 종류
         labBody.addView(labLabel("종류"))
@@ -1033,15 +1134,31 @@ class OverlayService : Service() {
 
         // 변경 값 + 값/%
         val changeRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val changeEdit = labInput("변경 값 (+5, -100, 1.2만)",
-            editing?.takeIf { !it.isNull("groupId") }?.let { LabData.fmt(it.optDouble("change")).replace(",", "") } ?: "")
+        val changeEdit = labInput("변경 값 (+5, -100, 1.2만)", "")
         changeRow.addView(changeEdit, LinearLayout.LayoutParams(0, -2, 1f))
         val unitRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
         changeRow.addView(unitRow)
+        val onceBox = android.widget.CheckBox(ui).apply {
+            text = "이번만"; textSize = 12f; setTextColor(Color.parseColor("#D0D2D6")); isChecked = labOnce
+            setOnCheckedChangeListener { _, c -> labOnce = c }
+        }
         val changeBox = LinearLayout(ui).apply {
             orientation = LinearLayout.VERTICAL
             addView(labLabel("변경 값"))
             addView(changeRow)
+            addView(LinearLayout(ui).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                addView(onceBox, LinearLayout.LayoutParams(0, -2, 1f))
+                // 한 기록에 여러 변화 (스킬 교체처럼 동시에 바뀌는 것)
+                addView(headerButton("+ 줄 추가") {
+                    val g = labGroup ?: return@headerButton
+                    val ch = LabData.number(changeEdit.text.toString()) ?: run { toast("변경 값을 적어 주세요."); return@headerButton }
+                    labPending += JSONObject().put("groupId", g).put("itemId", labItem ?: JSONObject.NULL)
+                        .put("unit", if (labPct) "pct" else "flat").put("change", ch).put("once", labOnce)
+                    labOnce = false
+                    renderLab()
+                })
+            })
         }
         labBody.addView(changeBox)
 
@@ -1131,6 +1248,7 @@ class OverlayService : Service() {
         // 저장
         val btnRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(8), 0, 0) }
         if (editing != null) btnRow.addView(headerButton("취소") { labEditId = null; renderLab() })
+        else if (labPending.isNotEmpty() || labActs.values.any { it != 0 }) btnRow.addView(headerButton("비우기") { labPending.clear(); labActs.clear(); labOnce = false; renderLab() })
         btnRow.addView(TextView(ui).apply {
             text = if (editing != null) "수정 저장" else "저장"
             textSize = 14f
@@ -1142,7 +1260,21 @@ class OverlayService : Service() {
             setOnClickListener {
                 val g = labGroup
                 val ch = LabData.number(changeEdit.text.toString())
-                if (g != null && ch == null) { toast("변경 값을 적어 주세요."); return@setOnClickListener }
+                val changes = org.json.JSONArray()
+                labPending.forEach { changes.put(it) }
+                if (g != null && ch != null && ch != 0.0)
+                    changes.put(JSONObject().put("groupId", g).put("itemId", labItem ?: JSONObject.NULL).put("unit", if (labPct) "pct" else "flat").put("change", ch).put("once", labOnce))
+                else if (g != null && changeEdit.text.isNotBlank()) { toast("변경 값에 숫자를 적어 주세요."); return@setOnClickListener }
+                val acts = org.json.JSONArray()
+                for ((id, a) in labActs) {
+                    if (a == 0) continue
+                    val it = tItems.firstOrNull { x -> x.optString("id") == id } ?: continue
+                    val had = eqNow[id] ?: 0
+                    if (a < 0 && had <= 0) { toast("'${it.optString("name")}'은(는) 지금 안 끼고 있어서 뺄 수 없어요."); return@setOnClickListener }
+                    acts.put(JSONObject().put("itemId", id).put("act", a))
+                    labItemChanges(it, a, had).forEach { c -> changes.put(c) }
+                }
+                val first = (0 until changes.length()).map { changes.getJSONObject(it) }.let { l -> l.firstOrNull { !it.optBoolean("once") } ?: l.firstOrNull() }
                 val values = JSONObject(); val samples = JSONObject()
                 measureEdits.forEach { (id, e) ->
                     val a = e.text.toString().trim().split(Regex("[\\s/]+")).mapNotNull { LabData.number(it) }
@@ -1157,10 +1289,12 @@ class OverlayService : Service() {
                 val rec = JSONObject()
                     .put("id", rid)
                     .put("time", editing?.optLong("time") ?: System.currentTimeMillis())
-                    .put("groupId", g ?: JSONObject.NULL)
-                    .put("itemId", (if (g == null) null else labItem) ?: JSONObject.NULL)
-                    .put("change", if (g == null) 0.0 else ch)
-                    .put("unit", if (labPct) "pct" else "flat")
+                    .put("changes", changes)
+                    .put("items", acts)
+                    .put("groupId", first?.opt("groupId") ?: JSONObject.NULL)
+                    .put("itemId", first?.opt("itemId") ?: JSONObject.NULL)
+                    .put("change", first?.optDouble("change") ?: 0.0)
+                    .put("unit", first?.optString("unit") ?: "flat")
                     .put("values", values)
                     .put("samples", samples)
                     .put("skip", editing?.optBoolean("skip") ?: false)
@@ -1173,7 +1307,7 @@ class OverlayService : Service() {
                     if (idx != null) { arr.put(idx, rec); no = idx + 1 } else { arr.put(rec); no = arr.length() }
                 }
                 toast(if (editing != null) "#$no 수정했습니다." else "#$no 저장했습니다.")
-                labEditId = null
+                labEditId = null; labLoadedEdit = "-"; labPending.clear(); labActs.clear(); labOnce = false
                 renderLab()
             }
         })
@@ -1243,7 +1377,7 @@ class OverlayService : Service() {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(0, dp(3), 0, dp(3))
                     addView(TextView(ui).apply {
-                        text = labRecText(i + 1, r, groups, measures)
+                        text = labRecText(i + 1, r, groups, measures, labArr(t, "items"))
                         textSize = 12f
                         setTextColor(if (r.optString("id") == labEditId) LAB_ACC else Color.parseColor("#D0D2D6"))
                         layoutParams = LinearLayout.LayoutParams(0, -2, 1f)

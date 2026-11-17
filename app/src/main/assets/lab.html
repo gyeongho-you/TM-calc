@@ -208,13 +208,17 @@ function fitModels(vars,X,y,tol){
       p=>'결과 = ('+coef(p[0])+F.map((i,j)=>term(p[1+j],i)).join('')+') × (1'+P.map((i,j)=>term(p[1+F.length+j],i)+pc(i)).join('')+')',true,sp2)
     // 3) %를 묶어서 곱: 분류별 / 항목별 / 하나하나 (같은 묶음 안의 %는 더함)
     const seen=new Set([JSON.stringify([P])])
-    for(const [mname,mdesc,key] of [
+    const named=[
       ['분류별 곱','같은 분류(룬, 스킬 …)의 %는 더하고, 분류끼리는 곱함',i=>vars[i].cat||'(분류 없음)'],
       ['항목별 곱','같은 항목(공격력, 데미지 …)의 %는 분류가 달라도 더하고, 항목끼리는 곱함',i=>vars[i].item||vars[i].name],
-      ['% 하나하나 곱','모든 %를 각각 따로 곱함',i=>vars[i].name]]){
-      const keys=[...new Set(P.map(key))]
-      if(keys.length<2)continue
-      const g=keys.map(k=>P.filter(i=>key(i)===k))
+      ['% 하나하나 곱','모든 %를 각각 따로 곱함',i=>vars[i].name]].map(([n,d,key])=>{const keys=[...new Set(P.map(key))];return[n,d,keys.map(k=>P.filter(i=>key(i)===k))]})
+    // % 가 4개 이하면 묶는 방법을 전부 시험 (어떤 % 끼리 더해지고 어떤 것끼리 곱해지는지)
+    const parts=[]
+    if(P.length<=4){const rec=(k,acc)=>{if(k===P.length){parts.push(acc.map(g=>g.slice()));return}
+        for(const g of acc){g.push(P[k]);rec(k+1,acc);g.pop()}acc.push([P[k]]);rec(k+1,acc);acc.pop()};rec(0,[])}
+    const cands=[...named,...parts.map(g=>['묶음 곱','괄호 안의 %는 더하고, 괄호끼리는 곱함',g])]
+    for(const [mname,mdesc,g] of cands){
+      if(g.length<2)continue
       const sig=JSON.stringify(g);if(seen.has(sig))continue;seen.add(sig)
       const sp3={type:'grp',F,g},f3=makeF(sp3)
       const q0=[p[0],...F.map((_,j)=>p[1+j]),...g.flat().map(i=>p[1+F.length+P.indexOf(i)])]
@@ -586,6 +590,30 @@ function nums(text){return String(text||'').trim().split(/[\s/]+/).map(num).filt
 /** 기록의 잰 값 하나: 여러 번이면 평균 */
 const mval=(r,mid)=>{const a=r.samples&&r.samples[mid];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:r.values[mid]}
 const mtext=(r,mid)=>{const a=r.samples&&r.samples[mid];return a&&a.length>1?`${fmt(mval(r,mid))} <span class="mut">(${a.length}회)</span>`:fmt(r.values[mid])}
+/** 기록의 변화 목록 (예전 기록은 한 줄짜리) */
+const changesOf=r=>Array.isArray(r.changes)?r.changes:(r.groupId&&r.change?[{groupId:r.groupId,itemId:r.itemId||null,unit:r.unit||'flat',change:r.change}]:[])
+const vkey=ch=>'g:'+ch.groupId+':'+(ch.itemId||'')+':'+(ch.unit||'flat')
+/** 틀의 모든 변수 (분류·항목 × 값/%) */
+function tplVars(t){
+  const out=[]
+  for(const g of t.groups){const its=(g.items||[]).length?g.items:[null]
+    for(const it of its)for(const u of['flat','pct'])out.push({id:'g:'+g.id+':'+(it?it.id:'')+':'+u,name:g.name+(it?' '+it.name:'')+(u==='pct'?' %':' 변화'),unit:u})}
+  return out
+}
+/** 지금 낀 아이템 개수: 시작 때 낀 것 + 기록의 끼기/빼기 (exclude: 수정 중인 기록은 빼고) */
+function equipNow(s,exclude){
+  const e={...(s.equip0||{})}
+  for(const r of s.records){if(r.id===exclude)continue
+    if(r.equipSet){for(const k in e)delete e[k];Object.assign(e,r.equipSet)}
+    for(const a of r.items||[])e[a.itemId]=Math.max(0,(e[a.itemId]||0)+a.act)}
+  return e
+}
+/** 아이템 끼기/빼기 → 실제로 바뀌는 값들 (효과 중복 '하나만' 이면 0↔1 개일 때만) */
+function itemChanges(it,act,had){
+  if(it.dupEffect==='one'&&!((act>0&&had===0)||(act<0&&had===1)))return[]
+  return(it.effects||[]).map(e=>{const p=e.vid.split(':'),n=num(e.val)
+    return isFinite(n)&&n?{groupId:p[1],itemId:p[2]||null,unit:p[3]||'flat',change:n*act,from:it.id}:null}).filter(Boolean)
+}
 const tpl=id=>data.templates.find(t=>t.id===id)
 const ses=id=>data.sessions.find(s=>s.id===id)
 const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
@@ -666,10 +694,35 @@ const HELP={
 <p>"이걸 바꾸면 얼마나 세질까?"를 바로 계산해요. 한 묶음에 여러 줄을 넣을 수 있어요.</p>
 <p>줄마다: 무엇을 · + 더하기 / − 빼기 / = 이 값으로 · 얼마나</p>
 <div class="ex"><b>예시</b> "룬 A(공격 +200) 빼고 룬 B(데미지 +15%) 끼기"<br>줄1: 룬 변화 − 200<br>줄2: 룬 % + 15<br>→ <b>+4.2%</b> 처럼 지금 대비 증감이 나와요.</div>`],
+  measureStatus:['측정 현황',`
+<p>공식을 정확히 찾으려면 <b>무엇을 더 재야 하는지</b> 알려 줘요.</p>
+<p><b>바꾼 횟수</b>: 이 항목을 바꾼 기록 수<br><b>크기 종류</b>: 서로 다른 크기로 바꾼 가짓수 (+3%, +5%, +10% 이면 3)<br>
+<b>겹침</b>: 이미 붙어 있는 상태에서 또 바꾼 적 (합연산/곱연산 구분에 필요)</p>
+<p>✓ 충분 · △ 조금 더 · ✗ 아직 안 잼<br>아이템은 한 번이라도 끼거나 빼 본 기록이 있으면 ✓예요.</p>`],
+  resetState:['상태 다시 적기',`
+<p>며칠 뒤 이어서 기록할 때, <b>지난번 셋팅을 똑같이 맞추기 어렵다면</b> 이걸 써요.</p>
+<p>지금 상태창에 보이는 값(분류·항목별)과 지금 낀 아이템을 그대로 적으면, 그 시점부터 기준이 다시 잡혀요. 그 뒤로는 평소처럼 바꾼 것만 기록하면 돼요.</p>
+<div class="ex"><b>예시</b><br>어제: 스킬 데미지 30%, 룬 공격 +500 까지 기록<br>오늘: 셋팅이 바뀌어서 스킬 데미지 45%, 룬 +320 → [상태 다시 적기]에 45, 320 을 적고 저장<br>→ 이어서 "룬 +100" 같은 기록을 계속하면 돼요.</div>
+<p>칸에는 기록으로 계산한 지금 값이 미리 들어 있어요. 달라진 칸만 고치면 돼요.</p>`],
+  slots:['칸이란?',`
+<p>동시에 낄 수 있는 수에 <b>제한이 있는 묶음</b>이에요.</p>
+<p><b>최대 개수</b>: 스킬 칸 1개, 룬 칸 6개처럼 개수로 제한<br><b>코스트 합</b>: 총 코스트 20 안에서 (아이템마다 코스트를 적어요)</p>
+<div class="ex"><b>예시</b><br>스킬 · 최대 개수 · 1<br>룬 · 최대 개수 · 6<br>펫 · 코스트 합 · 20</div>`],
+  items:['아이템이란?',`
+<p>스킬, 룬, 장비처럼 <b>끼고 빼는 것</b>을 이름으로 등록해요. 낄 때 바뀌는 값(효과)을 적어 두면:</p>
+<p>· 기록할 때 [+ 스킬A]처럼 누르기만 하면 효과가 알아서 들어가요<br>· 최적화가 이 목록에서 가장 센 조합을 찾아요</p>
+<p><b>가진 개수</b>: 같은 걸 몇 개 가지고 있는지<br><b>같은 것 최대 착용</b>: 같은 걸 동시에 몇 개까지 낄 수 있는지 (중복 불가면 1)<br>
+<b>효과 중복</b>: 같은 걸 2개 끼면 효과가 둘 다 적용되는지, 하나만 적용되는지</p>
+<div class="ex"><b>예시</b> 스킬A (칸: 스킬)<br>효과: 스킬 공격력 % +10, 스킬 데미지 % +5</div>
+<p>틀 [내보내기]로 아이템 목록을 파일로 주고받을 수 있어요.</p>`],
+  itemRule:['아이템 특수 능력',`
+<p>효과가 고정 숫자가 아니라 <b>다른 값에 따라 달라질 때</b> 식으로 적어요. 이 아이템을 꼈을 때만 적용돼요.</p>
+<div class="ex"><b>예시</b> "마력의 10%만큼 공격력 증가"<br>대상: 공격력 변화 · + · <code>[마력] * 0.1</code></div>
+<p><b>조건이 있어야 켜지는 능력</b>("체력 50% 이하일 때" 등)은 체크해 두면, 최적화 화면에서 켬/끔을 골라 두 경우를 각각 계산해 볼 수 있어요.</p>`],
   optimize:['최적 셋팅',`
-<p>가진 옵션들 중 <b>가장 센 조합</b>을 찾아 줘요.</p>
-<p>옵션마다: 이름 · <b>칸</b>(룬, 무기 … 같은 칸끼리 개수 제한) · <b>낌</b>(지금 끼고 있으면 체크) · 바뀌는 값<br>
-아래 "칸 최대"에 칸마다 낄 수 있는 개수를 적고 [최적 조합 찾기]를 눌러요.</p>
+<p>틀에 등록한 아이템들 중 <b>칸 제한 안에서 가장 센 조합</b>을 찾아 줘요. 1~3등까지 보여 줘요.</p>
+<p>지금 낀 것은 시작 상태의 "낀 아이템" + 기록의 끼기/빼기로 자동으로 계산해요.</p>
+<p><b>확인 표시</b>: ✓ 기록에서 껴 봐서 확인됨 / △ 적어 둔 수치로만 계산 / ✗ 공식에 없는 값이 있어 그 부분은 계산 못 함</p>
 <div class="ex"><b>예시</b> 룬 칸 2개, 가진 룬 4개<br>룬A 공격+200 (낌) / 룬B 공격%+15 / 룬C 공격+50 (낌) / 룬D 무기%+5<br>
 → 결과: <b>넣기 룬B, 빼기 룬C, +8.7%</b></div>
 <p>옵션이 아주 많으면 지금 셋팅에서 하나씩 바꿔 보며 좋아지는 쪽으로 찾아요 (그때는 화면에 그렇게 표시돼요).</p>`],
@@ -695,7 +748,7 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt})[c.v](c,$('#view'))
+  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems})[c.v](c,$('#view'))
 }
 
 // ---------------------------------------------------------------- 처음 화면: 세션 + 틀
@@ -726,10 +779,11 @@ function vHome(c,v){
       <div class="big">${esc(t.name)}</div>
       <div class="mut">분류: ${t.groups.map(g=>esc(g.name)+((g.items||[]).length?'('+g.items.map(x=>esc(x.name)+(x.reduce?'[감소]':'')).join('·')+')':(g.reduce?'[감소]':''))).join(', ')||'-'}</div>
       <div class="mut">잴 것: ${t.measures.map(m=>esc(m.name)).join(', ')||'-'}</div>
-      <div class="row" style="margin-top:8px"><button class="sm" data-tedit="${t.id}">수정</button><button class="sm danger" data-tdel="${t.id}">삭제</button>
+      <div class="mut">아이템: ${(t.items||[]).length}개 · 칸: ${(t.slots||[]).map(q=>esc(q.name)).join(', ')||'-'}</div>
+      <div class="row" style="margin-top:8px"><button class="sm" data-tedit="${t.id}">수정</button><button class="sm" data-titems="${t.id}">아이템</button><button class="sm" data-texp="${t.id}">내보내기</button><button class="sm danger" data-tdel="${t.id}">삭제</button>
       <span class="mut">세션 ${data.sessions.filter(s=>s.templateId===t.id).length}개가 사용 중</span></div></div>`).join('')
     :`<div class="card empty">틀이 없어요. 무엇을 바꿔 가며(분류) 무엇을 잴지(잴 것) 정해 두는 거예요.<br><button class="pri" id="nT2" style="margin-top:10px">틀 만들기</button></div>`}
-  <div class="row" style="margin-top:20px"><button class="sm" id="imp">세션 불러오기</button><button class="sm" id="sample">예시 세션 넣기</button></div>`
+  <div class="row" style="margin-top:20px"><button class="sm" id="imp">세션·틀 불러오기</button><button class="sm" id="sample">예시 세션 넣기</button></div>`
   $('#nS').onclick=()=>data.templates.length?go({v:'newSes'}):(alert('먼저 틀을 만들어 주세요.'),go({v:'tpl',id:null}))
   $('#nT').onclick=()=>go({v:'tpl',id:null})
   const n2=$('#nT2');if(n2)n2.onclick=()=>go({v:'tpl',id:null})
@@ -757,6 +811,11 @@ function vHome(c,v){
     if(BR)return TMCalc.saveFile(name,text)
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()})
   v.querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>go({v:'tpl',id:b.dataset.tedit}))
+  v.querySelectorAll('[data-titems]').forEach(b=>b.onclick=()=>go({v:'items',id:b.dataset.titems}))
+  v.querySelectorAll('[data-texp]').forEach(b=>b.onclick=()=>{const t=tpl(b.dataset.texp)
+    const text=JSON.stringify({kind:'tmcalc-lab-template',exported:new Date().toISOString(),template:t},null,1),name='틀_'+t.name.replace(/[\\/:*?"<>|]/g,'_')+'.json'
+    if(BR)return TMCalc.saveFile(name,text)
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()})
   v.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{const t=tpl(b.dataset.tdel),n=data.sessions.filter(s=>s.templateId===t.id).length
     if(!confirm(`'${t.name}' 틀을 지울까요?`+(n?`\n이 틀을 쓰는 세션 ${n}개는 분류·잴 것 이름을 잃어요 (기록 숫자는 남음).`:'')))return
     mutate(d=>d.templates=d.templates.filter(q=>q.id!==t.id));render()})
@@ -765,7 +824,16 @@ function vHome(c,v){
 }
 function importText(text){
   try{
-    const o=JSON.parse(text);if(o.kind!=='tmcalc-lab-session'||!o.session)throw 0
+    const o=JSON.parse(text)
+    if(o.kind==='tmcalc-lab-template'&&o.template){
+      // 같은 틀(같은 id)이 있으면 바꿔 끼울지 묻는다 (아이템 목록 주고받기)
+      mutate(d=>{const i=d.templates.findIndex(t=>t.id===o.template.id)
+        if(i<0)d.templates.push(o.template)
+        else if(confirm(`'${d.templates[i].name}' 틀이 이미 있어요. 불러온 것으로 바꿀까요? (취소하면 새 틀로 추가)`))d.templates[i]=o.template
+        else d.templates.push({...o.template,id:uid(),name:o.template.name+' (불러옴)'})})
+      toast('틀을 불러왔어요.');nav=[{v:'home'}];render();return
+    }
+    if(o.kind!=='tmcalc-lab-session'||!o.session)throw 0
     mutate(d=>{
       let tid=o.template&&o.template.id
       if(o.template&&!d.templates.some(t=>t.id===tid))d.templates.push(o.template)
@@ -774,7 +842,7 @@ function importText(text){
       d.sessions.push(s)
     })
     toast('세션을 불러왔어요.');nav=[{v:'home'}];render()
-  }catch(_){alert('연구실 세션 파일이 아니에요.')}
+  }catch(_){alert('연구실 세션·틀 파일이 아니에요.')}
 }
 window.onPickedFile=importText
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''}
@@ -859,6 +927,63 @@ function vNewSes(c,v){
   $('#sgo').onclick=()=>make(true);$('#smk').onclick=()=>make(false)
 }
 
+// ---------------------------------------------------------------- 칸·아이템 (틀에 저장 → 기록의 끼기/빼기, 최적화)
+function vItems(c,v){
+  const t=tpl(c.id);if(!t)return back()
+  $('#title').textContent=t.name+' · 아이템'
+  const slots=t.slots||[],items=t.items||[],tv=tplVars(t)
+  const vsel=(sel,cls)=>`<select class="${cls}">${tv.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
+  v.innerHTML=`<div class="card"><div class="big">칸 ${hb('slots')}</div><div class="mut">같이 낄 수 있는 개수나 코스트에 제한이 있는 묶음 (스킬 칸, 룬 칸 …)</div>
+    ${slots.map((q,k)=>`<div class="list-row" data-sl="${k}"><input type="text" class="sn" value="${esc(q.name)}" placeholder="칸 이름 (룬)" style="flex:1">
+      <select class="sm2"><option value="count"${q.mode!=='cost'?' selected':''}>최대 개수</option><option value="cost"${q.mode==='cost'?' selected':''}>코스트 합</option></select>
+      <input type="text" class="sx" value="${esc(q.max??'')}" placeholder="6" style="width:60px"><button class="sm danger sdl">✕</button></div>`).join('')}
+    <button class="sm" id="addSl">+ 칸</button></div>
+  <h2>아이템 ${items.length}개 ${hb('items')}<span class="sp"></span><button class="sm pri" id="addIt"${slots.length?'':' disabled'}>+ 아이템</button></h2>
+  ${slots.length?'':'<div class="card empty">먼저 칸을 만들어 주세요.</div>'}
+  ${items.map((it,k)=>{const sl=slots.find(q=>q.id===it.slotId)
+    return`<div class="card" data-it="${k}">
+    <div class="list-row"><input type="text" class="in" value="${esc(it.name)}" placeholder="이름 (스킬A, 화염 룬, 3번 노드 …)" style="flex:1"><button class="sm danger idl">✕</button></div>
+    <input type="text" class="ids" value="${esc(it.desc||'')}" placeholder="설명 (선택, 게임 설명문 그대로)" style="width:100%;margin-top:6px">
+    <div class="grid" style="margin-top:6px">
+      <label class="f">칸<select class="isl">${slots.map(q=>`<option value="${q.id}"${q.id===it.slotId?' selected':''}>${esc(q.name)}</option>`).join('')}</select></label>
+      ${sl&&sl.mode==='cost'?`<label class="f">코스트<input type="text" class="ico" value="${esc(it.cost??'')}" placeholder="1"></label>`:''}
+      <label class="f">가진 개수<input type="text" class="iow" value="${esc(it.owned??'1')}"></label>
+      <label class="f">같은 것 최대 착용<input type="text" class="idm" value="${esc(it.dupMax??'1')}"></label>
+      <label class="f">효과 중복<select class="ide"><option value="all"${it.dupEffect!=='one'?' selected':''}>둘 다 적용</option><option value="one"${it.dupEffect==='one'?' selected':''}>하나만 적용</option></select></label></div>
+    <div class="mut" style="margin-top:8px">효과 (낄 때 바뀌는 값)</div>
+    ${(it.effects||[]).map((e,j)=>`<div class="list-row" data-ef="${j}">${vsel(e.vid,'ev')}<input type="text" class="eval" value="${esc(e.val??'')}" placeholder="+10" style="width:90px"><button class="sm danger edl">✕</button></div>`).join('')}
+    <button class="sm ghost eadd">+ 효과</button>
+    <div class="mut" style="margin-top:8px">특수 능력 (선택) ${hb('itemRule')}</div>
+    ${(it.rules||[]).map((r,j)=>`<div class="list-row" data-ru="${j}">${vsel(r.target,'rt')}<select class="rop"><option${(r.op||'+')==='+'?' selected':''}>+</option><option${r.op==='='?' selected':''}>=</option></select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rdl">✕</button></div>`).join('')}
+    <button class="sm ghost radd">+ 특수 능력</button>
+    <label class="row mut" style="gap:4px;margin-top:6px"><input type="checkbox" class="icd"${it.cond?' checked':''}>조건이 있어야 켜지는 능력 (최적화에서 켬/끔으로 계산)</label>
+  </div>`}).join('')}`
+  const upd=f=>{mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(T){T.slots=T.slots||[];T.items=T.items||[];f(T)}});render()}
+  $('#addSl').onclick=()=>upd(T=>T.slots.push({id:uid(),name:'',mode:'count',max:''}))
+  v.querySelectorAll('[data-sl]').forEach(el=>{const k=+el.dataset.sl
+    el.querySelector('.sn').onchange=e=>upd(T=>T.slots[k].name=e.target.value.trim())
+    el.querySelector('.sm2').onchange=e=>upd(T=>T.slots[k].mode=e.target.value)
+    el.querySelector('.sx').onchange=e=>upd(T=>T.slots[k].max=e.target.value)
+    el.querySelector('.sdl').onclick=()=>{if(confirm('이 칸을 지울까요? (이 칸의 아이템은 남아요)'))upd(T=>T.slots.splice(k,1))}})
+  const ai=$('#addIt');if(ai)ai.onclick=()=>upd(T=>T.items.push({id:uid(),name:'',slotId:(slots[0]||{}).id,owned:'1',dupMax:'1',dupEffect:'all',effects:[{vid:(tv[0]||{}).id,val:''}],rules:[]}))
+  v.querySelectorAll('[data-it]').forEach(el=>{const k=+el.dataset.it,I=T=>T.items[k]
+    const on=(cls,f,ev='onchange')=>{const x=el.querySelector('.'+cls);if(x)x[ev]=e=>upd(T=>f(I(T),e.target))}
+    on('in',(it,x)=>it.name=x.value.trim());on('ids',(it,x)=>it.desc=x.value);on('isl',(it,x)=>it.slotId=x.value);on('ico',(it,x)=>it.cost=x.value)
+    on('iow',(it,x)=>it.owned=x.value);on('idm',(it,x)=>it.dupMax=x.value);on('ide',(it,x)=>it.dupEffect=x.value);on('icd',(it,x)=>it.cond=x.checked)
+    el.querySelector('.idl').onclick=()=>{if(confirm('이 아이템을 지울까요?'))upd(T=>T.items.splice(k,1))}
+    el.querySelector('.eadd').onclick=()=>upd(T=>(I(T).effects=I(T).effects||[]).push({vid:(tv[0]||{}).id,val:''}))
+    el.querySelectorAll('[data-ef]').forEach(r=>{const j=+r.dataset.ef
+      r.querySelector('.ev').onchange=e=>upd(T=>I(T).effects[j].vid=e.target.value)
+      r.querySelector('.eval').onchange=e=>upd(T=>I(T).effects[j].val=e.target.value)
+      r.querySelector('.edl').onclick=()=>upd(T=>I(T).effects.splice(j,1))})
+    el.querySelector('.radd').onclick=()=>upd(T=>(I(T).rules=I(T).rules||[]).push({target:(tv[0]||{}).id,op:'+',expr:''}))
+    el.querySelectorAll('[data-ru]').forEach(r=>{const j=+r.dataset.ru
+      r.querySelector('.rt').onchange=e=>upd(T=>I(T).rules[j].target=e.target.value)
+      r.querySelector('.rop').onchange=e=>upd(T=>I(T).rules[j].op=e.target.value)
+      r.querySelector('.rex').onchange=e=>upd(T=>I(T).rules[j].expr=e.target.value)
+      r.querySelector('.rdl').onclick=()=>upd(T=>I(T).rules.splice(j,1))})})
+}
+
 // ---------------------------------------------------------------- 시작 상태: 세션을 시작할 때 이미 붙어 있던 양
 /** 시작 상태 칸 목록: 분류(항목) × 값/% → key "분류id:항목id:flat|pct" */
 function startSlots(t){
@@ -871,10 +996,15 @@ function startSlots(t){
 }
 function vStart(c,v){
   const s=ses(c.id);if(!s)return back()
-  const t=tpl(s.templateId)||{groups:[]},st=s.start||{}
-  $('#title').textContent=s.name+' · 시작 상태'
+  const t=tpl(s.templateId)||{groups:[]}
+  // 다시 적기: 지금(마지막 기록 기준) 값을 보여 주고, 저장하면 '상태 다시 적기' 기록이 추가된다
+  const D0=c.reset?sessionData(s):null,lastV=c.reset&&D0.rows.length?D0.rows[D0.rows.length-1].v:{}
+  const st=c.reset?Object.fromEntries(Object.entries(lastV).filter(([k])=>k.startsWith('g:')&&!k.endsWith('*')).map(([k,v])=>[k.slice(2),v])):(s.start||{})
+  const eqShow=c.reset?equipNow(s):(s.equip0||{})
+  $('#title').textContent=s.name+(c.reset?' · 상태 다시 적기':' · 시작 상태')
   const sl=startSlots(t)
-  v.innerHTML=`<div class="card"><div class="big">세션을 시작할 때 이미 붙어 있던 양 ${hb('startState')}</div>
+  v.innerHTML=`<div class="card"><div class="big">${c.reset?'지금 상태 다시 적기':'세션을 시작할 때 이미 붙어 있던 양'} ${hb(c.reset?'resetState':'startState')}</div>
+    ${c.reset?'<div class="mut">예전 셋팅을 똑같이 맞추기 어려울 때 써요. 지금 상태창 값과 낀 아이템을 그대로 적으면, 이 시점부터 기준이 다시 잡혀요. (지금 칸에는 기록으로 계산한 값이 들어 있어요. 다른 칸만 고치세요)</div>':''}
     <div class="mut">상태창 등에서 보이는 지금 값을 적어요. 모르는 칸은 비워 두면 그 항목은 바꾼 양(변화량)만으로 계산해요.<br>
     적어 두면 공식 찾기가 실제 총량으로 계산해서 계수가 깔끔해지고, 합연산/곱연산도 더 정확히 가려요.</div>
     ${c.fresh?'<div class="mut good" style="margin-top:6px">세션을 만들었어요. 시작 상태를 적고 저장하세요 (나중에 해도 돼요).</div>':''}
@@ -883,68 +1013,132 @@ function vStart(c,v){
         <td><input type="text" inputmode="decimal" data-sk="${x.key}:flat" value="${isFinite(st[x.key+':flat'])?st[x.key+':flat']:''}" style="width:110px;text-align:right" placeholder="모름"></td>
         <td><input type="text" inputmode="decimal" data-sk="${x.key}:pct" value="${isFinite(st[x.key+':pct'])?st[x.key+':pct']:''}" style="width:80px;text-align:right" placeholder="모름"></td></tr>`).join('')}</table></div>`
       :'<div class="empty">틀에 분류가 없어요.</div>'}
+    ${(t.items||[]).length?`<div class="big" style="margin-top:16px">시작할 때 낀 아이템</div><div class="mut">개수를 적어요 (안 꼈으면 비움). 기록에서 [빼기]를 하려면 여기 낀 걸로 되어 있어야 해요.</div>
+      <div class="grid" style="margin-top:8px">${t.items.map(it=>`<label class="f">${esc(it.name)}<input type="text" data-eq="${it.id}" value="${eqShow[it.id]||''}" placeholder="0"></label>`).join('')}</div>`:''}
+    ${c.reset?`<div class="big" style="margin-top:16px">지금 잰 값 (선택)</div><div class="grid" style="margin-top:8px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-rmv="${m.id}"></label>`).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="pri" id="ss">저장</button><button id="sc">${c.fresh?'나중에':'취소'}</button></div></div>`
   $('#sc').onclick=()=>c.fresh?(nav=[{v:'home'}],render()):back()
   $('#ss').onclick=()=>{
     const o={};v.querySelectorAll('[data-sk]').forEach(e=>{const n=num(e.value);if(isFinite(n))o[e.dataset.sk]=n})
-    mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.start=o})
+    const eqv={};v.querySelectorAll('[data-eq]').forEach(e=>{const n=num(e.value);if(isFinite(n)&&n>0)eqv[e.dataset.eq]=n})
+    if(c.reset){
+      const values={},samples={};v.querySelectorAll('[data-rmv]').forEach(e=>{const a=nums(e.value);if(!a.length)return;values[e.dataset.rmv]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)samples[e.dataset.rmv]=a})
+      mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.records.push({id:uid(),time:Date.now(),changes:[],items:[],reset:o,equipSet:eqv,values,samples,note:'상태 다시 적기'})})
+      toast('상태를 다시 적었어요. 여기서부터 이어서 기록하세요.');return back()
+    }
+    mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x){x.start=o;x.equip0=eqv}})
     toast('시작 상태를 저장했어요.');c.fresh?(nav=[{v:'home'}],render()):back()}
 }
 
 // ---------------------------------------------------------------- 기록 보기/고치기
 function recText(t,r){
-  const G=r.groupId?(t&&t.groups.find(x=>x.id===r.groupId)):null
-  if(!r.groupId)return'기준 (변경 없음)'
-  const it=r.itemId?((G&&(G.items||[]).find(x=>x.id===r.itemId))||{name:'(지운 항목)'}).name:''
-  return`${G?G.name:'(지운 분류)'}${it?' '+it:''} ${r.change>=0?'+':''}${fmt(r.change)}${r.unit==='pct'?'%':''}`
+  const parts=[]
+  if(r.reset||r.equipSet)parts.push('상태 다시 적기')
+  for(const a of r.items||[]){const it=(t&&t.items||[]).find(x=>x.id===a.itemId);parts.push(`${it?it.name:'(지운 아이템)'} ${a.act>0?'끼기':'빼기'}`)}
+  for(const ch of changesOf(r)){if(ch.from)continue
+    const G=t&&t.groups.find(x=>x.id===ch.groupId)
+    const it=ch.itemId?((G&&(G.items||[]).find(x=>x.id===ch.itemId))||{name:'(지운 항목)'}).name:''
+    parts.push(`${G?G.name:'(지운 분류)'}${it?' '+it:''} ${ch.change>=0?'+':''}${fmt(ch.change)}${ch.unit==='pct'?'%':''}${ch.once?' (이번만)':''}`)}
+  return parts.length?parts.join(', '):'기준 (변경 없음)'
+}
+/** 측정 현황: 틀의 분류·항목(값/%)과 아이템마다 얼마나 측정했는지, 뭐가 더 필요한지 */
+function measureStatus(s,t){
+  const out=[],tv=tplVars(t),stat={}
+  for(const r of s.records)for(const ch of changesOf(r)){if(!ch.change)continue;const k=vkey(ch);const o=stat[k]=stat[k]||{n:0,sizes:new Set()};o.n++;o.sizes.add(Math.abs(ch.change))}
+  // 겹침: 같은 항목이 0이 아닌 상태에서 또 바뀐 적
+  const acc={},stacked=new Set()
+  for(const x of tv){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0))acc[x.id]=s0}
+  for(const r of s.records){for(const [k,v] of Object.entries(r.reset||{}))acc['g:'+k]=v
+    for(const ch of changesOf(r)){if(!ch.change||ch.once)continue;const k=vkey(ch);if(acc[k])stacked.add(k);acc[k]=(acc[k]||0)+ch.change}}
+  for(const x of tv){const o=stat[x.id];if(!o&&x.unit==='flat'&&tv.some(q=>q.id===x.id.replace(/flat$/,'pct')&&stat[q.id]))continue   // %만 쓰는 항목은 값 줄 생략
+    if(!o&&x.unit==='pct'&&tv.some(q=>q.id===x.id.replace(/pct$/,'flat')&&stat[q.id]))continue
+    const n=o?o.n:0,sizes=o?o.sizes.size:0,st=stacked.has(x.id),need=[]
+    if(!n)need.push('한 번도 안 바꿈: 이것만 바꿔서 기록')
+    else{if(sizes<3)need.push(`크기 ${3-sizes}가지 더 (예: 다른 크기로)`);if(x.unit==='pct'&&!st)need.push('겹쳐서 한 번 (합/곱 확인)')}
+    out.push({name:x.name.replace(/ 변화$/,' (값)'),n,sizes,stack:st,k:!n?'none':need.length?'part':'ok',need:need.join(' · ')||'충분해요'})}
+  const tested=new Set(s.records.flatMap(r=>(r.items||[]).map(a=>a.itemId)))
+  for(const it of t.items||[])out.push({name:'[아이템] '+it.name,n:s.records.filter(r=>(r.items||[]).some(a=>a.itemId===it.id)).length,sizes:'',stack:false,
+    k:tested.has(it.id)?'ok':'none',need:tested.has(it.id)?'충분해요':'한 번 껴 보거나 빼 보고 기록 (적어 둔 효과가 맞는지 확인)'})
+  return out
 }
 function vRecs(c,v){
   const s=ses(c.id);if(!s)return back()
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   $('#title').textContent=s.name+' · 기록'
   const ed=c.edit?s.records.find(r=>r.id===c.edit):null
+  // 입력 중인 내용 (다시 그려도 남게 c 에 둔다)
+  if(c.rows==null||c.loaded!==(c.edit||'')){
+    c.loaded=c.edit||''
+    c.rows=ed?changesOf(ed).filter(ch=>!ch.from).map(ch=>({gi:ch.groupId+':'+(ch.itemId||''),unit:ch.unit||'flat',val:String(ch.change),once:!!ch.once})):[]
+    c.acts=ed?Object.fromEntries((ed.items||[]).map(a=>[a.itemId,a.act])):{}
+  }
   const sus=new Set((s.findings||[]).flatMap(f=>f.suspects||[]))
   const last=s.records[s.records.length-1]
-  const unit=ed?ed.unit:(c.unit||'flat'),gid=ed?ed.groupId:(c.group??null)
-  const items=gid?((t.groups.find(g=>g.id===gid)||{}).items||[]):[]
-  let iid=ed?(ed.itemId||null):(c.item??null);if(iid&&!items.some(x=>x.id===iid))iid=null
-  if(!iid&&items.length)iid=items[0].id
+  const eq=equipNow(s,ed&&ed.id)
+  const gis=t.groups.flatMap(g=>((g.items||[]).length?g.items:[null]).map(it=>({v:g.id+':'+(it?it.id:''),name:g.name+(it?' '+it.name:'')})))
+  const items=t.items||[],slots=t.slots||[]
   const stTxt=startSlots(t).flatMap(x=>['flat','pct'].filter(u=>isFinite((s.start||{})[x.key+':'+u])).map(u=>`${x.label} ${fmt(s.start[x.key+':'+u])}${u==='pct'?'%':''}`))
-  v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}</span><button class="sm" id="gost">시작 상태</button></div></div>
+  const slotName=id=>(slots.find(q=>q.id===id)||{name:'기타'}).name
+  v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}</span><button class="sm" id="gost">시작 상태</button><button class="sm" id="goreset">상태 다시 적기</button></div></div>
   <div class="card"><div class="big">${ed?'기록 수정':'기록 추가'} ${hb('record')}</div>
-    <div class="mut" style="margin-top:6px">종류</div>
-    <div class="chips"><button class="chip${gid==null?' on':''}" data-gc="">기준 (변경 없음)</button>${t.groups.map(g=>`<button class="chip${gid===g.id?' on':''}" data-gc="${g.id}">${esc(g.name)}</button>`).join('')}</div>
-    ${items.length?`<div class="mut" style="margin-top:8px">항목</div><div class="chips">${items.map(x=>`<button class="chip${iid===x.id?' on':''}" data-ic="${x.id}">${esc(x.name)}</button>`).join('')}</div>`:''}
-    <div class="row" style="margin-top:10px${gid==null?';display:none':''}" id="chg">
-      <input type="text" inputmode="decimal" id="cv" placeholder="변경 값 (+5, -100, 1.2만)" value="${ed&&ed.groupId?ed.change:''}" style="flex:1">
-      <span class="seg"><button data-u="flat" class="${unit!=='pct'?'on':''}">값</button><button data-u="pct" class="${unit==='pct'?'on':''}">%</button></span></div>
+    ${items.length?`<div class="mut" style="margin-top:8px">아이템 (누를 때마다 끼기 → 빼기 → 안 함)</div>
+      ${[...new Set(items.map(it=>it.slotId))].map(sid=>`<div class="mut" style="margin-top:4px">${esc(slotName(sid))}</div><div class="chips">${items.filter(it=>it.slotId===sid).map(it=>{const a=c.acts[it.id]||0
+        return`<button class="chip${a?' on':''}" data-act-it="${it.id}">${a>0?'+ ':a<0?'− ':''}${esc(it.name)}${eq[it.id]?` <span class="mut">(낌 ${eq[it.id]})</span>`:''}</button>`}).join('')}</div>`).join('')}`:''}
+    <div class="mut" style="margin-top:10px">바뀐 값 ${items.length?'(아이템 말고 직접)':''}</div>
+    ${c.rows.map((r,k)=>`<div class="list-row" data-cr="${k}" style="flex-wrap:wrap">
+      <select class="cgi">${gis.map(x=>`<option value="${x.v}"${x.v===r.gi?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <input type="text" class="cval" value="${esc(r.val)}" placeholder="+5, -100, 1.2만" style="width:100px">
+      <span class="seg"><button data-u="flat" class="${r.unit!=='pct'?'on':''}">값</button><button data-u="pct" class="${r.unit==='pct'?'on':''}">%</button></span>
+      <label class="row mut" style="gap:4px"><input type="checkbox" class="conce"${r.once?' checked':''}>이번만</label>
+      <button class="sm danger cdel">✕</button></div>`).join('')}
+    ${gis.length?'<button class="sm" id="addCh">+ 바뀐 값</button>':''}
+    ${!c.rows.length&&!Object.values(c.acts).some(Boolean)?'<div class="mut" style="margin-top:4px">아무것도 안 바꿨으면 "기준 (변경 없음)" 기록이 돼요.</div>':''}
     <div class="grid" style="margin-top:10px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-mv="${m.id}" value="${ed?((ed.samples&&ed.samples[m.id])||[ed.values[m.id]]).filter(isFinite).join(' '):''}" placeholder="${last&&isFinite(last.values[m.id])?fmt(mval(last,m.id)):''}"></label>`).join('')}
       <label class="f">메모<input type="text" id="note" value="${ed?esc(ed.note):''}"></label></div>
-    <div class="mut" style="margin-top:6px">데미지처럼 흔들리는 값은 여러 번 재서 띄어 적으세요 (예: 1234 1250 1241) → 평균으로 계산하고, 흔들린 만큼은 오차로 보지 않아요. 치명타는 빼고 적어요 (치명타만 재려면 잴 것에 '치명 데미지'를 따로).</div>
+    <div class="mut" style="margin-top:6px">흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 치명타는 빼고 적어요. '이번만'은 그 기록에만 적용되고 다음 기록엔 안 이어져요 (잠깐 켜진 버프 등).</div>
     <div class="row" style="margin-top:12px"><button class="pri" id="rs">${ed?'수정 저장':'저장'}</button>${ed?'<button id="rc">취소</button>':''}</div></div>
+  ${(()=>{const M=measureStatus(s,t);if(!M.length)return''
+    const need=M.filter(x=>x.k!=='ok').length
+    return`<details class="card"${c.msOpen?' open':''} id="msd"><summary><b>측정 현황</b> ${hb('measureStatus')} <span class="mut">${need?`더 필요한 것 ${need}개`:'다 측정됨'}</span></summary>
+      <div class="scroll" style="margin-top:8px"><table><tr><th class="l">항목</th><th>바꾼 횟수</th><th>크기 종류</th><th>겹침</th><th></th><th class="l">더 필요한 것</th></tr>
+      ${M.map(x=>`<tr><td class="l">${esc(x.name)}</td><td>${x.n||''}</td><td>${x.sizes||''}</td><td>${x.stack?'○':''}</td><td>${x.k==='ok'?'<span class="good">✓</span>':x.k==='part'?'△':'<span class="bad">✗</span>'}</td><td class="l" style="white-space:normal">${esc(x.need)}</td></tr>`).join('')}</table></div></details>`})()}
   <h2>기록 내역 ${s.records.length}개</h2>
   ${sus.size?`<div class="card"><span class="bad">⚠ 표시</span> <span class="mut">= 마지막으로 찾은 공식과 크게 어긋난 기록이에요. 입력 실수나 기록 안 한 변화가 없었는지 확인하고, 고치거나 [빼기]로 공식 찾기에서 빼세요.</span></div>`:''}
-  ${s.records.length?`<div class="card scroll"><table><tr><th class="l">#</th><th class="l">종류</th>${t.measures.map(m=>`<th>${esc(m.name)}</th>`).join('')}<th class="l">메모</th><th></th></tr>
-    ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l">${esc(recText(t,r))}</td>${t.measures.map(m=>`<td><b>${mtext(r,m.id)}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
+  ${s.records.length?`<div class="card scroll"><table><tr><th class="l">#</th><th class="l">바꾼 것</th>${t.measures.map(m=>`<th>${esc(m.name)}</th>`).join('')}<th class="l">메모</th><th></th></tr>
+    ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l" style="white-space:normal;min-width:120px">${esc(recText(t,r))}</td>${t.measures.map(m=>`<td><b>${mtext(r,m.id)}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
       <td><button class="sm" data-rk="${r.id}">${r.skip?'넣기':'빼기'}</button> <button class="sm" data-re="${r.id}">수정</button> <button class="sm danger" data-rd="${r.id}">✕</button></td></tr>`).join('')}</table></div>`:'<div class="card empty">아직 기록이 없어요.</div>'}`
-  v.querySelectorAll('[data-gc]').forEach(b=>b.onclick=()=>{if(ed){ed.groupId=b.dataset.gc||null;ed.itemId=null}else{c.group=b.dataset.gc||null;c.item=null};keep(()=>render())})
-  v.querySelectorAll('[data-ic]').forEach(b=>b.onclick=()=>{if(ed)ed.itemId=b.dataset.ic;else c.item=b.dataset.ic;keep(()=>render())})
-  v.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{if(ed)ed.unit=b.dataset.u;else c.unit=b.dataset.u;keep(()=>render())})
-  // 종류/단위를 바꿔 다시 그려도 적던 숫자는 남긴다
-  function keep(f){const vals={cv:$('#cv').value,note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value)
-    f();$('#cv').value=vals.cv;$('#note').value=vals.note;v.querySelectorAll('[data-mv]').forEach(e=>e.value=vals[e.dataset.mv]??'')}
-  const rc=$('#rc');if(rc)rc.onclick=()=>{c.edit=null;loadData();render()}
+  // 다시 그릴 때 잰 값·메모는 남긴다
+  function keep(f){const vals={note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value)
+    f();$('#note').value=vals.note;v.querySelectorAll('[data-mv]').forEach(e=>e.value=vals[e.dataset.mv]??'')}
+  const msd=$('#msd');if(msd)msd.ontoggle=()=>c.msOpen=msd.open
+  v.querySelectorAll('[data-act-it]').forEach(b=>b.onclick=()=>{const id=b.dataset.actIt,a=c.acts[id]||0;c.acts[id]=a===0?1:a>0?-1:0;keep(()=>render())})
+  v.querySelectorAll('[data-cr]').forEach(el=>{const r=c.rows[+el.dataset.cr]
+    el.querySelector('.cgi').onchange=e=>r.gi=e.target.value
+    el.querySelector('.cval').oninput=e=>r.val=e.target.value
+    el.querySelector('.conce').onchange=e=>r.once=e.target.checked
+    el.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{r.unit=b.dataset.u;keep(()=>render())})
+    el.querySelector('.cdel').onclick=()=>{c.rows.splice(+el.dataset.cr,1);keep(()=>render())}})
+  const ac=$('#addCh');if(ac)ac.onclick=()=>{c.rows.push({gi:(c.rows[c.rows.length-1]||{}).gi||gis[0].v,unit:'flat',val:'',once:false});keep(()=>render())}
+  const rc=$('#rc');if(rc)rc.onclick=()=>{c.edit=null;c.rows=null;loadData();render()}
   $('#gost').onclick=()=>go({v:'start',id:s.id})
+  $('#goreset').onclick=()=>go({v:'start',id:s.id,reset:true})
   $('#rs').onclick=()=>{
-    const g=ed?ed.groupId:(c.group??null),ch=num($('#cv').value)
-    if(g&&!isFinite(ch))return alert('변경 값을 적어 주세요.')
+    const changes=[]
+    for(const r of c.rows){if(!String(r.val).trim())continue;const n=num(r.val);if(!isFinite(n))return alert('바뀐 값에 숫자를 적어 주세요: '+r.val)
+      const [g,i]=r.gi.split(':');if(n)changes.push({groupId:g,itemId:i||null,unit:r.unit||'flat',change:n,once:!!r.once})}
+    const acts=Object.entries(c.acts).filter(([k,a])=>a).map(([itemId,act])=>({itemId,act}))
+    for(const a of acts){const it=items.find(x=>x.id===a.itemId);if(!it)continue
+      if(a.act<0&&!(eq[it.id]>0))return alert(`'${it.name}'은(는) 지금 안 끼고 있어서 뺄 수 없어요. (시작 상태에서 낀 아이템을 적었는지 확인해 주세요)`)
+      changes.push(...itemChanges(it,a.act,eq[it.id]||0))}
     const values={},samples={};v.querySelectorAll('[data-mv]').forEach(e=>{const a=nums(e.value);if(!a.length)return
       values[e.dataset.mv]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)samples[e.dataset.mv]=a})
     if(!Object.keys(values).length)return alert('잰 값을 하나 이상 적어 주세요.')
-    const r={id:ed?ed.id:uid(),samples,skip:ed?!!ed.skip:false,time:ed?ed.time:Date.now(),groupId:g,itemId:g?iid:null,change:g?ch:0,unit:ed?ed.unit:(c.unit||'flat'),values,note:$('#note').value.trim()}
+    const f0=changes.find(q=>!q.once)||changes[0]
+    const r={id:ed?ed.id:uid(),time:ed?ed.time:Date.now(),changes,items:acts,samples,values,skip:ed?!!ed.skip:false,note:$('#note').value.trim(),
+      groupId:f0?f0.groupId:null,itemId:f0?f0.itemId:null,change:f0?f0.change:0,unit:f0?f0.unit:'flat'}
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;const i=x.records.findIndex(q=>q.id===r.id);if(i>=0)x.records[i]=r;else x.records.push(r)})
-    c.edit=null;render()}
-  v.querySelectorAll('[data-re]').forEach(b=>b.onclick=()=>{c.edit=b.dataset.re;render();scrollTo(0,0)})
+    c.edit=null;c.rows=null;render()}
+  v.querySelectorAll('[data-re]').forEach(b=>b.onclick=()=>{c.edit=b.dataset.re;c.rows=null;render();scrollTo(0,0)})
   v.querySelectorAll('[data-rk]').forEach(b=>b.onclick=()=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id),r=x&&x.records.find(q=>q.id===b.dataset.rk);if(r)r.skip=!r.skip});render()})
   v.querySelectorAll('[data-rd]').forEach(b=>b.onclick=()=>{if(!confirm('이 기록을 지울까요?'))return
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.records=x.records.filter(q=>q.id!==b.dataset.rd)});render()})
@@ -956,21 +1150,27 @@ function sessionData(s){
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   const gname=id=>(t.groups.find(g=>g.id===id)||{name:'(지운 분류)'}).name
   const iname=(gid,iid)=>{const G=t.groups.find(g=>g.id===gid),it=G&&(G.items||[]).find(x=>x.id===iid);return it?it.name:'(지운 항목)'}
-  const keyOf=r=>r.groupId+':'+(r.itemId||'')+':'+(r.unit||'flat')
   const keys=[],stack={}
-  for(const r of s.records)if(r.groupId&&r.change){const k=keyOf(r);if(!keys.includes(k))keys.push(k);stack[k]=(stack[k]||0)+1}
+  for(const r of s.records){for(const ch of changesOf(r))if(ch.change){const k=vkey(ch).slice(2);if(!keys.includes(k))keys.push(k);stack[k]=(stack[k]||0)+1}
+    for(const k in r.reset||{})if(!keys.includes(k))keys.push(k)}
   const gvars=keys.map(k=>{const [g,i,u]=k.split(':'),G=t.groups.find(x=>x.id===g),it=i?iname(g,i):null
     const IT=i&&G?(G.items||[]).find(x=>x.id===i):null
     const known=isFinite((s.start||{})[k])
     return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known}})
   const mvars=t.measures.map(m=>({id:'m:'+m.id,name:m.name,cat:'잰 값',unit:'flat'}))
   // % 는 두 가지로 누적: 더해서(합연산) / 곱해서(곱연산, ×(1+a%)×(1+b%)…)
-  // 시작 상태를 적었으면 거기서부터 누적 (실제 총량), 아니면 0 부터 (변화량)
+  // 시작 상태를 적었으면 거기서부터 누적 (실제 총량), 아니면 0 부터 (변화량). '이번만' 변화는 그 기록에만
   const acc={},accC={}
   for(const x of gvars){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0)){acc[x.id]=s0;accC[x.id]=s0}}
   const rows=s.records.map((r,i)=>{
-    if(r.groupId&&r.change){const k='g:'+keyOf(r);acc[k]=(acc[k]||0)+r.change;accC[k]=((1+(accC[k]||0)/100)*(1+r.change/100)-1)*100}
+    // 상태 다시 적기: 그 시점의 실제 값으로 덮어쓴다 (예전 셋팅을 똑같이 맞추지 않아도 이어서 기록 가능)
+    for(const [k,val] of Object.entries(r.reset||{}))if(isFinite(val)){acc['g:'+k]=val;accC['g:'+k]=val}
+    const once=[]
+    for(const ch of changesOf(r)){if(!ch.change)continue;const k=vkey(ch)
+      if(ch.once){once.push([k,ch.change]);continue}
+      acc[k]=(acc[k]||0)+ch.change;accC[k]=((1+(accC[k]||0)/100)*(1+ch.change/100)-1)*100}
     const v={};gvars.forEach(x=>{v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0})
+    for(const [k,d] of once){v[k]=(v[k]||0)+d;if(v[k+'*']!=null)v[k+'*']=((1+v[k+'*']/100)*(1+d/100)-1)*100}
     const tol={}
     t.measures.forEach(m=>{const a=r.samples&&r.samples[m.id]
       if(a&&a.length){v['m:'+m.id]=mval(r,m.id);if(a.length>1)tol['m:'+m.id]=(Math.max(...a)-Math.min(...a))/2}
@@ -1239,8 +1439,9 @@ function vOpt(c,v){
   const o=s.opt||{}
   const pick=FL.find(x=>x.key===o.formula)||FL[0],F=pick.f,fn=makeF(F.spec)
   // 변수: 세션 변수 (분류별 누적) + 잰 값
-  const allVars=[...D.gvars,...D.mvars],byId=Object.fromEntries(allVars.map(x=>[x.id,x]))
-  const names=Object.fromEntries(allVars.map(x=>[x.name,x.id]))
+  const tv=tplVars(t),allVars=[...D.gvars,...tv.filter(x=>!D.gvars.some(q=>q.id===x.id)),...D.mvars],byId=Object.fromEntries(allVars.map(x=>[x.id,x]))
+  // [이름] 은 세션 이름("룬")과 틀 이름("룬 변화") 둘 다 받는다
+  const names=Object.fromEntries([...tv,...allVars].map(x=>[x.name,x.id]))
   const baseId=id=>id.replace(/\*$/,'')
   // 전투 주기: 일반 N번당 스킬 1번 → 주기 평균 (공속 공식/간격이 있으면 시간당)
   const cyc=o.cycle||{}
@@ -1257,7 +1458,7 @@ function vOpt(c,v){
   const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
   const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}return st}
   const isPct=id=>(byId[baseId(id)]||{}).unit==='pct'
-  const evalSt=(st,keep)=>{const z=applyRules({...st},o.rules,names)
+  const evalSt=(st,keep,extra)=>{const z=applyRules({...st},[...(o.rules||[]),...(extra||[])],names)
     if(!cyc.on){const r=val1(single,z);return isFinite(r)?r:NaN}
     const n=Math.max(1,num(cyc.n)||1),cr=Math.min(1,Math.max(0,(exprVal(cyc.rate,z,names)||0)/100))
     const mN=exprVal(cyc.multN,z,names),mS=exprVal(cyc.multS,z,names)
@@ -1269,7 +1470,12 @@ function vOpt(c,v){
     else if(cyc.speed==='int'){r=cycle/(n*(num(cyc.interval)||1)+(num(cyc.skillTime)||0));per='/초'}
     if(keep)parts={n,dN,kN,dS,kS,cycle,r,per}
     return isFinite(r)?r:NaN}
-  const now=evalSt(state0(),true)
+  // 아이템: 지금 낀 것, 특수 능력(조건부는 켬/끔)
+  const items=t.items||[],slots=t.slots||[],eqNow=equipNow(s),condOn=o.condOn||{}
+  const effN=(it,cnt)=>it.dupEffect==='one'?Math.min(cnt,1):cnt
+  const rulesOf=cfg=>items.flatMap(it=>{const n=effN(it,cfg[it.id]||0);if(!n||(it.cond&&!condOn[it.id]))return[]
+    const rs=(it.rules||[]).map(r=>({...r,pct:isPct(r.target)}));return Array.from({length:n},()=>rs).flat()})
+  const now=evalSt(state0(),true,rulesOf(eqNow))
   const pctTxt=x=>`<span class="${x>0?'good':x<0?'bad':''}">${x>=0?'+':''}${fmt(x*100,2)}%</span>`
   const varSel=(sel,cls)=>`<select class="${cls}">${allVars.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
   const rowsUI=(rows,key)=>(rows||[]).map((r,k)=>`<div class="list-row" data-row="${key}:${k}">${varSel(r.vid,'rv')}
@@ -1279,29 +1485,38 @@ function vOpt(c,v){
     const op=sign<0&&r.op!=='='?(r.op==='+'?'-':'+'):r.op;applyChange(st,r.vid,op,val,isPct(r.vid))}return st}
   // 바꿔 보기 결과
   const whatIf=(o.whatif||[]).map(w=>{const r=evalSt(applyRows(state0(),w.rows));return{w,r,g:(r-now)/now}})
-  // 최적 셋팅
-  const inv=o.inv||[],limits=o.limits||{}
-  let best=null,note=''
-  if(c.solve&&inv.length){
-    const base=state0();inv.filter(it=>it.on).forEach(it=>applyRows(base,it.rows,-1))   // 지금 낀 것 빼기
-    const slots=[...new Set(inv.map(it=>it.slot||'기타'))]
-    const lim=sl=>{const n=num(limits[sl]);return isFinite(n)?n:inv.filter(it=>(it.slot||'기타')===sl).length}
-    const score=set=>{const st={...base};set.forEach(i=>applyRows(st,inv[i].rows));return evalSt(st)}
-    // 칸마다 고를 수 있는 조합
-    const choose=(arr,k)=>{const out=[[]];for(const i of arr){const n=out.length;for(let j=0;j<n;j++)if(out[j].length<k)out.push([...out[j],i])}return out}
-    const per=slots.map(sl=>choose(inv.map((it,i)=>i).filter(i=>(inv[i].slot||'기타')===sl),lim(sl)))
-    const total=per.reduce((a,b)=>a*b.length,1)
+  // 최적 셋팅: 틀의 칸·아이템으로 제한 안에서 가장 센 조합 (1~3등)
+  const applyItem=(st,it,n,sign)=>{for(let k=0;k<n;k++)for(const e of it.effects||[]){const val=num(e.val);if(isFinite(val)&&e.vid)applyChange(st,e.vid,sign>0?'+':'-',val,isPct(e.vid))}}
+  const base=()=>{const st=state0();for(const it of items){const n=effN(it,eqNow[it.id]||0);if(n)applyItem(st,it,n,-1)}return st}   // 지금 낀 것 효과 빼기
+  const score=cfg=>{const st=base();for(const it of items){const n=effN(it,cfg[it.id]||0);if(n)applyItem(st,it,n,1)}return evalSt(st,false,rulesOf(cfg))}
+  // 확인 상태: ✓ 기록에서 껴 보거나 빼 봄 / △ 계산만 / ✗ 공식에 없는 값이 있음
+  const usedSet=new Set(used),tested=new Set()
+  for(const x of data.sessions)if(x.templateId===t.id)for(const r of x.records)for(const a of r.items||[])tested.add(a.itemId)
+  const status=it=>{const miss=[...(it.effects||[]).map(e=>e.vid),...(it.rules||[]).map(r=>r.target)].filter(id=>id&&!usedSet.has(id))
+    return miss.length?{k:'x',miss}:tested.has(it.id)?{k:'ok'}:{k:'calc'}}
+  let top=[],note=''
+  if(c.solve&&items.length){
+    const maxOf=it=>Math.max(0,Math.min(num(it.owned)||1,num(it.dupMax)||1))
+    const slotIds=[...new Set(items.map(it=>it.slotId))]
+    const perSlot=slotIds.map(sid=>{const sl=slots.find(q=>q.id===sid)||{mode:'count',max:''},its=items.filter(it=>it.slotId===sid)
+      const lim=num(sl.max),out=[],cur={}
+      const rec=(k,used2)=>{if(out.length>200000)return
+        if(k===its.length){out.push({...cur});return}
+        const it=its[k],w=sl.mode==='cost'?(num(it.cost)||1):1
+        for(let n=0;n<=maxOf(it);n++){if(isFinite(lim)&&used2+n*w>lim+1e-9)break;cur[it.id]=n;rec(k+1,used2+n*w)}
+        delete cur[its[k].id]}
+      rec(0,0);return out})
+    const total=perSlot.reduce((a,b)=>a*b.length,1)
+    const push=(cfg,r)=>{if(!isFinite(r))return;top.push({cfg:{...cfg},r});top.sort((a,b)=>b.r-a.r);top=top.slice(0,3)}
     if(total<=60000){
-      const rec=(k,acc)=>{if(k===per.length){const r=score(acc);if(!best||r>best.r)best={r,set:acc};return}for(const opt of per[k])rec(k+1,acc.concat(opt))}
-      rec(0,[]);note=`조합 ${total.toLocaleString()}가지를 모두 계산했어요.`
+      const rec=(k,acc)=>{if(k===perSlot.length)return push(acc,score(acc));for(const o2 of perSlot[k])rec(k+1,{...acc,...o2})}
+      rec(0,{});note=`조합 ${total.toLocaleString()}가지를 모두 계산했어요.`
     }else{
-      // 너무 많으면: 지금 셋팅에서 시작해 넣기·빼기·바꾸기를 더 좋아질 때까지 반복
-      let cur=inv.map((it,i)=>i).filter(i=>inv[i].on),r=score(cur),improved=true,steps=0
-      const ok=set=>slots.every(sl=>set.filter(i=>(inv[i].slot||'기타')===sl).length<=lim(sl))
-      while(improved&&steps++<200){improved=false
-        const cands=[];inv.forEach((_,i)=>{if(cur.includes(i))cands.push(cur.filter(q=>q!==i));else{cands.push([...cur,i]);cur.forEach(q=>cands.push([...cur.filter(z=>z!==q),i]))}})
-        for(const cs of cands)if(ok(cs)){const v2=score(cs);if(v2>r+1e-9){r=v2;cur=cs;improved=true}}}
-      best={r,set:cur};note=`조합이 ${total.toLocaleString()}가지라 지금 셋팅에서 넣기·빼기·바꾸기로 좋아질 때까지 찾았어요 (가장 좋은 조합이 아닐 수도 있어요).`
+      // 너무 많으면: 칸마다 하나씩 바꿔 보며 좋아질 때까지 (지금 셋팅에서 시작)
+      let cfg={...eqNow},r=score(cfg),improved=true,steps=0
+      while(improved&&steps++<100){improved=false
+        perSlot.forEach(opts=>{for(const o2 of opts){const c2={...cfg,...o2},r2=score(c2);if(r2>r+1e-9){cfg=c2;r=r2;improved=true}}})}
+      push(cfg,r);note=`조합이 너무 많아서(${total.toLocaleString()}가지) 칸마다 바꿔 보며 좋아질 때까지 찾았어요. 가장 좋은 조합이 아닐 수도 있어요.`
     }
   }
   const fsel=(cls,sel,none)=>`<select class="${cls}">${none?`<option value="">${none}</option>`:''}${FL.map(x=>`<option value="${x.key}"${x.key===sel?' selected':''}>${esc(x.label)}</option>`).join('')}</select>`
@@ -1334,18 +1549,24 @@ function vOpt(c,v){
     ${(o.whatif||[]).map((w,k)=>{const q=whatIf[k];return`<div class="card" style="background:var(--card2)" data-wi="${k}"><div class="list-row"><input type="text" class="wn" value="${esc(w.name||'')}" placeholder="이름 (예: 룬 B로 교체)" style="flex:1"><b>${isFinite(q.r)?pctTxt(q.g):'-'}</b><button class="sm danger wdel">✕</button></div>
       ${rowsUI(w.rows,'w'+k)}<button class="sm ghost wadd">+ 바뀌는 값</button><div class="mut">→ ${fmt(q.r)}</div></div>`}).join('')}
     <button class="sm" id="addWi">+ 바꿔 보기</button></div>
-  <div class="card"><div class="big">최적 셋팅 ${hb('optimize')}</div><div class="mut">가진 옵션(룬, 장비 …)을 넣고 칸(슬롯)마다 낄 수 있는 개수를 정하면, 가장 높은 조합을 찾아요. 지금 낀 것은 '낌'에 체크하세요.</div>
-    ${inv.map((it,k)=>`<div class="card" style="background:var(--card2)" data-iv="${k}"><div class="list-row"><input type="text" class="in" value="${esc(it.name||'')}" placeholder="이름 (예: 공격 룬 +8.5만)" style="flex:1">
-      <input type="text" class="isl" value="${esc(it.slot||'')}" placeholder="칸 (룬)" style="width:70px"><label class="row mut" style="gap:4px"><input type="checkbox" class="ion"${it.on?' checked':''}>낌</label><button class="sm danger idel">✕</button></div>
-      ${rowsUI(it.rows,'i'+k)}<button class="sm ghost iadd">+ 바뀌는 값</button></div>`).join('')}
-    <button class="sm" id="addInv">+ 옵션</button>
-    ${inv.length?`<div class="row" style="margin-top:8px">${[...new Set(inv.map(it=>it.slot||'기타'))].map(sl=>`<label class="row mut" style="gap:4px">${esc(sl)} 최대<input type="text" data-lim="${esc(sl)}" value="${limits[sl]??''}" placeholder="${inv.filter(it=>(it.slot||'기타')===sl).length}" style="width:50px"></label>`).join('')}</div>
-      <div class="row" style="margin-top:10px"><button class="pri" id="solve">최적 조합 찾기</button></div>`:''}
-    ${best?(()=>{const on=inv.map((it,i)=>i).filter(i=>inv[i].on),add=best.set.filter(i=>!on.includes(i)),rm=on.filter(i=>!best.set.includes(i))
-      return`<div class="card model best" style="margin-top:10px"><div class="big">최적: ${esc(objName)} ${fmt(best.r)} ${pctTxt((best.r-now)/now)}</div>
-        <div>끼기: ${best.set.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'-'}</div>
-        <div class="good">넣기: ${add.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'없음'}</div><div class="bad">빼기: ${rm.map(i=>esc(inv[i].name||'#'+(i+1))).join(', ')||'없음'}</div>
-        <div class="mut">${esc(note)}</div></div>`})():''}
+  <div class="card"><div class="big">최적 셋팅 ${hb('optimize')}</div>
+    ${!items.length?`<div class="mut">틀에 칸과 아이템(스킬, 룬, 장비 …)을 등록하면, 제한 안에서 가장 센 조합을 찾아요.</div><button class="sm pri" id="goItems" style="margin-top:8px">아이템 등록하러 가기</button>`:(()=>{
+      const st=items.map(it=>({it,s:status(it)})),need=st.filter(q=>q.s.k!=='ok')
+      return`${need.length?`<div class="card" style="background:var(--card2)"><div class="big">실험이 필요한 것</div><ul class="hints">${need.map(q=>q.s.k==='x'
+          ?`<li><b>${esc(q.it.name)}</b> ✗ 공식에 없는 값: ${esc(q.s.miss.map(id=>(byId[id]||{name:id}).name).join(', '))} → 이 값을 바꿔 가며 기록하고 공식을 다시 찾아야 정확해요 (지금은 이 부분 빼고 계산)</li>`
+          :`<li><b>${esc(q.it.name)}</b> △ 아직 껴 본 기록 없음 → 적어 둔 수치로만 계산했어요. 한 번 껴 보고 기록하면 확인돼요.</li>`).join('')}</ul></div>`:''}
+      <div class="scroll"><table><tr><th class="l">아이템</th><th class="l">칸</th><th>낌</th><th>확인</th><th class="l">조건</th></tr>
+      ${st.map(({it,s:q})=>`<tr><td class="l">${esc(it.name)}</td><td class="l">${esc((slots.find(x=>x.id===it.slotId)||{name:'-'}).name)}</td><td>${eqNow[it.id]||''}</td>
+        <td>${q.k==='ok'?'<span class="good">✓</span>':q.k==='calc'?'△':'<span class="bad">✗</span>'}</td>
+        <td class="l">${it.cond?`<label class="row" style="gap:4px"><input type="checkbox" data-cond="${it.id}"${condOn[it.id]?' checked':''}>켬</label>`:''}</td></tr>`).join('')}</table></div>
+      <div class="row" style="margin-top:10px"><button class="pri" id="solve">최적 조합 찾기</button><button class="sm" id="goItems">아이템 고치기</button></div>
+      ${top.map((b,i)=>{const nm=id=>(items.find(x=>x.id===id)||{name:'?'}).name,cnt=(cfg,id)=>cfg[id]||0
+        const lst=cfg=>items.filter(it=>cnt(cfg,it.id)).map(it=>esc(it.name)+(cnt(cfg,it.id)>1?' ×'+cnt(cfg,it.id):'')).join(', ')||'-'
+        const add=items.filter(it=>cnt(b.cfg,it.id)>cnt(eqNow,it.id)).map(it=>esc(it.name)+(cnt(b.cfg,it.id)-cnt(eqNow,it.id)>1?' ×'+(cnt(b.cfg,it.id)-cnt(eqNow,it.id)):''))
+        const rm=items.filter(it=>cnt(b.cfg,it.id)<cnt(eqNow,it.id)).map(it=>esc(it.name)+(cnt(eqNow,it.id)-cnt(b.cfg,it.id)>1?' ×'+(cnt(eqNow,it.id)-cnt(b.cfg,it.id)):''))
+        return`<div class="card model${i===0?' best':''}" style="margin-top:10px"><div class="big">${i+1}등: ${esc(objName)} ${fmt(b.r)} ${pctTxt((b.r-now)/now)}${!add.length&&!rm.length?' <span class="tag">지금 그대로</span>':''}</div>
+          <div>끼기: ${lst(b.cfg)}</div><div class="good">넣기: ${add.join(', ')||'없음'}</div><div class="bad">빼기: ${rm.join(', ')||'없음'}</div></div>`}).join('')}
+      ${top.length?`<div class="mut">${esc(note)}</div>`:''}`})()}
   </div>`
   const save=f=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=false;render()}
   const of=$('#of');if(of)of.onchange=e=>save(op=>op.formula=e.target.value)
@@ -1361,7 +1582,7 @@ function vOpt(c,v){
     el.querySelector('.rt').onchange=upd;el.querySelector('.rop2').onchange=upd;el.querySelector('.rex').onchange=upd
     el.querySelector('.rrm').onclick=()=>save(op=>op.rules.splice(k,1))})
   // 줄 편집 (바꿔 보기 / 옵션 공통)
-  const listOf=(op,key)=>key[0]==='w'?op.whatif[+key.slice(1)]:op.inv[+key.slice(1)]
+  const listOf=(op,key)=>op.whatif[+key.slice(1)]
   v.querySelectorAll('[data-row]').forEach(el=>{const [key,k]=el.dataset.row.split(':')
     const upd=()=>save(op=>{const r=listOf(op,key).rows[+k];r.vid=el.querySelector('.rv').value;r.op=el.querySelector('.rop').value;r.val=el.querySelector('.rval').value})
     el.querySelector('.rv').onchange=upd;el.querySelector('.rop').onchange=upd;el.querySelector('.rval').onchange=upd
@@ -1372,14 +1593,8 @@ function vOpt(c,v){
     el.querySelector('.wn').onchange=e=>save(op=>op.whatif[k].name=e.target.value)
     el.querySelector('.wdel').onclick=()=>save(op=>op.whatif.splice(k,1))
     el.querySelector('.wadd').onclick=()=>save(op=>op.whatif[k].rows.push({vid:firstVar,op:'+',val:''}))})
-  $('#addInv').onclick=()=>save(op=>(op.inv=op.inv||[]).push({name:'',slot:'',on:false,rows:[{vid:firstVar,op:'+',val:''}]}))
-  v.querySelectorAll('[data-iv]').forEach(el=>{const k=+el.dataset.iv
-    el.querySelector('.in').onchange=e=>save(op=>op.inv[k].name=e.target.value)
-    el.querySelector('.isl').onchange=e=>save(op=>op.inv[k].slot=e.target.value.trim())
-    el.querySelector('.ion').onchange=e=>save(op=>op.inv[k].on=e.target.checked)
-    el.querySelector('.idel').onclick=()=>save(op=>op.inv.splice(k,1))
-    el.querySelector('.iadd').onclick=()=>save(op=>op.inv[k].rows.push({vid:firstVar,op:'+',val:''}))})
-  v.querySelectorAll('[data-lim]').forEach(e=>e.onchange=()=>save(op=>{op.limits=op.limits||{};op.limits[e.dataset.lim]=e.value}))
+  v.querySelectorAll('#goItems').forEach(b=>b.onclick=()=>go({v:'items',id:t.id}))
+  v.querySelectorAll('[data-cond]').forEach(e=>e.onchange=()=>save(op=>{op.condOn=op.condOn||{};op.condOn[e.dataset.cond]=e.target.checked}))
   const sv=$('#solve');if(sv)sv.onclick=()=>{c.solve=true;render()}
 }
 
