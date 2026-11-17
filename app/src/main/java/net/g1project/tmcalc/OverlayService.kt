@@ -951,7 +951,12 @@ class OverlayService : Service() {
             "${g?.optString("name") ?: "(지운 분류)"}${item?.let { " $it" } ?: ""} ${if (ch >= 0) "+" else ""}${LabData.fmt(ch)}${if (r.optString("unit") == "pct") "%" else ""}"
         }
         val vals = r.optJSONObject("values")
-        val vs = measures.mapNotNull { m -> vals?.takeIf { it.has(m.optString("id")) }?.let { "${m.optString("name")} ${LabData.fmt(it.optDouble(m.optString("id")))}" } }
+        val sm = r.optJSONObject("samples")
+        val vs = measures.mapNotNull { m -> val id = m.optString("id")
+            vals?.takeIf { it.has(id) }?.let { v ->
+                val n = sm?.optJSONArray(id)?.length() ?: 0
+                "${m.optString("name")} ${LabData.fmt(Math.round(v.optDouble(id) * 100) / 100.0)}" + if (n > 1) "(${n}회)" else ""
+            } }
         val note = r.optString("note")
         return "#$no $kind → ${vs.joinToString(" · ")}" + if (note.isNotBlank()) "  ($note)" else ""
     }
@@ -1101,7 +1106,10 @@ class OverlayService : Service() {
             val id = m.optString("id")
             if (i % 2 == 0) { line = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }; labBody.addView(line) }
             val prev = last?.takeIf { it.has(id) }?.let { "이전 " + LabData.fmt(it.optDouble(id)) } ?: m.optString("name")
-            val e = labInput(prev, editing?.optJSONObject("values")?.takeIf { it.has(id) }?.let { LabData.fmt(it.optDouble(id)).replace(",", "") } ?: "")
+            // 여러 번 잰 값은 띄어서 (1234 1250 1241)
+            val old = editing?.optJSONObject("samples")?.optJSONArray(id)?.let { a -> (0 until a.length()).joinToString(" ") { LabData.fmt(a.optDouble(it)).replace(",", "") } }
+                ?: editing?.optJSONObject("values")?.takeIf { it.has(id) }?.let { LabData.fmt(it.optDouble(id)).replace(",", "") } ?: ""
+            val e = labInput(prev, old)
             measureEdits[id] = e
             line!!.addView(LinearLayout(ui).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1111,6 +1119,12 @@ class OverlayService : Service() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         if (measures.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
+        labBody.addView(TextView(ui).apply {
+            text = "흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 치명타는 빼고."
+            textSize = 11f
+            setTextColor(Color.parseColor("#9A9DA3"))
+            setPadding(0, dp(4), 0, 0)
+        })
         val noteEdit = labInput("메모 (선택)", editing?.optString("note") ?: "")
         labBody.addView(noteEdit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
 
@@ -1129,8 +1143,14 @@ class OverlayService : Service() {
                 val g = labGroup
                 val ch = LabData.number(changeEdit.text.toString())
                 if (g != null && ch == null) { toast("변경 값을 적어 주세요."); return@setOnClickListener }
-                val values = JSONObject()
-                measureEdits.forEach { (id, e) -> LabData.number(e.text.toString())?.let { values.put(id, it) } }
+                val values = JSONObject(); val samples = JSONObject()
+                measureEdits.forEach { (id, e) ->
+                    val a = e.text.toString().trim().split(Regex("[\\s/]+")).mapNotNull { LabData.number(it) }
+                    if (a.isNotEmpty()) {
+                        values.put(id, a.average())
+                        if (a.size > 1) samples.put(id, org.json.JSONArray(a))
+                    }
+                }
                 if (values.length() == 0) { toast("잰 값을 하나 이상 적어 주세요."); return@setOnClickListener }
                 val sid = s.optString("id")
                 val rid = editing?.optString("id") ?: LabData.newId()
@@ -1142,6 +1162,8 @@ class OverlayService : Service() {
                     .put("change", if (g == null) 0.0 else ch)
                     .put("unit", if (labPct) "pct" else "flat")
                     .put("values", values)
+                    .put("samples", samples)
+                    .put("skip", editing?.optBoolean("skip") ?: false)
                     .put("note", noteEdit.text.toString().trim())
                 var no = 0
                 LabData.update(this@OverlayService) { d ->

@@ -1052,7 +1052,7 @@ function showRes(c){
   o.innerHTML=head+(hint.length?`<div class="card"><div class="big">다음에 할 것</div><ul class="hints">${hint.map(h=>`<li>${esc(h)}</li>`).join('')}</ul></div>`:'')+
     R.models.map((m,i)=>`<div class="card model${i===0?' best':''}">
       <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
-      <div>${m.exact?'<span class="tag">반올림 안에서 완전 일치</span>':''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
+      <div>${m.exact?`<span class="tag">${P.tol?'흔들림 범위 안에서 일치':'반올림 안에서 완전 일치'}</span>`:''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
       <div class="formula">${esc((m.tidy||m.formula).replace('결과',P.tname))}</div>
       <div class="row"><div class="mut" style="flex:1">최대 오차 <b class="${m.exact?'good':m.maxRel>0.01?'bad':''}">${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</b>${m.testAbs!=null?` · 검증 최대 오차 <b class="${m.testExact?'good':'bad'}">${fmt(m.testAbs)}</b>`:''}</div>
         ${R.stored?pinBtns(R.stored,R.stored.candidates[i]):''}</div>
