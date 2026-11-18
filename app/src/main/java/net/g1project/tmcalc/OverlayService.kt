@@ -1211,9 +1211,10 @@ class OverlayService : Service() {
         val useCrit = t.optBoolean("useCrit", true)
         val slots = ArrayList<Triple<String, String, String>>()   // (m|c, 잴 것 id, 이름)
         for (m in measures) {
-            val md = if (useCrit) m.optString("crit", "none") else "none"
+            // 공격 그룹마다: 치명 있는 게임이면 항상 비치명 / 치명 두 칸 (본 것만 적기)
+            val md = if (useCrit) "can" else "none"
             val id = m.optString("id"); val nm = m.optString("name")
-            if (md != "always") slots += Triple("m", id, nm + if (md == "can") " (일반)" else "")
+            if (md != "always") slots += Triple("m", id, nm + if (md == "can") " (비치명)" else "")
             if (md != "none") slots += Triple("c", id, "$nm (치명)")
         }
         val lastRec = recs.lastOrNull()
@@ -1244,7 +1245,7 @@ class OverlayService : Service() {
         }
         if (slots.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
         labBody.addView(TextView(ui).apply {
-            text = "흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 치명타는 빼고."
+            text = "한 방 데미지. 치명 터진 건 치명 칸에, 안 터진 건 비치명 칸에. 흔들리면 여러 번 재서 띄어 적기 (1234 1250)."
             textSize = 11f
             setTextColor(Color.parseColor("#9A9DA3"))
             setPadding(0, dp(4), 0, 0)
