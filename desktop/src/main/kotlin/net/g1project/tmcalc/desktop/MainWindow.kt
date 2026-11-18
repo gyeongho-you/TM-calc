@@ -748,6 +748,22 @@ class MainWindow(
 
     // ------------------------------------------------------------------ 메뉴
 
+    /**
+     * 연구실: 폰과 같은 lab.html 을 %APPDATA%\TM-calc\lab\lab.html 로 꺼내서 기본 브라우저로 연다.
+     * 기록은 그 브라우저의 저장소에 남는다 (경로가 늘 같아서 다음에 열어도 이어짐). 프로그램이 바뀌면 화면 파일만 새로 덮어쓴다.
+     */
+    private fun openLab() {
+        runCatching {
+            val dir = java.io.File(pets.dir, "lab").apply { mkdirs() }   // 브라우저 주소에 한글이 안 들어가게 영문 경로
+            val f = java.io.File(dir, "lab.html")
+            val res = javaClass.getResourceAsStream("/lab.html") ?: error("연구실 화면 파일이 없습니다")
+            val bytes = res.use { it.readBytes() }
+            if (!f.exists() || !f.readBytes().contentEquals(bytes)) f.writeBytes(bytes)
+            Desktop.getDesktop().browse(f.toURI())
+            setStatus("연구실을 브라우저로 열었습니다")
+        }.onFailure { JOptionPane.showMessageDialog(this, "연구실을 열지 못했습니다: ${it.message}", "연구실", JOptionPane.WARNING_MESSAGE) }
+    }
+
     private fun menu() = JMenuBar().apply {
         add(JMenu("도감").apply {
             add(JMenuItem("도감 보기 / 수정 (추가, JSON 저장/올리기)").apply { addActionListener { openPetEditor(fromScan = false) } })
@@ -768,6 +784,21 @@ class MainWindow(
             add(ampItem)
             addSeparator()
             add(JMenuItem("표시 설정…").apply { addActionListener { showDisplaySettings() } })
+        })
+        add(JMenu("연구실").apply {
+            add(JMenuItem("연구실 열기 (브라우저)").apply { addActionListener { openLab() } })
+            add(JMenuItem("연구실 설명").apply {
+                addActionListener {
+                    JOptionPane.showMessageDialog(this@MainWindow,
+                        "게임의 데미지 공식을 직접 실험해서 찾고, 그 공식으로 가장 센 셋팅을 계산합니다.\n" +
+                            "폰 앱의 메뉴 > 연구실과 같은 화면이 브라우저 창으로 열립니다.\n\n" +
+                            "· 앱플레이어 옆에 브라우저 창을 띄워 두고 기록하세요.\n" +
+                            "· 기록은 그 브라우저 안에 저장됩니다 (인터넷으로 보내지 않음).\n" +
+                            "· 틀·세션은 [내보내기] / [세션·틀 불러오기]로 폰과 주고받을 수 있습니다.\n" +
+                            "· 처음이면 연구실 첫 화면의 [사용법]과 [예시 세션 넣기]를 보세요.",
+                        "연구실", JOptionPane.INFORMATION_MESSAGE)
+                }
+            })
         })
         add(JMenu("도움말").apply {
             add(javax.swing.JCheckBoxMenuItem("문제 확인용: 마지막 계산 화면 저장", prefs.getBoolean("saveLastScan", false)).apply {

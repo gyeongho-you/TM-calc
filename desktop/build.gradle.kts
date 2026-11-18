@@ -1,4 +1,4 @@
-﻿import java.net.URI
+import java.net.URI
 import java.security.MessageDigest
 
 plugins {
@@ -23,11 +23,11 @@ val copyShared by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("shared-src/net/g1project/tmcalc"))
 }
 val copyPets by tasks.registering(Copy::class) {
-    from("../app/src/main/assets") { include("pets.json") }
+    from("../app/src/main/assets") { include("pets.json", "lab.html") }   // lab.html = 연구실 (폰과 같은 화면)
     into(layout.buildDirectory.dir("shared-res"))
 }
 // 설치 파일 버전 (MSI 라 올리기만 해야 한다). 창 오른쪽 아래에 보이도록 리소스로도 넣는다
-val appVersion = "1.6.0"
+val appVersion = "1.6.1"
 val versionRes = layout.buildDirectory.dir("version-res")
 val writeVersion by tasks.registering {
     inputs.property("v", appVersion)
