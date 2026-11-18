@@ -1630,7 +1630,7 @@ function vOpt(c,v){
   const varSel=(sel,cls)=>`<select class="${cls}">${allVars.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
   const rowsUI=(rows,key)=>(rows||[]).map((r,k)=>`<div class="list-row" data-row="${key}:${k}">${varSel(r.vid,'rv')}
     <select class="rop">${['+','-','='].map(q=>`<option${q===r.op?' selected':''}>${q}</option>`).join('')}</select>
-    <input type="text" class="rval" value="${r.val??''}" style="width:90px" inputmode="decimal"><button class="sm danger rdel">✕</button></div>`).join('')
+    <input type="text" class="rval" value="${r.val??''}" style="width:90px" inputmode="decimal"><button class="sm rdh" title="지금 값 → 바꿀 값으로 계산">±</button><button class="sm danger rdel">✕</button></div>`).join('')
   const applyRows=(st,rows,sign=1)=>{for(const r of rows||[]){const val=num(r.val);if(!isFinite(val)||!r.vid)continue
     const op=sign<0&&r.op!=='='?(r.op==='+'?'-':'+'):r.op;applyChange(st,r.vid,op,val,isPct(r.vid))}return st}
   // 바꿔 보기 결과
@@ -1702,9 +1702,12 @@ function vOpt(c,v){
     <div class="big" style="margin-top:10px">예상 ${esc(objName)}: ${fmt(now)}</div></div>
   <div class="card"><div class="big">무엇을 올리면 이득? ${hb('gain')}</div><div class="mut">지금 상태에서 하나씩 조금 올렸을 때 (아이템 특수 능력·사이클 포함)</div>
     ${(()=>{const st0=state0(),ex=rulesOf(eqNow),rows=used.map(id=>{const x=byId[id];if(!x)return null
-        const stp=x.unit==='pct'?1:(()=>{const a=Math.abs(st0[id]||0)*0.01;if(!a)return 1;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
+        const def=x.unit==='pct'?1:(()=>{const a=Math.abs(st0[id]||0)*0.01;if(!a)return 1;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
+        const own=num((o.steps||{})[id]),stp=isFinite(own)&&own?own:def
         const z=state0();applyChange(z,id,'+',stp,x.unit==='pct');const r=evalSt(z,false,ex);return{x,stp,g:(r-now)/now}}).filter(q=>q&&isFinite(q.g)).sort((a,b)=>b.g-a.g)
-      return`<div class="scroll"><table><tr><th class="l">항목</th><th>올리는 양</th><th>변화</th></tr>${rows.map(q=>`<tr><td class="l">${esc(q.x.name)}</td><td>+${fmt(q.stp)}${q.x.unit==='pct'?'%':''}</td><td>${pctTxt(q.g)}</td></tr>`).join('')}</table></div>`})()}</div>
+      return`<div class="scroll"><table><tr><th class="l">항목</th><th>올리는 양</th><th>변화</th></tr>${rows.map(q=>`<tr><td class="l">${esc(q.x.name)}</td>
+        <td><input type="text" data-gs="${q.x.id}" value="${fmt(q.stp).replace(/,/g,'')}" style="width:90px;text-align:right">${q.x.unit==='pct'?'%':''}</td><td>${pctTxt(q.g)}</td></tr>`).join('')}</table></div>
+        <div class="mut">올리는 양은 고칠 수 있어요 (예: 실제로 바꿀 룬 수치). 비우면 기본값.</div>`})()}</div>
   <div class="card"><div class="big">특수 효과 ${hb('rules')}</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
     ${(o.rules||[]).map((r,k)=>`<div class="list-row" data-rule="${k}">${varSel(r.target,'rt')}<select class="rop2">${['+','='].map(q=>`<option${q===(r.op||'+')?' selected':''}>${q}</option>`).join('')}</select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rrm">✕</button></div>`).join('')}
     <button class="sm" id="addRule">+ 효과</button></div>
@@ -1745,6 +1748,7 @@ function vOpt(c,v){
   const on=(cls,key)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>cy2(q=>q[key]=el.value)}
   on('cyti','time');on('cyr','rate')
   const cm=v.querySelector('.cymode');if(cm)cm.onchange=()=>cy2(q=>{q.mode=cm.value;delete q.speed})
+  v.querySelectorAll('[data-gs]').forEach(e=>e.onchange=()=>save(op=>{op.steps=op.steps||{};const n=num(e.value);if(isFinite(n)&&n)op.steps[e.dataset.gs]=n;else delete op.steps[e.dataset.gs]}))
   v.querySelectorAll('[data-st]').forEach(e=>e.onchange=()=>save(op=>{op.state=op.state||{};const n=num(e.value);if(isFinite(n))op.state[e.dataset.st]=n;else delete op.state[e.dataset.st]}))
   // 규칙
   $('#addRule').onclick=()=>save(op=>(op.rules=op.rules||[]).push({target:allVars[0]&&allVars[0].id,op:'+',expr:''}))
@@ -1757,7 +1761,8 @@ function vOpt(c,v){
   v.querySelectorAll('[data-row]').forEach(el=>{const [key,k]=el.dataset.row.split(':')
     const upd=()=>save(op=>{const r=listOf(op,key).rows[+k];r.vid=el.querySelector('.rv').value;r.op=el.querySelector('.rop').value;r.val=el.querySelector('.rval').value})
     el.querySelector('.rv').onchange=upd;el.querySelector('.rop').onchange=upd;el.querySelector('.rval').onchange=upd
-    el.querySelector('.rdel').onclick=()=>save(op=>listOf(op,key).rows.splice(+k,1))})
+    el.querySelector('.rdel').onclick=()=>save(op=>listOf(op,key).rows.splice(+k,1))
+    el.querySelector('.rdh').onclick=()=>deltaHelper(d=>save(op=>{const r=listOf(op,key).rows[+k];r.op='+';r.val=d}))})
   const firstVar=used[0]||(allVars[0]&&allVars[0].id)
   $('#addWi').onclick=()=>save(op=>(op.whatif=op.whatif||[]).push({name:'',rows:[{vid:firstVar,op:'+',val:''}]}))
   v.querySelectorAll('[data-wi]').forEach(el=>{const k=+el.dataset.wi
