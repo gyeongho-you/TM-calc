@@ -703,6 +703,7 @@ const HELP={
 <p><b>치명</b>은 잴 것마다 정한 모드로 계산해요.<br>· 치명타 X: 그대로<br>· 치명타 가능: 평균 = 일반 × (1 + 확률 × (배율 − 1))<br>· 확정 치명타: 치명 데미지 그대로<br>
 확률과 피해는 <b>내 정보</b>(시작 상태 / 상태 다시 적기)의 "치명 확률 %", "치명 피해 %"를 써요. 아이템으로 바뀌는 것도 반영돼요.</p>
 <p>이러면 "일반공격 +20%"는 5회분, "스킬2 +30%"는 6회분으로 자동으로 가치가 매겨져요.</p>
+<p><b>공식 빌려 쓰기</b>: 같은 그룹 스킬은 공식 모양이 같고 배율만 달라요. 공격의 "공식"을 <b>다른 공격 공식 × 배율</b>로 고르면, 틀에 적은 배율%(예: 500 ÷ 300) 또는 이 공격을 몇 번 재 둔 기록으로 배율을 계산해요. 그래서 그룹마다 대표 스킬 하나만 공식을 찾으면 돼요.</p>
 <p><b>공격 속도</b>: 공속 옵션이 있으면 사이클 시간(초)을 넣거나, 따로 찾은 속도 공식(30초 동안 일반공격 횟수 등)을 골라 시간당으로 비교해요.</p>`],
   state:['내 상태',`
 <p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
@@ -727,6 +728,13 @@ const HELP={
 <p>지금 상태창에 보이는 값(분류·항목별)과 지금 낀 아이템을 그대로 적으면, 그 시점부터 기준이 다시 잡혀요. 그 뒤로는 평소처럼 바꾼 것만 기록하면 돼요.</p>
 <div class="ex"><b>예시</b><br>어제: 스킬 데미지 30%, 룬 공격 +500 까지 기록<br>오늘: 셋팅이 바뀌어서 스킬 데미지 45%, 룬 +320 → [상태 다시 적기]에 45, 320 을 적고 저장<br>→ 이어서 "룬 +100" 같은 기록을 계속하면 돼요.</div>
 <p>칸에는 기록으로 계산한 지금 값이 미리 들어 있어요. 달라진 칸만 고치면 돼요.</p>`],
+  influence:['옵션 영향',`
+<p>찾은 공식으로 봤을 때 <b>어떤 옵션이 이 데미지에 들어가는지</b> 알려 줘요.</p>
+<p><b>✓ 영향 있음</b>: 바뀌면 이 데미지가 변해요 (공식에 들어감)<br>
+<b>○ 영향 없음</b>: 기록에서 바꿔 봤지만 이 데미지는 그대로예요 (이 공격엔 안 붙는 옵션)<br>
+<b>− 이번 계산에서 뺌</b>: 기록은 있지만 "무엇으로 계산될까요?"에서 안 골랐어요<br>
+<b>? 아직 안 재 봄</b>: 틀에는 있는데 한 번도 바꿔 본 적 없어요 → <b>다음에 조사할 것</b></p>
+<div class="ex"><b>예시</b> 스킬 데미지 공식<br>✓ 공격력, 스킬 데미지 % · ○ 일반공격 데미지 % · ? 속성 피해 %<br>→ 속성 피해 %를 바꿔 가며 몇 번 기록해 보면 스킬에 붙는지 알 수 있어요.</div>`],
   gain:['무엇을 올리면 이득?',`
 <p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 사이클 평균)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
 <p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요.</p>
@@ -914,10 +922,11 @@ function vTpl(c,v){
       공격력·데미지처럼 그냥 오르는 것은 체크하지 마세요.</div></details></div>
   <div class="card"><div class="big">잴 것 ${hb('measure')}</div><div class="mut">매번 화면에서 읽어 적을 값 (데미지, 표시 공격력, 전투력 …). 이 값들의 공식을 찾아요.</div>
     ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="잴 것 이름">
+      <input type="text" data-mp="${i}" value="${esc(m.pct??'')}" placeholder="배율%" title="스킬 배율 % (게임 설명, 선택)" style="width:64px">
       <select data-mc="${i}"${t.useCrit===false?' style="display:none"':''}>${[['none','치명타 X'],['can','치명타 가능'],['always','확정 치명타']].map(([k,l])=>`<option value="${k}"${(m.crit||'none')===k?' selected':''}>${l}</option>`).join('')}</select>
       <button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
     <label class="row" style="gap:6px;margin-top:10px"><input type="checkbox" id="tuc"${t.useCrit!==false?' checked':''}>치명타가 있는 게임 <span class="mut">(끄면 치명 관련 칸이 모두 사라져요)</span></label>
-    ${t.useCrit===false?'':`<div class="mut" style="margin-top:4px">치명타 X = 일반 데미지만 / 치명타 가능 = 일반·치명 데미지 따로 / 확정 치명타 = 치명 데미지만 적어요. 한 방(1타) 기준으로 재요.</div>
+    ${t.useCrit===false?'':`<div class="mut" style="margin-top:4px">배율% = 게임 설명의 스킬 배율 (예: 평타 100, 스킬 500). 같은 그룹 스킬은 공식 하나 × 배율로 계산할 수 있어요 (최적화 사이클).<br>치명타 X = 일반 데미지만 / 치명타 가능 = 일반·치명 데미지 따로 / 확정 치명타 = 치명 데미지만 적어요. 한 방(1타) 기준으로 재요.</div>
     <label class="f" style="margin-top:10px">치명 피해 표기 (게임 상태창 기준)<select id="tcs"><option value="mult"${(t.critStyle||'mult')==='mult'?' selected':''}>150% = 1.5배 (치명 피해 % 그대로 배율)</option><option value="add"${t.critStyle==='add'?' selected':''}>+50% = 1.5배 (추가 피해 %)</option></select></label>`}
     <button class="sm" id="ma">+ 잴 것</button></div>
   <p class="mut">틀을 고치면 이 틀을 쓰는 세션에도 바로 반영돼요.</p>
@@ -930,6 +939,7 @@ function vTpl(c,v){
     v.querySelectorAll('[data-ir]').forEach(e=>{const [i,j]=ij(e.dataset.ir);t.groups[i].items[j].reduce=e.checked})
     v.querySelectorAll('[data-m]').forEach(e=>t.measures[+e.dataset.m].name=e.value)
     v.querySelectorAll('[data-mc]').forEach(e=>t.measures[+e.dataset.mc].crit=e.value)
+    v.querySelectorAll('[data-mp]').forEach(e=>t.measures[+e.dataset.mp].pct=e.value.trim())
     const cs=$('#tcs');if(cs)t.critStyle=cs.value
     const uc=$('#tuc');if(uc&&uc.checked!==(t.useCrit!==false)){t.useCrit=uc.checked
       if(!uc.checked){t.groups=t.groups.filter(g=>g.id!=='crit');t.measures.forEach(m=>m.crit='none')}
@@ -1112,6 +1122,25 @@ function deltaHelper(onApply){
   m.onclick=e=>{if(e.target===m)m.remove()}
   document.body.append(m);m.querySelector('.d1').focus()
 }
+/** 추천 공식에 어떤 옵션이 영향을 주는지: 영향 있음 / 없음 / 이번 계산에서 뺌 / 아직 안 재 봄 */
+function influenceCard(m,R,c){
+  const s=ses(c.id);if(!s)return''
+  const t=tpl(s.templateId)||{groups:[],measures:[]},P=R.P,X=m.X||P.X,vars=m.vars||P.vars,last=X[X.length-1]
+  if(!last)return''
+  const unit=roundUnit(P.y),base=m.predict(last),inc=new Set(),none=new Set()
+  vars.forEach((x,i)=>{const col=X.map(r=>r[i]),span=(Math.max(...col)-Math.min(...col))||Math.abs(last[i])*0.1||1
+    const z=last.slice();z[i]+=span;const d=Math.abs(m.predict(z)-base)
+    ;(d>Math.max(unit*2,Math.abs(base)*0.001)?inc:none).add(x.name.replace(/\(곱\)$/,''))})
+  const D=sessionData(s),usedIds=new Set(P.vars.map(x=>x.id.replace(/\*$/,'')))
+  const off=D.gvars.filter(x=>!usedIds.has(x.id)).map(x=>x.name)
+  const seen=new Set(D.gvars.map(x=>x.id.replace(/:(flat|pct)$/,'')))
+  const untested=[...new Set(tplVars(t).filter(x=>!x.id.startsWith('g:crit:rate')&&!seen.has(x.id.replace(/:(flat|pct)$/,''))).map(x=>x.name.replace(/ (변화|%)$/,'')))]
+  const line=(cls,label,L)=>L.length?`<div class="${cls}" style="margin-top:4px">${label}: ${L.map(esc).join(', ')}</div>`:''
+  return`<div class="card" style="background:var(--card2);margin:8px 0"><div class="big">옵션 영향 ${hb('influence')}</div>
+    ${line('good','✓ 영향 있음',[...inc])}${line('mut','○ 영향 없음 (바꿔 봤지만 이 데미지는 그대로)',[...none])}
+    ${line('mut','− 이번 계산에서 뺌',off)}${line('bad','? 아직 안 재 봄 → 바꿔 가며 기록해 보세요',untested)}
+    ${!untested.length&&!off.length?'<div class="mut" style="margin-top:4px">틀에 있는 옵션은 모두 확인했어요.</div>':''}</div>`
+}
 /** 측정 현황: 틀의 분류·항목(값/%)과 아이템마다 얼마나 측정했는지, 뭐가 더 필요한지 */
 function measureStatus(s,t){
   const out=[],tv=tplVars(t),stat={}
@@ -1293,8 +1322,9 @@ function vFind(c,v){
       찾은 후보는 세션에 자동으로 남고(대상·탐색 종류별 마지막 결과), [저장]한 공식은 따로 모여요. 세션 [내보내기] 파일에 둘 다 들어가요.</div></details></div>
   ${(()=>{const L=((s.opt||{}).cyc2||{}).list||[];if(!L.length)return''
     const FL=optFormulas(s),have=id=>FL.some(x=>normT(x.f.target)===id)
-    return`<div class="card"><div class="big">사이클에 필요한 공식</div><div class="row" style="margin-top:6px">${L.map(e=>{const x=TV.find(q=>q.id===e.target)
-      return`<span class="tag${have(e.target)?'':' bad'}">${esc(x?x.name:'?')} ${have(e.target)?'✓':'✗ 아직'}</span>`}).join('')}</div>
+    const need=[...new Set(L.map(e=>e.src||e.target))]
+    return`<div class="card"><div class="big">사이클에 필요한 공식</div><div class="row" style="margin-top:6px">${need.map(id=>{const x=TV.find(q=>q.id===id)
+      return`<span class="tag${have(id)?'':' bad'}">${esc(x?x.name:'?')} ${have(id)?'✓':'✗ 아직'}</span>`}).join('')}</div>
       <div class="mut" style="margin-top:4px">✗인 것을 위에서 골라 찾고 [저장]하면 최적화의 사이클 계산에 쓰여요.</div></div>`})()}
   <div id="saved"></div><div id="out"></div>`
   showSaved(c)
@@ -1479,6 +1509,7 @@ function showRes(c){
       <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
       <div>${m.exact?`<span class="tag">${P.tol?'흔들림 범위 안에서 일치':'반올림 안에서 완전 일치'}</span>`:''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
       <div class="formula">${esc((m.tidy||m.formula).replace('결과',P.tname))}</div>
+      ${i===0?influenceCard(m,R,c):''}
       <div class="row"><div class="mut" style="flex:1">최대 오차 <b class="${m.exact?'good':m.maxRel>0.01?'bad':''}">${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</b>${m.testAbs!=null?` · 검증 최대 오차 <b class="${m.testExact?'good':'bad'}">${fmt(m.testAbs)}</b>`:''}</div>
         ${R.stored?pinBtns(R.stored,R.stored.candidates[i]):''}</div>
       ${m.tidy?`<details><summary>정리 전 계수</summary><div class="formula">${esc(m.formula.replace('결과',P.tname))}</div></details>`:''}
@@ -1546,12 +1577,21 @@ function vOpt(c,v){
   const TV=measVars(t)
   const bestF=target=>{const L=FL.filter(x=>normT(x.f.target)===target);const x=L.find(q=>q.key.indexOf('find:')!==0)||L[0];return x?{...x.f,fn:makeF(x.f.spec),label:x.label}:null}
   const single={...F,fn}
-  const entries=cyc.on?(cyc.list||[]).map(e=>({...e,F:bestF(e.target),meas:t.measures.find(m=>m.id===e.target.slice(2)),kind:e.target[0]})):[]
+  const entries=cyc.on?(cyc.list||[]).map(e=>({...e,F:bestF(e.src||e.target),meas:t.measures.find(m=>m.id===e.target.slice(2)),kind:e.target[0]})):[]
   const Fv=cyc.on&&cyc.speed==='fcount'?getFkey(cyc.speedF):null
   function getFkey(key){const x=FL.find(q=>q.key===key);return x?{...x.f,fn:makeF(x.f.spec)}:null}
   const forms=cyc.on?[...entries.map(e=>e.F),Fv].filter(Boolean):[single]
   const used=[...new Set([...forms.flatMap(f=>f.vars.map(baseId)),...(cyc.on&&t.useCrit!==false?['g:crit:dmg:pct']:[])])]
   const val1=(f,z)=>f.fn(f.p,f.vars.map(id=>z[id]??z[baseId(id)]??0))
+  // 다른 공격 공식을 빌려 쓸 때 배율: 적어 둔 배율% 비율, 없으면 이 공격 기록 ÷ 빌린 공식 (평균)
+  for(const e of entries){e.r=1;e.how='';e.auto=null;if(!e.src)continue
+    const me=e.meas,sm=t.measures.find(m=>m.id===e.src.slice(2))
+    if(e.F){const rs=D.rows.filter(r=>!r.r.skip&&isFinite(r.v[e.target])).map(r=>r.v[e.target]/val1(e.F,r.v)).filter(isFinite)
+      if(rs.length)e.auto={r:rs.reduce((a,b)=>a+b,0)/rs.length,n:rs.length}}
+    const pa=num(me&&me.pct),pb=num(sm&&sm.pct)
+    if(isFinite(pa)&&isFinite(pb)&&pb){e.r=pa/pb;e.how=`배율 ${fmt(pa)}% ÷ ${fmt(pb)}%`}
+    else if(e.auto){e.r=e.auto.r;e.how=`이 공격 기록 ${e.auto.n}개로 계산`}
+    else{e.r=NaN;e.how='배율을 몰라요: 틀에서 두 잴 것의 배율%를 적거나, 이 공격을 몇 번 재 두세요'}}
   const objName=!cyc.on?F.targetName:(cyc.speed==='time'||cyc.speed==='fcount'?'시간당 데미지':'사이클당 평균 데미지')
   let parts=null
   const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
@@ -1564,7 +1604,7 @@ function vOpt(c,v){
     if(!cyc.on){const r=val1(single,z);return isFinite(r)?r:NaN}
     const {p:p0,m,ok}=critOf(z);const p=p0;let cycle=0;const det=[]
     for(const e of entries){if(!e.F){det.push({e,miss:true});continue}
-      const raw=val1(e.F,z),md=t.useCrit===false?'none':((e.meas&&e.meas.crit)||'none')
+      const raw=val1(e.F,z)*(e.src?e.r:1),md=t.useCrit===false?'none':((e.meas&&e.meas.crit)||'none')
       // 공격마다 추가 치명 확률 (±%)
       const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100))
       const avg=md==='none'?raw:md==='always'?(e.kind==='c'?raw:raw*m):(e.kind==='m'?raw*(1+p*(m-1)):raw/m*(1+p*(m-1)))
@@ -1635,7 +1675,9 @@ function vOpt(c,v){
         const md=t.useCrit===false?'none':((t.measures.find(m=>m.id===(e.target||'').slice(2))||{}).crit||'none')
         return`<div class="card" style="background:var(--card2)" data-cy="${k}"><div class="list-row">${tsel(e.target,k)}<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="횟수" style="width:70px"><span class="mut">회</span><button class="sm danger cydl">✕</button></div>
           ${md==='can'?`<div class="list-row"><span class="mut">이 공격만 추가 치명 확률</span><input type="text" class="cyca" value="${esc(e.critAdd??'')}" placeholder="+0" style="width:70px"><span class="mut">%</span></div>`:''}
-          <div class="mut">${en&&en.F?'공식: '+esc(en.F.formula):'<span class="bad">이 공격의 공식이 아직 없어요 → [공식 찾기]에서 찾아 저장</span>'}</div>
+          <div class="list-row"><span class="mut">공식</span><select class="cysrc"><option value="">이 공격 자기 공식</option>${TV.filter(x=>x.id!==e.target).map(x=>`<option value="${x.id}"${x.id===e.src?' selected':''}>${esc(x.name)} 공식 × 배율</option>`).join('')}</select></div>
+          <div class="mut">${en&&en.F?'공식: '+esc(en.F.formula):`<span class="bad">${e.src?'빌릴':'이 공격의'} 공식이 아직 없어요 → [공식 찾기]에서 찾아 저장</span>`}</div>
+          ${e.src&&en?`<div class="mut">× ${isFinite(en.r)?fmt(en.r,4):'?'} <span class="${isFinite(en.r)?'':'bad'}">(${esc(en.how)})</span>${en.auto&&en.how.startsWith('배율')?` · 실제 기록 비율 ${fmt(en.auto.r,4)}${Math.abs(en.auto.r/en.r-1)>0.03?' <span class="bad">← 3% 넘게 달라요. 다른 옵션이 붙는 스킬일 수 있어요 (자기 공식을 찾아 보세요)</span>':' <span class="good">✓ 맞음</span>'}`:''}</div>`:''}
           ${d&&!d.miss?`<div class="mut">1회 평균 ${fmt(d.avg)}${md==='can'?` (치명 ${fmt(d.p*100,1)}%)`:''} × ${fmt(d.n)}회 = <b>${fmt(d.avg*d.n)}</b></div>`:''}</div>`}).join('')}
       <button class="sm" id="cyAdd">+ 공격</button>
       ${t.useCrit===false?'':`<label class="f" style="margin-top:8px">치명 확률 % <span class="mut">(지금 내 치명 확률. 아이템의 치명 확률 효과는 여기에 더해져요)</span><input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>`}
@@ -1689,6 +1731,7 @@ function vOpt(c,v){
   v.querySelectorAll('[data-cy]').forEach(el=>{const k=+el.dataset.cy
     el.querySelector('.cyt').onchange=e=>cy2(q=>q.list[k].target=e.target.value)
     el.querySelector('.cyn').onchange=e=>cy2(q=>q.list[k].count=e.target.value)
+    el.querySelector('.cysrc').onchange=e=>cy2(q=>q.list[k].src=e.target.value||'')
     const ca2=el.querySelector('.cyca');if(ca2)ca2.onchange=e=>cy2(q=>q.list[k].critAdd=e.target.value)
     el.querySelector('.cydl').onclick=()=>cy2(q=>q.list.splice(k,1))})
   const on=(cls,key)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>cy2(q=>q[key]=el.value)}
