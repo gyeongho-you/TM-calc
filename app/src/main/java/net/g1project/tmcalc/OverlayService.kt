@@ -812,6 +812,7 @@ class OverlayService : Service() {
 
         buildPanel()
         wm.addView(panel, panelParams)
+        bringBubbleToFront()
         updateBubble()
         // 앱에서 연구실 모드를 켜고 끄면 버튼 글자/색을 바로 바꾼다
         getSharedPreferences("settings", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
@@ -827,6 +828,11 @@ class OverlayService : Service() {
     }
 
     /** 진행 중인 연구 세션이 있으면 버튼이 [연구] */
+    /** 버튼(계산/연구/✕)은 창보다 항상 위에: 창이 버튼 자리를 덮어도 눌러서 닫을 수 있게 (창이 생긴 뒤 버튼을 다시 올린다) */
+    private fun bringBubbleToFront() {
+        runCatching { wm.removeViewImmediate(bubble); wm.addView(bubble, bubbleParams) }
+    }
+
     private fun labMode() = AppPrefs.labActive(this) != null
 
     /** 누르고 있는 동안 창을 거의 투명하게 (뒤의 게임 화면 확인용) */
@@ -943,6 +949,7 @@ class OverlayService : Service() {
         }
         labPanel = box; labParams = params
         wm.addView(box, params)
+        bringBubbleToFront()
     }
 
     private fun labArr(o: JSONObject?, key: String): List<JSONObject> {
