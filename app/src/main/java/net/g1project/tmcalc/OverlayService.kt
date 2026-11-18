@@ -1350,7 +1350,8 @@ class OverlayService : Service() {
                 for (it in its) {
                     if (g.optString("id") == "crit" && it?.optString("id") == "rate") continue   // 치명 확률은 최적화에서
                     val key = g.optString("id") + ":" + (it?.optString("id") ?: "")
-                    val label = g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
+                    val label = if (g.optString("id") == "crit" && it?.optString("id") == "dmg") "치명 피해 (1.5배=150)"
+                        else g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
                     fun cur(u: String) = if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
                     val ef = labInput("값", cur("flat")); val ep = labInput("%", cur("pct"))
                     edits["$key:flat"] = ef; edits["$key:pct"] = ep

@@ -569,7 +569,7 @@ function loadData(){
   for(const t of data.templates){
     if(t.useCrit===false)t.groups=t.groups.filter(g=>g.id!=='crit')
     else if(!t.groups.some(g=>g.id==='crit'))t.groups.push({id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률'},{id:'dmg',name:'피해'}]})
-    if(!t.critStyle)t.critStyle='mult'}
+    t.critStyle='mult'}   // 치명 피해는 항상 배율 % (1.5배 = 150)
   try{active=BR?TMCalc.getActive():(localStorage.getItem('tmcalcLabActive')||'')}catch(e){active=''}
 }
 /** 고치기 전에 항상 새로 읽는다 (게임 위 [연구] 창이 그 사이에 기록을 넣었을 수 있음) */
@@ -663,13 +663,15 @@ const HELP={
 <p>치명이 있는 게임이면 "치명" 분류(확률·피해)가 자동으로 들어가요.<br>틀을 고치면 그 틀을 쓰는 세션에도 바로 반영돼요.</p>`],
   measure:['공격 그룹 (잴 것)',`
 <p><b>데미지를 잴 큰 묶음</b>이에요. 스킬 하나하나를 적는 게 아니에요.</p>
-<div class="ex"><b>예시</b><br>· <b>일반공격</b> (평타)<br>· <b>스킬</b> (모든 스킬)<br>→ "스킬 데미지 +%" 같은 옵션이 스킬 그룹 전체에 똑같이 붙으니까, 스킬은 하나로 묶어요.</div>
+<div class="ex"><b>예시</b><br>· <b>일반공격</b> (평타)<br>· <b>스킬</b> (모든 스킬)<br>→ "스킬 데미지 +%" 같은 옵션은 스킬 전체에 똑같이 붙으니까, 스킬은 하나로 묶어요.</div>
 <p><b>어떻게 재나요?</b> 그룹마다 공격 하나를 정해서, 그 공격의 한 방 데미지를 계속 적어요. 예: 스킬 그룹은 "스킬A"로만 재기.</p>
-<p><b>잰 공격 배율%</b> (선택): 그 공격의 배율을 적어 두면, 최적화에서 같은 그룹의 다른 스킬(500%, 1000% …)도 배율로 계산해요.</p>
-<p><b>비치명 / 치명 칸</b>: 치명이 안 터진 숫자는 비치명 칸, 터진 숫자는 치명 칸에 적어요. 본 것만 적으면 되고, 둘을 섞지만 않으면 돼요.</p>
-<p>옵션이 전혀 다르게 붙는 공격(예: 소환수 공격)은 그룹을 따로 만들어요.</p>`],
+<p><b>잰 공격 %</b>: 그 공격이 <b>1배(100%) 기준으로 몇 %인지</b> 적어요. 평타처럼 배율이 없으면 비움(= 100).<br>
+앱은 공식을 항상 <b>1배(100%) 기준</b>으로 바꿔서 써요. 그래서 최적화에서 다른 스킬은 배율만 적으면 돼요.</p>
+<div class="ex"><b>예시</b> 스킬 그룹을 "공격력의 300%" 스킬A로 잼 → 잰 공격 300<br>스킬A 한 방 6,000 → 1배 기준 2,000<br>최적화에서 500% 스킬B → 2,000 × 5 = 10,000</div>
+<p><b>비치명 / 치명 칸</b>: 치명이 안 터진 숫자는 비치명 칸, 터진 숫자는 치명 칸. 본 것만 적고, 섞지만 않으면 돼요.</p>`],
   startState:['시작 상태란?',`
 <p>세션을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창 등에 보이는 지금 값을 적어요.</p>
+<p><b>치명 피해</b>는 배율 %로 적어요: 1.5배면 150, 2배면 200.</p>
 <p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
 <div class="ex"><b>예시</b> (처음에 스킬 데미지 30%를 이미 갖고 있음)<br>
 시작 상태 안 적음 → 15000 × (1 + 0.667×스킬%) <span class="bad">(계수가 이상함)</span><br>
@@ -695,12 +697,11 @@ const HELP={
 <p>찾은 후보는 자동으로 남고, [저장]하면 최적화에서 쓸 수 있어요.</p>`],
   cycle:['사이클이란?',`
 <p>평타와 스킬이 섞여 나가니까, <b>한 바퀴(사이클) 동안 들어가는 평균 데미지</b>로 비교하는 거예요.</p>
-<p>공격 하나씩 등록해요:<br>· <b>이름</b>: 평타, 스킬A …<br>· <b>공격 그룹</b>: 어느 그룹 공식을 쓸지 (일반공격 / 스킬)<br>
-· <b>배율%</b>: 그 공격의 배율 (잰 공격과 같으면 비움)<br>· <b>횟수</b>: 한 사이클에 몇 번 (다타면 타수까지)<br>
-· <b>치명</b>: 불가 / 가능(확률대로) / 항상<br>· <b>추가 치명 확률</b>: 그 공격만 치명 확률이 더 높을 때</p>
-<div class="ex"><b>예시</b> (스킬 그룹은 300% 스킬로 잼)<br>평타 · 일반공격 · 횟수 5 · 치명 가능<br>스킬A · 스킬 · 300% · 2회 · 치명 가능<br>스킬B 1~5타 · 스킬 · 500% · 5회 · 치명 불가<br>스킬B 막타 · 스킬 · 1000% · 1회 · 항상 치명</div>
-<p>스킬B는 "스킬 그룹 공식 × (500 ÷ 300)"으로 계산돼요. 그래서 스킬마다 공식을 따로 찾을 필요가 없어요.</p>
-<p><b>치명 확률</b>은 위 칸에 지금 내 확률을 적어요. 치명 피해는 내 정보(시작 상태)의 값을 써요.</p>
+<p>공격 하나씩 등록해요:<br>· <b>이름</b>: 평타, 스킬A …<br>· <b>공격 그룹</b>: 어느 그룹 공식을 쓸지<br>
+· <b>배율 %</b>: <b>1배 = 100</b> 기준으로 그 공격이 몇 %인지 (게임 설명 그대로). 평타면 100<br>
+· <b>횟수</b>: 한 사이클에 몇 번 (다타면 타수까지)<br>· <b>치명</b>: 불가 / 가능(확률대로) / 항상<br>· <b>추가 치명 확률</b>: 그 공격만 치명 확률이 더 높을 때</p>
+<div class="ex"><b>예시</b> (스킬 그룹 1배 기준 한 방 = 2,000)<br>평타 · 일반공격 · 100 · 5회 · 가능<br>스킬A · 스킬 · 300 → 6,000 · 2회 · 가능<br>스킬B 1~5타 · 스킬 · 500 → 10,000 · 5회 · 불가<br>스킬B 막타 · 스킬 · 1000 → 20,000 · 1회 · 항상</div>
+<p><b>치명 확률</b>은 위 칸에 지금 내 확률(%)을, <b>치명 피해</b>는 내 정보에 배율 %로 (1.5배 = 150) 적어요.</p>
 <p><b>공격 속도</b>는 공속 옵션이 있을 때만 넣어요.</p>`],
   state:['내 상태',`
 <p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
@@ -921,11 +922,12 @@ function vTpl(c,v){
     <div class="mut">스킬 하나하나가 아니라 <b>큰 묶음</b>을 적어요. 예: <b>일반공격</b>, <b>스킬</b>. 같은 옵션이 붙는 공격끼리 한 그룹이에요.<br>
     기록할 때는 그 그룹의 공격 하나를 정해서 한 방 데미지를 적어요${t.useCrit===false?'':' (비치명 / 치명 칸)'}.</div>
     ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="그룹 이름 (일반공격, 스킬 …)" style="flex:1">
-      <input type="text" data-mb="${i}" value="${esc(m.basePct??m.pct??'')}" placeholder="잰 공격 배율%" title="이 그룹에서 실제로 재는 공격의 배율 % (선택)" style="width:110px">
+      <label class="row mut" style="gap:4px">잰 공격<input type="text" data-mb="${i}" value="${esc(m.basePct??m.pct??'')}" placeholder="100" title="이 그룹에서 실제로 재는 공격의 배율 % (1배 = 100)" style="width:64px">%</label>
       <button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
-    <div class="mut" style="margin-top:4px">잰 공격 배율% (선택): 이 그룹에서 실제로 데미지를 재는 공격의 배율이에요. 예: 스킬 그룹을 "공격력 300%" 스킬로 잰다면 300. 적어 두면 최적화에서 같은 그룹의 다른 스킬(500% 등)을 배율로 계산해요.</div>
+    <div class="mut" style="margin-top:4px"><b>잰 공격 %</b>: 이 그룹에서 실제로 데미지를 재는 공격이 <b>1배(100%) 기준으로 몇 %인지</b> 적어요. 평타처럼 배율이 없으면 비워 두세요 (= 100).<br>
+    예: 스킬 그룹을 "공격력의 300%" 스킬로 잰다면 300 → 앱이 공식을 1배(100%) 기준으로 바꿔 두고, 최적화에서 500% 스킬은 1배의 5배로 계산해요.</div>
     <label class="row" style="gap:6px;margin-top:10px"><input type="checkbox" id="tuc"${t.useCrit!==false?' checked':''}>치명타가 있는 게임 <span class="mut">(끄면 치명 관련 칸이 모두 사라져요)</span></label>
-    ${t.useCrit===false?'':`<label class="f" style="margin-top:10px">치명 피해 표기 (게임 상태창 기준)<select id="tcs"><option value="mult"${(t.critStyle||'mult')==='mult'?' selected':''}>150% = 1.5배 (치명 피해 % 그대로 배율)</option><option value="add"${t.critStyle==='add'?' selected':''}>+50% = 1.5배 (추가 피해 %)</option></select></label>`}
+    ${t.useCrit===false?'':`<div class="mut" style="margin-top:6px">치명 피해는 <b>배율 %</b>로 적어요: 치명이 1.5배면 <b>150</b>, 2배면 <b>200</b>. (게임이 "+50%"처럼 보여 주면 100을 더해서 150)</div>`}
     <button class="sm" id="ma">+ 공격 그룹</button></div>
   <p class="mut">틀을 고치면 이 틀을 쓰는 세션에도 바로 반영돼요.</p>
   <div class="row"><button class="pri" id="ts">저장</button><button id="tc">닫기</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요.</div>`
@@ -1040,7 +1042,7 @@ function startSlots(t){
   for(const g of t.groups){
     const its=(g.items||[]).length?g.items:[null]
     for(const it of its){if(g.id==='crit'&&it&&it.id==='rate')continue   // 치명 확률은 최적화에서 적는다
-      out.push({label:g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})}
+      out.push({label:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})}
   }
   return out
 }
@@ -1508,6 +1510,8 @@ function showRes(c){
       <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
       <div>${m.exact?`<span class="tag">${P.tol?'흔들림 범위 안에서 일치':'반올림 안에서 완전 일치'}</span>`:''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
       <div class="formula">${esc((m.tidy||m.formula).replace('결과',P.tname))}</div>
+      ${i===0?(()=>{const sx=ses(c.id),tt=sx&&tpl(sx.templateId),mm=tt&&tt.measures.find(q=>q.id===(c.target||'').slice(2)),bp=num(mm&&(mm.basePct??mm.pct))
+        return isFinite(bp)&&bp!==100?`<div class="mut">잰 공격이 ${fmt(bp)}%라서, 1배(100%) 기준 한 방은 이 값 ÷ ${fmt(bp/100,4)} 이에요. 최적화는 이 1배 기준으로 계산해요.</div>`:''})():''}
       ${i===0?influenceCard(m,R,c):''}
       <div class="row"><div class="mut" style="flex:1">최대 오차 <b class="${m.exact?'good':m.maxRel>0.01?'bad':''}">${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</b>${m.testAbs!=null?` · 검증 최대 오차 <b class="${m.testExact?'good':'bad'}">${fmt(m.testAbs)}</b>`:''}</div>
         ${R.stored?pinBtns(R.stored,R.stored.candidates[i]):''}</div>
@@ -1581,11 +1585,10 @@ function vOpt(c,v){
   const entries=cyc.on?(cyc.list||[]).map(e=>{
     const mid=e.group||(e.target?e.target.slice(2):(t.measures[0]||{}).id),meas=t.measures.find(m=>m.id===mid)
     const N=bestF('m:'+mid),C=t.useCrit===false?null:bestF('c:'+mid)
-    const bp=num(meas&&(meas.basePct??meas.pct)),ep=num(e.pct)
-    let r=1,how=''
-    if(isFinite(ep)&&isFinite(bp)&&bp){r=ep/bp;how=`${fmt(ep)}% ÷ 잰 공격 ${fmt(bp)}%`}
-    else if(isFinite(ep))how='그룹의 "잰 공격 배율%"를 틀에 적어야 배율이 계산돼요 (지금은 ×1)'
-    return{...e,mid,meas,N,C,r,how,crit:e.crit||(t.useCrit===false?'none':'can')}}):[]
+    // 1배(100%) 기준: 그룹 공식 ÷ (잰 공격 % / 100) = 1배 한 방, 여기에 이 공격 % / 100 을 곱한다
+    const bp=num(meas&&(meas.basePct??meas.pct))||100,ep=num(e.pct)||100
+    const r=ep/bp,how=`1배 기준 × ${fmt(ep/100,4)} (${fmt(ep)}%)`
+    return{...e,mid,meas,N,C,r,how,bp,crit:e.crit||(t.useCrit===false?'none':'can')}}):[]
   const Fv=cyc.on&&cyc.speed==='fcount'?getFkey(cyc.speedF):null
   function getFkey(key){const x=FL.find(q=>q.key===key);return x?{...x.f,fn:makeF(x.f.spec)}:null}
   const forms=cyc.on?[...entries.flatMap(e=>[e.N,e.C]),Fv].filter(Boolean):[single]
@@ -1607,7 +1610,7 @@ function vOpt(c,v){
       const md=t.useCrit===false?'none':e.crit
       const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100))     // 공격마다 추가 치명 확률
       const avg=md==='none'?nd:md==='always'?cd:nd*(1-p)+cd*p
-      const n=num(e.count)||0;cycle+=n*avg;det.push({e,avg,n,p})}
+      const n=num(e.count)||0;cycle+=n*avg;det.push({e,avg,n,p,one:nd/e.r/(e.bp/100)})}
     let r=cycle,per=''
     if(cyc.speed==='time'){r=cycle/(num(cyc.time)||1);per='/초'}
     else if(cyc.speed==='fcount'&&Fv){const base=entries[+cyc.speedBase||0]||entries[0];const per0=num(cyc.period)||30
@@ -1675,12 +1678,12 @@ function vOpt(c,v){
           <div class="list-row"><input type="text" class="cyname" value="${esc(e.name||'')}" placeholder="공격 이름 (평타, 스킬A …)" style="flex:1"><button class="sm danger cydl">✕</button></div>
           <div class="grid" style="margin-top:6px">
             <label class="f">공격 그룹<select class="cyg">${t.measures.map(m=>`<option value="${m.id}"${m.id===en.mid?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
-            <label class="f">배율% (선택)<input type="text" class="cyp" value="${esc(e.pct??'')}" placeholder="잰 공격과 같으면 비움"></label>
+            <label class="f">배율 % (1배 = 100)<input type="text" class="cyp" value="${esc(e.pct??'')}" placeholder="100"></label>
             <label class="f">사이클당 횟수 (타수 포함)<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="1"></label>
             ${t.useCrit===false?'':`<label class="f">치명<select class="cyc">${[['none','불가 (안 터짐)'],['can','가능 (확률대로)'],['always','항상 (확정 치명)']].map(([q,l])=>`<option value="${q}"${en.crit===q?' selected':''}>${l}</option>`).join('')}</select></label>
             ${en.crit==='can'?`<label class="f">이 공격 추가 치명 확률 ±%<input type="text" class="cyca" value="${esc(e.critAdd??'')}" placeholder="0"></label>`:''}`}
           </div>
-          <div class="mut" style="margin-top:4px">${en.N||en.C?`그룹 공식 ${en.r!==1?`× ${fmt(en.r,4)}`:''}${en.how?` <span class="${en.how.startsWith('그룹')?'bad':''}">(${esc(en.how)})</span>`:''}`:`<span class="bad">'${esc((en.meas||{}).name||'?')}' 그룹의 공식이 아직 없어요 → [공식 찾기]에서 찾아 [저장]</span>`}</div>
+          <div class="mut" style="margin-top:4px">${en.N||en.C?`${esc((en.meas||{}).name)} 공식의 ${esc(en.how)}${d&&!d.miss?` · 1배(100%) 비치명 한 방 ${fmt(d.one)}`:''}`:`<span class="bad">'${esc((en.meas||{}).name||'?')}' 그룹의 공식이 아직 없어요 → [공식 찾기]에서 찾아 [저장]</span>`}</div>
           ${d&&!d.miss?`<div class="mut">1회 평균 ${fmt(d.avg)}${en.crit==='can'&&t.useCrit!==false?` (치명 ${fmt(d.p*100,1)}%)`:''} × ${fmt(d.n)}회 = <b>${fmt(d.avg*d.n)}</b></div>`:''}</div>`}).join('')}
       <button class="sm" id="cyAdd">+ 공격</button>
       ${t.useCrit===false?'':`<label class="f" style="margin-top:8px">치명 확률 % <span class="mut">(지금 내 치명 확률. 아이템의 치명 확률 효과는 여기에 더해져요)</span><input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>`}
