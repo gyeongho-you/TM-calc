@@ -704,10 +704,11 @@ const HELP={
 <p><b>치명 확률</b>은 위 칸에 지금 내 확률(%)을, <b>치명 피해</b>는 내 정보에 배율 %로 (1.5배 = 150) 적어요.</p>
 <p><b>비교 방식</b><br>① <b>사이클당</b>: 한 바퀴에 몇 번씩 → 사이클당 평균 데미지<br>
 ② <b>시간당</b>: 정해진 시간(예: 10초) 동안 → 초당 데미지. 공격마다 종류를 골라요:<br>
-&nbsp;· <b>스킬 (쿨타임)</b>: 실제 쿨타임·시전 시간·타수 → 횟수 = 시간 ÷ 쿨타임 × 타수<br>
-&nbsp;· <b>평타 (남는 시간 채움)</b>: 평타 1번 간격 → 스킬 시전에 쓰고 <b>남은 시간</b>만큼만 평타<br>
+&nbsp;· <b>스킬 (쿨타임)</b>: 기본 쿨타임·<b>쿨감 %</b>·시전 시간·타수 → 실제 쿨 = 기본 × (1 − 쿨감%), 횟수 = 시간 ÷ 실제 쿨 × 타수<br>
+&nbsp;· <b>평타 (남는 시간 채움)</b>: 기본 간격·<b>공속 %</b> → 실제 간격 = 기본 ÷ (1 + 공속%), 스킬 시전에 쓰고 <b>남은 시간</b>만큼만 평타<br>
+&nbsp;&nbsp;(쿨감·공속 칸에 <code>[쿨감 %]</code>처럼 내 정보 이름을 적으면 쿨감·공속 아이템도 최적화에 반영돼요)<br>
 &nbsp;· <b>직접 횟수</b>: 센 횟수를 그대로</p>
-<div class="ex"><b>예시</b> 10초, 평타 간격 0.5초, 스킬 쿨 3초·시전 0.8초<br>스킬 3.33번 → 2.67초 사용 → 평타 (10 − 2.67) ÷ 0.5 = 14.7번<br>쿨감 옵션을 끼면 <b>실제 쿨타임</b>을 고쳐 적으면 돼요 (평타가 알아서 줄어요).</div>`],
+<div class="ex"><b>예시</b> 10초, 평타 간격 0.5초, 스킬 쿨 3초·시전 0.8초<br>스킬 3.33번 → 2.67초 사용 → 평타 (10 − 2.67) ÷ 0.5 = 14.7번<br>쿨감 20%를 적으면 실제 쿨 2.4초 → 스킬 4.17번, 평타는 알아서 13.3번으로 줄어요.</div>`],
   state:['내 상태',`
 <p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
 <p>그 뒤로 게임에서 바뀐 게 있으면 여기서 고쳐요. 비우면 다시 마지막 기록 값이에요.</p>
@@ -886,12 +887,12 @@ window.onPickedFile=importText
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''}
 function addSample(){
   // 실제 공식: 데미지 = (기본 1000 + 룬 고정) × (1 + 룬%) × (1 + 무기%)
-  const g1=uid(),g2=uid(),m1=uid(),t={id:uid(),name:'예시: 룬·무기 → 데미지',groups:[{id:g1,name:'룬'},{id:g2,name:'무기'}],measures:[{id:m1,name:'데미지'}]}
+  const g1=uid(),g2=uid(),m1=uid(),t={id:uid(),name:'예시 게임 데미지',groups:[{id:g1,name:'룬'},{id:g2,name:'무기'}],measures:[{id:m1,name:'일반공격'}]}
   const steps=[[null,0,'flat'],[g1,150,'flat'],[g1,200,'flat'],[g1,5,'pct'],[g1,10,'pct'],[g2,8,'pct'],[g2,12,'pct'],[g1,-100,'flat'],[g2,-5,'pct'],[g1,7,'pct'],[g1,300,'flat'],[g2,20,'pct']]
   let fl=0,rp=0,wp=0;const recs=[];let t0=Date.now()-steps.length*60000
   for(const [g,ch,u] of steps){if(g===g1&&u==='flat')fl+=ch;if(g===g1&&u==='pct')rp+=ch;if(g===g2)wp+=ch
     recs.push({id:uid(),time:t0+=60000,groupId:g,change:ch,unit:u,values:{[m1]:Math.round((1000+fl)*(1+rp/100)*(1+wp/100))},note:''})}
-  mutate(d=>{d.templates.push(t);d.sessions.push({id:uid(),name:'예시 세션',templateId:t.id,created:Date.now(),records:recs})})
+  mutate(d=>{d.templates.push(t);d.sessions.push({id:uid(),name:'예시: 룬·무기 실험',templateId:t.id,created:Date.now(),records:recs})})
 }
 
 // ---------------------------------------------------------------- 틀 만들기/고치기
@@ -902,7 +903,8 @@ function vTpl(c,v){
   if(!c.draft)c.draft=orig?JSON.parse(JSON.stringify(orig)):{id:uid(),name:'',groups:[{id:uid(),name:'룬'},{id:uid(),name:'무기'}],measures:[{id:uid(),name:'데미지'}]}
   const t=c.draft
   $('#title').textContent=orig?'틀 수정':'새 틀'
-  v.innerHTML=`<div class="card"><label class="f">틀 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 룬·무기 → 데미지"></label></div>
+  v.innerHTML=`<div class="card"><label class="f">틀 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 테이밍마스터2 데미지"></label>
+    <div class="mut" style="margin-top:4px">틀은 <b>게임 하나의 데미지 시스템 전체</b>를 담아요 (바꿀 수 있는 것들, 공격 그룹, 아이템). 보통 게임마다 틀 하나면 돼요.</div></div>
   <div class="card"><div class="big">분류 ${hb('tpl')}</div><div class="mut">바꿔 가며 실험할 것 (룬, 무기, 장비, 버프, 적 방어 …). 기록할 때 이 중에서 고르고 ±값이나 %를 적어요.</div>
     ${t.groups.map((g,i)=>g.sys?'':`<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid var(--line)"><div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
       ${(g.items||[]).length?'':`<label class="row mut" style="gap:4px" title="방어 계산에 들어가는 값 (적 방어, 방깎 …)"><input type="checkbox" data-gr="${i}"${g.reduce?' checked':''}>감소형</label>`}
@@ -1614,11 +1616,14 @@ function vOpt(c,v){
     // 횟수: 시간당 모드면 종류별로 (스킬 = 시간 ÷ 쿨타임 × 타수, 평타 = 남는 시간 ÷ 간격 × 타수, 직접 = 적은 값)
     const T=num(cyc.time)||10,kindOf=e=>byTime?(e.kind2||'count'):'count'
     let usedT=0
-    for(const e of entries)if(kindOf(e)==='cd'){const cd=num(e.cd);if(cd>0)usedT+=T/cd*(num(e.cast)||0)}
+    // 실제 쿨타임 = 기본 × (1 − 쿨감%), 실제 평타 간격 = 기본 ÷ (1 + 공속%). 쿨감·공속 칸은 숫자나 [이름]
+    const pv=x=>{const v=exprVal(x,z,names);return isFinite(v)?v:0}
+    const realCd=e=>(num(e.cd)||0)*(1-pv(e.cdr)/100),realIv=e=>(num(e.iv)||0)/(1+pv(e.aspd)/100)
+    for(const e of entries)if(kindOf(e)==='cd'){const cd=realCd(e);if(cd>0)usedT+=T/cd*(num(e.cast)||0)}
     const leftT=Math.max(0,T-usedT)
     const cntOf=e=>{const k=kindOf(e),h=num(e.hits)||1
-      if(k==='cd'){const cd=num(e.cd);return cd>0?T/cd*h:0}
-      if(k==='fill'){const iv=num(e.iv);return iv>0?leftT/iv*h:0}
+      if(k==='cd'){const cd=realCd(e);return cd>0?T/cd*h:0}
+      if(k==='fill'){const iv=realIv(e);return iv>0?leftT/iv*h:0}
       return num(e.count)||0}
     for(const e of entries){if(!e.N&&!e.C){det.push({e,miss:true});continue}
       // 비치명 한 방 (치명 공식만 있으면 ÷ 배율), 치명 한 방 (없으면 × 배율)
@@ -1626,7 +1631,7 @@ function vOpt(c,v){
       const md=t.useCrit===false?'none':e.crit
       const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100))     // 공격마다 추가 치명 확률
       const avg=md==='none'?nd:md==='always'?cd:nd*(1-p)+cd*p
-      const n=cntOf(e);cycle+=n*avg;det.push({e,avg,n,p,one:nd/e.r/(e.bp/100)})}
+      const n=cntOf(e);cycle+=n*avg;det.push({e,avg,n,p,one:nd/e.r/(e.bp/100),rcd:realCd(e),riv:realIv(e)})}
     let r=cycle,per=''
     if(byTime){r=cycle/(num(cyc.time)||1);per='/초'}
     else if(false){const base=entries[+cyc.speedBase||0]||entries[0];const per0=num(cyc.period)||30
@@ -1697,14 +1702,14 @@ function vOpt(c,v){
             <label class="f">배율 % (1배 = 100)<input type="text" class="cyp" value="${esc(e.pct??'')}" placeholder="100"></label>
             ${byTime?`<label class="f">종류<select class="cyk">${[['count','직접 횟수'],['fill','평타 (남는 시간 채움)'],['cd','스킬 (쿨타임)']].map(([q,l])=>`<option value="${q}"${(e.kind2||'count')===q?' selected':''}>${l}</option>`).join('')}</select></label>
               ${(e.kind2||'count')==='count'?`<label class="f">${esc(cyc.time||'?')}초 동안 횟수 (타수 포함)<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="1"></label>`:''}
-              ${e.kind2==='fill'?`<label class="f">평타 1번 간격 (초)<input type="text" class="cyiv" value="${esc(e.iv??'')}" placeholder="0.5"></label><label class="f">타수<input type="text" class="cyh" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}
-              ${e.kind2==='cd'?`<label class="f">실제 쿨타임 (초)<input type="text" class="cycd" value="${esc(e.cd??'')}" placeholder="3"></label><label class="f">시전 시간 (초, 평타 멈춤)<input type="text" class="cyct" value="${esc(e.cast??'')}" placeholder="0"></label><label class="f">타수<input type="text" class="cyh" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}`
+              ${e.kind2==='fill'?`<label class="f">기본 평타 간격 (초)<input type="text" class="cyiv" value="${esc(e.iv??'')}" placeholder="0.5"></label><label class="f">공속 % (숫자나 [이름])<input type="text" class="cyas" value="${esc(e.aspd??'')}" placeholder="0"></label><label class="f">타수<input type="text" class="cyh" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}
+              ${e.kind2==='cd'?`<label class="f">기본 쿨타임 (초)<input type="text" class="cycd" value="${esc(e.cd??'')}" placeholder="3"></label><label class="f">쿨감 % (숫자나 [이름])<input type="text" class="cycr" value="${esc(e.cdr??'')}" placeholder="0"></label><label class="f">시전 시간 (초, 평타 멈춤)<input type="text" class="cyct" value="${esc(e.cast??'')}" placeholder="0"></label><label class="f">타수<input type="text" class="cyh" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}`
             :`<label class="f">사이클당 횟수 (타수 포함)<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="1"></label>`}
             ${t.useCrit===false?'':`<label class="f">치명<select class="cyc">${[['none','불가 (안 터짐)'],['can','가능 (확률대로)'],['always','항상 (확정 치명)']].map(([q,l])=>`<option value="${q}"${en.crit===q?' selected':''}>${l}</option>`).join('')}</select></label>
             ${en.crit==='can'?`<label class="f">이 공격 추가 치명 확률 ±%<input type="text" class="cyca" value="${esc(e.critAdd??'')}" placeholder="0"></label>`:''}`}
           </div>
           <div class="mut" style="margin-top:4px">${en.N||en.C?`${esc((en.meas||{}).name)} 공식의 ${esc(en.how)}${d&&!d.miss?` · 1배(100%) 비치명 한 방 ${fmt(d.one)}`:''}`:`<span class="bad">'${esc((en.meas||{}).name||'?')}' 그룹의 공식이 아직 없어요 → [공식 찾기]에서 찾아 [저장]</span>`}</div>
-          ${d&&!d.miss&&byTime&&(e.kind2==='cd'||e.kind2==='fill')?`<div class="mut">→ ${esc(cyc.time||'10')}초에 ${fmt(d.n,2)}회로 계산${e.kind2==='fill'&&parts?` (스킬이 ${fmt(parts.usedT,2)}초 써서 남은 ${fmt(parts.leftT,2)}초)`:''}</div>`:''}
+          ${d&&!d.miss&&byTime&&(e.kind2==='cd'||e.kind2==='fill')?`<div class="mut">${e.kind2==='cd'?`실제 쿨타임 ${fmt(d.rcd,3)}초`:`실제 평타 간격 ${fmt(d.riv,3)}초`} → ${esc(cyc.time||'10')}초에 ${fmt(d.n,2)}회${e.kind2==='fill'&&parts?` (스킬이 ${fmt(parts.usedT,2)}초 써서 남은 ${fmt(parts.leftT,2)}초)`:''}</div>`:''}
           ${d&&!d.miss?`<div class="mut">1회 평균 ${fmt(d.avg)}${en.crit==='can'&&t.useCrit!==false?` (치명 ${fmt(d.p*100,1)}%)`:''} × ${fmt(d.n)}회 = <b>${fmt(d.avg*d.n)}</b></div>`:''}</div>`}).join('')}
       <button class="sm" id="cyAdd">+ 공격</button>
       ${t.useCrit===false?'':`<label class="f" style="margin-top:8px">치명 확률 % <span class="mut">(지금 내 치명 확률. 아이템의 치명 확률 효과는 여기에 더해져요)</span><input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>`}
@@ -1762,7 +1767,7 @@ function vOpt(c,v){
     const bind=(cls,f)=>{const x=el.querySelector('.'+cls);if(x)x.onchange=ev=>cy2(q=>f(E(q),ev.target.value))}
     bind('cyname',(e,x)=>e.name=x);bind('cyg',(e,x)=>e.group=x);bind('cyp',(e,x)=>e.pct=x);bind('cyn',(e,x)=>e.count=x)
     bind('cyc',(e,x)=>e.crit=x);bind('cyca',(e,x)=>e.critAdd=x)
-    bind('cyk',(e,x)=>e.kind2=x);bind('cyiv',(e,x)=>e.iv=x);bind('cycd',(e,x)=>e.cd=x);bind('cyct',(e,x)=>e.cast=x);bind('cyh',(e,x)=>e.hits=x)
+    bind('cyk',(e,x)=>e.kind2=x);bind('cyas',(e,x)=>e.aspd=x);bind('cycr',(e,x)=>e.cdr=x);bind('cyiv',(e,x)=>e.iv=x);bind('cycd',(e,x)=>e.cd=x);bind('cyct',(e,x)=>e.cast=x);bind('cyh',(e,x)=>e.hits=x)
     el.querySelector('.cydl').onclick=()=>cy2(q=>q.list.splice(k,1))})
   const on=(cls,key)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>cy2(q=>q[key]=el.value)}
   on('cyti','time');on('cyr','rate')
