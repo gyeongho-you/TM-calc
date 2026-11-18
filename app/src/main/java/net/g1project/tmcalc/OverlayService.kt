@@ -983,8 +983,10 @@ class OverlayService : Service() {
                 val n = sm?.optJSONArray(id)?.length() ?: 0
                 "${m.optString("name")} ${LabData.fmt(Math.round(v.optDouble(id) * 100) / 100.0)}" + if (n > 1) "(${n}회)" else ""
             } }
+        val cv = r.optJSONObject("critValues")
+        val cs = measures.mapNotNull { m -> val id = m.optString("id"); cv?.takeIf { it.has(id) }?.let { "${m.optString("name")}(치명) ${LabData.fmt(Math.round(it.optDouble(id) * 100) / 100.0)}" } }
         val note = r.optString("note")
-        return "#$no $kind → ${vs.joinToString(" · ")}" + if (note.isNotBlank()) "  ($note)" else ""
+        return "#$no $kind → ${(vs + cs).joinToString(" · ")}" + if (note.isNotBlank()) "  ($note)" else ""
     }
 
     /** 지금 낀 아이템 개수: 시작 때 낀 것 + 기록의 끼기/빼기 (상태 다시 적기는 덮어씀) */
@@ -1163,6 +1165,27 @@ class OverlayService : Service() {
                         override fun afterTextChanged(e: Editable?) { r.text = e?.toString() ?: "" }
                     })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(headerButton("±") {
+                    // 지금 낀 것 → 바꿀 것 (여러 개는 띄어서) = 변화
+                    val e1 = labInput("지금 값들 (23213 23142)"); val e2 = labInput("바꿀 값들 (20000 23142)")
+                    val res = TextView(ui).apply { textSize = 15f; setTextColor(LAB_ACC); setPadding(0, dp(8), 0, 0); text = "변화: -" }
+                    fun sum(t: String) = t.trim().split(Regex("[\\s/+]+")).mapNotNull { LabData.number(it) }.sum()
+                    fun d() = Math.round((sum(e2.text.toString()) - sum(e1.text.toString())) * 1e6) / 1e6
+                    val w = object : TextWatcher {
+                        override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                        override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                        override fun afterTextChanged(x: Editable?) { val v = d(); res.text = "변화: " + (if (v >= 0) "+" else "") + LabData.fmt(v) }
+                    }
+                    e1.addTextChangedListener(w); e2.addTextChangedListener(w)
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("변화 계산")
+                        .setView(LinearLayout(ui).apply {
+                            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(4), dp(20), 0)
+                            addView(labLabel("지금 낀 것")); addView(e1, LinearLayout.LayoutParams(-1, -2))
+                            addView(labLabel("바꿀 것")); addView(e2, LinearLayout.LayoutParams(-1, -2)); addView(res)
+                        })
+                        .setPositiveButton("적용") { _, _ -> r.text = LabData.fmt(d()).replace(",", ""); renderLab() }
+                        .setNegativeButton("닫기", null))
+                })
                 addView(labChip("값", !r.pct) { r.pct = false; renderLab() })
                 addView(labChip("%", r.pct) { r.pct = true; renderLab() })
                 addView(android.widget.CheckBox(ui).apply {
@@ -1184,33 +1207,42 @@ class OverlayService : Service() {
             })
         })
 
-        // 잰 값들 (2칸씩)
-        val last = recs.lastOrNull()?.optJSONObject("values")
-        val measureEdits = LinkedHashMap<String, EditText>()
+        // 잰 값들 (2칸씩). 치명 모드: 치명타 X → 일반 / 가능 → 일반·치명 / 확정 → 치명
+        val useCrit = t.optBoolean("useCrit", true)
+        val slots = ArrayList<Triple<String, String, String>>()   // (m|c, 잴 것 id, 이름)
+        for (m in measures) {
+            val md = if (useCrit) m.optString("crit", "none") else "none"
+            val id = m.optString("id"); val nm = m.optString("name")
+            if (md != "always") slots += Triple("m", id, nm + if (md == "can") " (일반)" else "")
+            if (md != "none") slots += Triple("c", id, "$nm (치명)")
+        }
+        val lastRec = recs.lastOrNull()
+        val measureEdits = LinkedHashMap<String, EditText>()   // "m:id" / "c:id"
         var line: LinearLayout? = null
-        measures.forEachIndexed { i, m ->
-            val id = m.optString("id")
+        slots.forEachIndexed { i, (kind, id, nm) ->
+            val vKey = if (kind == "m") "values" else "critValues"; val sKey = if (kind == "m") "samples" else "critSamples"
             if (i % 2 == 0) { line = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }; labBody.addView(line) }
-            val prev = last?.takeIf { it.has(id) }?.let { "이전 " + LabData.fmt(it.optDouble(id)) } ?: m.optString("name")
+            val prev = lastRec?.optJSONObject(vKey)?.takeIf { it.has(id) }?.let { "이전 " + LabData.fmt(Math.round(it.optDouble(id) * 100) / 100.0) } ?: nm
             // 여러 번 잰 값은 띄어서 (1234 1250 1241)
-            val old = editing?.optJSONObject("samples")?.optJSONArray(id)?.let { a -> (0 until a.length()).joinToString(" ") { LabData.fmt(a.optDouble(it)).replace(",", "") } }
-                ?: editing?.optJSONObject("values")?.takeIf { it.has(id) }?.let { LabData.fmt(it.optDouble(id)).replace(",", "") } ?: ""
-            val e = labInput(prev, labDraft["m:$id"] ?: old).apply {
+            val old = editing?.optJSONObject(sKey)?.optJSONArray(id)?.let { a -> (0 until a.length()).joinToString(" ") { LabData.fmt(a.optDouble(it)).replace(",", "") } }
+                ?: editing?.optJSONObject(vKey)?.takeIf { it.has(id) }?.let { LabData.fmt(it.optDouble(id)).replace(",", "") } ?: ""
+            val dk = "$kind:$id"
+            val e = labInput(prev, labDraft[dk] ?: old).apply {
                 addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
                     override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
-                    override fun afterTextChanged(x: Editable?) { labDraft["m:$id"] = x?.toString() ?: "" }
+                    override fun afterTextChanged(x: Editable?) { labDraft[dk] = x?.toString() ?: "" }
                 })
             }
-            measureEdits[id] = e
+            measureEdits[dk] = e
             line!!.addView(LinearLayout(ui).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, 0, if (i % 2 == 0) dp(6) else 0, 0)
-                addView(labLabel(m.optString("name")))
+                addView(labLabel(nm))
                 addView(e, LinearLayout.LayoutParams(-1, -2))
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        if (measures.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
+        if (slots.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
         labBody.addView(TextView(ui).apply {
             text = "흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 치명타는 빼고."
             textSize = 11f
@@ -1258,15 +1290,16 @@ class OverlayService : Service() {
                     labItemChanges(it, a, had).forEach { c -> changes.put(c) }
                 }
                 val first = (0 until changes.length()).map { changes.getJSONObject(it) }.let { l -> l.firstOrNull { !it.optBoolean("once") } ?: l.firstOrNull() }
-                val values = JSONObject(); val samples = JSONObject()
-                measureEdits.forEach { (id, e) ->
+                val values = JSONObject(); val samples = JSONObject(); val critValues = JSONObject(); val critSamples = JSONObject()
+                measureEdits.forEach { (dk, e) ->
+                    val crit = dk.startsWith("c:"); val id = dk.substring(2)
                     val a = e.text.toString().trim().split(Regex("[\\s/]+")).mapNotNull { LabData.number(it) }
                     if (a.isNotEmpty()) {
-                        values.put(id, a.average())
-                        if (a.size > 1) samples.put(id, org.json.JSONArray(a))
+                        (if (crit) critValues else values).put(id, a.average())
+                        if (a.size > 1) (if (crit) critSamples else samples).put(id, org.json.JSONArray(a))
                     }
                 }
-                if (values.length() == 0) { toast("잰 값을 하나 이상 적어 주세요."); return@setOnClickListener }
+                if (values.length() == 0 && critValues.length() == 0) { toast("잰 값을 하나 이상 적어 주세요."); return@setOnClickListener }
                 val sid = s.optString("id")
                 val rid = editing?.optString("id") ?: LabData.newId()
                 val rec = JSONObject()
@@ -1280,6 +1313,8 @@ class OverlayService : Service() {
                     .put("unit", first?.optString("unit") ?: "flat")
                     .put("values", values)
                     .put("samples", samples)
+                    .put("critValues", critValues)
+                    .put("critSamples", critSamples)
                     .put("skip", editing?.optBoolean("skip") ?: false)
                     .put("note", noteEdit.text.toString().trim())
                 var no = 0
@@ -1312,6 +1347,7 @@ class OverlayService : Service() {
             for (g in groups) {
                 val its = labArr(g, "items").ifEmpty { listOf(null) }
                 for (it in its) {
+                    if (g.optString("id") == "crit" && it?.optString("id") == "rate") continue   // 치명 확률은 최적화에서
                     val key = g.optString("id") + ":" + (it?.optString("id") ?: "")
                     val label = g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
                     fun cur(u: String) = if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""

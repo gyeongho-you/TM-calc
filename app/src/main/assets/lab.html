@@ -565,6 +565,11 @@ function loadData(){
   try{data=JSON.parse(BR?TMCalc.load():(localStorage.getItem('tmcalcLab')||'null'))}catch(e){data=null}
   if(!data||!Array.isArray(data.templates))data={v:1,templates:[],sessions:[]}
   if(!Array.isArray(data.sessions))data.sessions=[]
+  // 모든 틀에 '치명' 분류(확률·피해)가 기본으로 있게 (내 정보·아이템 효과에 쓰임)
+  for(const t of data.templates){
+    if(t.useCrit===false)t.groups=t.groups.filter(g=>g.id!=='crit')
+    else if(!t.groups.some(g=>g.id==='crit'))t.groups.push({id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률'},{id:'dmg',name:'피해'}]})
+    if(!t.critStyle)t.critStyle='mult'}
   try{active=BR?TMCalc.getActive():(localStorage.getItem('tmcalcLabActive')||'')}catch(e){active=''}
 }
 /** 고치기 전에 항상 새로 읽는다 (게임 위 [연구] 창이 그 사이에 기록을 넣었을 수 있음) */
@@ -658,11 +663,14 @@ const HELP={
 <b>잴 것</b>: 매번 화면에서 읽어 적을 숫자 (일반 데미지, 스킬 데미지, 전투력 …)</p>
 <div class="ex"><b>예시</b><br>분류 <b>스킬</b> (항목: 공격력, 데미지, 방깎[감소형])<br>분류 <b>룬</b> (항목: 공격력, 데미지)<br>잴 것: <b>일반 데미지</b>, <b>스킬 데미지</b></div>
 <p>틀을 고치면 그 틀을 쓰는 세션에도 바로 반영돼요. 실험 중에 새 분류·항목이 필요하면 게임 위 [연구] 창의 [+]로 바로 추가할 수도 있어요.</p>`],
-  measure:['잴 것 나누는 법',`
-<p>한 칸에는 <b>항상 같은 종류의 숫자</b>만 적어야 해요.</p>
-<div class="ex"><b>치명타가 섞이는 경우</b><br>"평타(일반)"과 "평타(치명)"으로 나눠서 각각 적어요. 둘을 비교하면 치명 배율도 나와요.</div>
-<div class="ex"><b>스킬이 치명이 안 터지는 경우</b><br>"스킬 데미지"를 따로 두고, 공식 찾기 때 치명 관련 값은 빼고 찾아요.</div>
-<div class="ex"><b>공격 속도를 알고 싶을 때</b><br>"30초 공격 횟수"를 잴 것으로 두고, 공속을 바꿔 가며 세어 적어요.</div>`],
+  measure:['잴 것과 치명 모드',`
+<p>잴 것은 <b>한 방(1타) 데미지</b> 기준이에요. 타수·사이클은 최적화에서 따로 정해요.</p>
+<p>잴 것마다 <b>치명 모드</b>를 골라요.<br>
+· <b>치명타 X</b>: 치명이 안 터지는 공격 → 일반 데미지만 적어요<br>
+· <b>치명타 가능</b>: 터졌다 말았다 → 일반 칸, 치명 칸을 따로 적어요 (본 것만)<br>
+· <b>확정 치명타</b>: 항상 치명 → 치명 데미지만 적어요</p>
+<div class="ex"><b>중요</b> 일반 칸에 치명 숫자를 섞으면 공식이 틀어져요. 치명이 터진 숫자는 치명 칸에.</div>
+<p>배율이 다른 막타처럼 다른 공격은 잴 것을 따로 만들어요. 공격 속도를 알고 싶으면 "30초 공격 횟수"를 잴 것으로 두고 세어 적어요.</p>`],
   startState:['시작 상태란?',`
 <p>세션을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창 등에 보이는 지금 값을 적어요.</p>
 <p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
@@ -687,15 +695,15 @@ const HELP={
 <div class="ex"><b>결과 읽는 법</b><br>데미지 = (1000 + 룬) × (1 + 무기 %)<br>→ 기본 1000에 룬 고정 수치를 더하고, 무기 %만큼 곱해서 늘어난다는 뜻이에요.<br>
 "곱연산: 스킬 데미지 %" → 스킬 데미지 %는 겹칠 때 더하지 않고 곱해서 쌓인다는 뜻이에요.</div>
 <p>찾은 후보는 자동으로 남고, [저장]하면 최적화에서 쓸 수 있어요.</p>`],
-  cycle:['전투 주기란?',`
-<p>일반공격과 스킬이 섞여 나가는 게임에서, <b>한 바퀴(주기) 동안의 평균 데미지</b>로 비교하는 방법이에요.</p>
-<p>공식은 따로따로 찾아요: <b>일반 데미지 공식</b>, <b>스킬 데미지 공식</b>. 여기서 둘을 불러와 합쳐요.</p>
-<div class="ex"><b>예시</b> - 일반 10번당 스킬 1번, 치명 확률 30%, 치명 배율 2배, 스킬은 치명 없음<br>
-일반 1타 평균 = 1,000 × (1 + 0.3 × (2 − 1)) = 1,300<br>
-주기 = 1,300 × 10번 + 스킬 5,000 = <b>18,000</b></div>
-<p>이렇게 하면 "일반공격 +20%"는 10번분, "스킬 +60%"는 1번분으로 자동 계산돼서, 어느 쪽이 이득인지 정확히 나와요.</p>
-<p><b>치명 배율 칸</b>에는 식도 돼요: <code>1.5 + [치명피해 %] / 100</code> → 치명피해 옵션까지 반영<br>
-<b>공격 속도</b>: 공속 옵션이 있으면 넣어요. 간격(초)을 직접 넣거나, 따로 찾은 속도 공식(30초 공격 횟수 등)을 골라요. 그러면 시간당 데미지로 비교해요. 공속이 안 바뀌면 "넣지 않음"으로 두세요.</p>`],
+  cycle:['사이클이란?',`
+<p>일반공격과 스킬들이 섞여 나가는 게임에서, <b>한 바퀴(사이클) 동안의 평균 데미지</b>로 비교하는 방법이에요.</p>
+<p>공격마다 [공식 찾기]에서 <b>한 방 데미지 공식</b>을 찾아 [저장]해 두면, 여기서 횟수만큼 묶어요.</p>
+<div class="ex"><b>예시</b> (사이클당)<br>일반공격 · 5회<br>스킬1 · 2회<br>스킬2 1~5타(500%) · 5회 &nbsp;/ 스킬2 막타(1000%) · 1회 (배율이 다르면 잴 것을 따로)<br>스킬3 · 3회</div>
+<p>스킬마다 <b>추가 치명 확률</b>이 있으면 그 공격 칸에 ±%로 적어요 (기본 확률에 더해져요).</p>
+<p><b>치명</b>은 잴 것마다 정한 모드로 계산해요.<br>· 치명타 X: 그대로<br>· 치명타 가능: 평균 = 일반 × (1 + 확률 × (배율 − 1))<br>· 확정 치명타: 치명 데미지 그대로<br>
+확률과 피해는 <b>내 정보</b>(시작 상태 / 상태 다시 적기)의 "치명 확률 %", "치명 피해 %"를 써요. 아이템으로 바뀌는 것도 반영돼요.</p>
+<p>이러면 "일반공격 +20%"는 5회분, "스킬2 +30%"는 6회분으로 자동으로 가치가 매겨져요.</p>
+<p><b>공격 속도</b>: 공속 옵션이 있으면 사이클 시간(초)을 넣거나, 따로 찾은 속도 공식(30초 동안 일반공격 횟수 등)을 골라 시간당으로 비교해요.</p>`],
   state:['내 상태',`
 <p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
 <p>그 뒤로 게임에서 바뀐 게 있으면 여기서 고쳐요. 비우면 다시 마지막 기록 값이에요.</p>
@@ -719,6 +727,10 @@ const HELP={
 <p>지금 상태창에 보이는 값(분류·항목별)과 지금 낀 아이템을 그대로 적으면, 그 시점부터 기준이 다시 잡혀요. 그 뒤로는 평소처럼 바꾼 것만 기록하면 돼요.</p>
 <div class="ex"><b>예시</b><br>어제: 스킬 데미지 30%, 룬 공격 +500 까지 기록<br>오늘: 셋팅이 바뀌어서 스킬 데미지 45%, 룬 +320 → [상태 다시 적기]에 45, 320 을 적고 저장<br>→ 이어서 "룬 +100" 같은 기록을 계속하면 돼요.</div>
 <p>칸에는 기록으로 계산한 지금 값이 미리 들어 있어요. 달라진 칸만 고치면 돼요.</p>`],
+  gain:['무엇을 올리면 이득?',`
+<p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 사이클 평균)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
+<p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요.</p>
+<div class="ex"><b>예시</b><br>스킬 데미지 % +1% → +0.62%<br>치명 피해 % +1% → +0.41%<br>→ 스킬 데미지 %를 올리는 게 더 이득</div>`],
   slots:['칸이란?',`
 <p>동시에 낄 수 있는 수에 <b>제한이 있는 묶음</b>이에요.</p>
 <p><b>최대 개수</b>: 스킬 칸 1개, 룬 칸 6개처럼 개수로 제한<br><b>코스트 합</b>: 총 코스트 20 안에서 (아이템마다 코스트를 적어요)</p>
@@ -881,7 +893,7 @@ function vTpl(c,v){
   $('#title').textContent=orig?'틀 수정':'새 틀'
   v.innerHTML=`<div class="card"><label class="f">틀 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 룬·무기 → 데미지"></label></div>
   <div class="card"><div class="big">분류 ${hb('tpl')}</div><div class="mut">바꿔 가며 실험할 것 (룬, 무기, 장비, 버프, 적 방어 …). 기록할 때 이 중에서 고르고 ±값이나 %를 적어요.</div>
-    ${t.groups.map((g,i)=>`<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid var(--line)"><div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
+    ${t.groups.map((g,i)=>g.sys?'':`<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid var(--line)"><div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
       ${(g.items||[]).length?'':`<label class="row mut" style="gap:4px" title="방어 계산에 들어가는 값 (적 방어, 방깎 …)"><input type="checkbox" data-gr="${i}"${g.reduce?' checked':''}>감소형</label>`}
       <button class="sm danger" data-gd="${i}">✕</button></div>
       ${(g.items||[]).map((it,j)=>`<div class="list-row" style="padding-left:18px"><span class="mut">└</span><input type="text" data-in="${i}:${j}" value="${esc(it.name)}" placeholder="항목 이름">
@@ -901,7 +913,12 @@ function vTpl(c,v){
       체크하면 빠른 탐색이 이 모양을 시험하고 K 값도 찾아 줘요 (방깎이면 K 가 음수로 나와요 = K/(K−방깎) 꼴). 체크 안 해도 빼기형은 찾고, 심도 탐색은 조합으로도 찾지만 체크해 두면 더 빨라요.<br>
       공격력·데미지처럼 그냥 오르는 것은 체크하지 마세요.</div></details></div>
   <div class="card"><div class="big">잴 것 ${hb('measure')}</div><div class="mut">매번 화면에서 읽어 적을 값 (데미지, 표시 공격력, 전투력 …). 이 값들의 공식을 찾아요.</div>
-    ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="잴 것 이름"><button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
+    ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="잴 것 이름">
+      <select data-mc="${i}"${t.useCrit===false?' style="display:none"':''}>${[['none','치명타 X'],['can','치명타 가능'],['always','확정 치명타']].map(([k,l])=>`<option value="${k}"${(m.crit||'none')===k?' selected':''}>${l}</option>`).join('')}</select>
+      <button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
+    <label class="row" style="gap:6px;margin-top:10px"><input type="checkbox" id="tuc"${t.useCrit!==false?' checked':''}>치명타가 있는 게임 <span class="mut">(끄면 치명 관련 칸이 모두 사라져요)</span></label>
+    ${t.useCrit===false?'':`<div class="mut" style="margin-top:4px">치명타 X = 일반 데미지만 / 치명타 가능 = 일반·치명 데미지 따로 / 확정 치명타 = 치명 데미지만 적어요. 한 방(1타) 기준으로 재요.</div>
+    <label class="f" style="margin-top:10px">치명 피해 표기 (게임 상태창 기준)<select id="tcs"><option value="mult"${(t.critStyle||'mult')==='mult'?' selected':''}>150% = 1.5배 (치명 피해 % 그대로 배율)</option><option value="add"${t.critStyle==='add'?' selected':''}>+50% = 1.5배 (추가 피해 %)</option></select></label>`}
     <button class="sm" id="ma">+ 잴 것</button></div>
   <p class="mut">틀을 고치면 이 틀을 쓰는 세션에도 바로 반영돼요.</p>
   <div class="row"><button class="pri" id="ts">저장</button><button id="tc">닫기</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요.</div>`
@@ -911,15 +928,21 @@ function vTpl(c,v){
     const ij=k=>k.split(':').map(Number)
     v.querySelectorAll('[data-in]').forEach(e=>{const [i,j]=ij(e.dataset.in);t.groups[i].items[j].name=e.value})
     v.querySelectorAll('[data-ir]').forEach(e=>{const [i,j]=ij(e.dataset.ir);t.groups[i].items[j].reduce=e.checked})
-    v.querySelectorAll('[data-m]').forEach(e=>t.measures[+e.dataset.m].name=e.value)}
+    v.querySelectorAll('[data-m]').forEach(e=>t.measures[+e.dataset.m].name=e.value)
+    v.querySelectorAll('[data-mc]').forEach(e=>t.measures[+e.dataset.mc].crit=e.value)
+    const cs=$('#tcs');if(cs)t.critStyle=cs.value
+    const uc=$('#tuc');if(uc&&uc.checked!==(t.useCrit!==false)){t.useCrit=uc.checked
+      if(!uc.checked){t.groups=t.groups.filter(g=>g.id!=='crit');t.measures.forEach(m=>m.crit='none')}
+      else if(!t.groups.some(g=>g.id==='crit'))t.groups.push({id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률'},{id:'dmg',name:'피해'}]})}}
   $('#ga').onclick=()=>{sync();t.groups.push({id:uid(),name:'',items:[]});draftSet(dk,t);render()}
   v.querySelectorAll('[data-ia]').forEach(b=>b.onclick=()=>{sync();const g=t.groups[+b.dataset.ia];(g.items=g.items||[]).push({id:uid(),name:''});render()})
   v.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{sync();const [i,j]=b.dataset.id.split(':').map(Number);t.groups[i].items.splice(j,1);render()})
-  $('#ma').onclick=()=>{sync();t.measures.push({id:uid(),name:''});render()}
+  $('#ma').onclick=()=>{sync();t.measures.push({id:uid(),name:'',crit:'none'});render()}
   v.querySelectorAll('[data-gd]').forEach(b=>b.onclick=()=>{sync();t.groups.splice(+b.dataset.gd,1);render()})
   v.querySelectorAll('[data-md]').forEach(b=>b.onclick=()=>{sync();t.measures.splice(+b.dataset.md,1);render()})
   if(c.restored)draftBanner(v,()=>{draftDel(dk);c.draft=null;c.restored=false;render()})
   v.addEventListener('input',()=>{sync();draftSet(dk,t)});v.addEventListener('change',()=>{sync();draftSet(dk,t)})
+  const tuc=$('#tuc');if(tuc)tuc.onchange=()=>{sync();draftSet(dk,t);render()}
   $('#tc').onclick=()=>back()
   $('#ts').onclick=()=>{sync();draftDel(dk)
     t.name=t.name.trim();t.groups=t.groups.filter(g=>g.name.trim());t.groups.forEach(g=>g.items=(g.items||[]).filter(x=>x.name.trim()));t.measures=t.measures.filter(m=>m.name.trim())
@@ -1009,7 +1032,8 @@ function startSlots(t){
   const out=[]
   for(const g of t.groups){
     const its=(g.items||[]).length?g.items:[null]
-    for(const it of its)out.push({label:g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})
+    for(const it of its){if(g.id==='crit'&&it&&it.id==='rate')continue   // 치명 확률은 최적화에서 적는다
+      out.push({label:g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})}
   }
   return out
 }
@@ -1063,6 +1087,31 @@ function recText(t,r){
     parts.push(`${G?G.name:'(지운 분류)'}${it?' '+it:''} ${ch.change>=0?'+':''}${fmt(ch.change)}${ch.unit==='pct'?'%':''}${ch.once?' (이번만)':''}`)}
   return parts.length?parts.join(', '):'기준 (변경 없음)'
 }
+/** 잴 것 → 공식 찾기 대상: 일반(m:)·치명(c:) */
+function measVars(t){
+  const out=[]
+  for(const m of t.measures){const md=t.useCrit===false?'none':(m.crit||'none')
+    if(md!=='always')out.push({id:'m:'+m.id,mid:m.id,kind:'m',name:m.name+(md==='can'?' (일반)':''),cat:'잰 값',unit:'flat'})
+    if(md!=='none')out.push({id:'c:'+m.id,mid:m.id,kind:'c',name:m.name+' (치명)',cat:'잰 값',unit:'flat'})}
+  return out
+}
+/** [±] 계산 도우미: 지금 값들 → 바꿀 값들 = 변화 */
+function deltaHelper(onApply){
+  const m=document.createElement('div');m.className='hmask'
+  m.innerHTML=`<div class="hbox"><h3>변화 계산</h3>
+    <p class="mut">여러 개는 띄어서 적어요 (룬 옵션 여러 줄 등). 소수점, 1.2만 같은 표기도 돼요.</p>
+    <label class="f">지금 낀 것 (지금 값들)<input type="text" class="d1" placeholder="23213 23142"></label>
+    <label class="f" style="margin-top:8px">바꿀 것 (바뀐 뒤 값들)<input type="text" class="d2" placeholder="20000 23142"></label>
+    <div class="big" style="margin:12px 0" id="dres">변화: -</div>
+    <div class="row"><button class="pri" style="flex:1" id="dap">적용</button><button id="dcl">닫기</button></div></div>`
+  const sum=t=>String(t||'').trim().split(/[\s/+]+/).map(num).filter(isFinite).reduce((a,b)=>a+b,0)
+  const calc=()=>{const d=sum(m.querySelector('.d2').value)-sum(m.querySelector('.d1').value);m.querySelector('#dres').textContent='변화: '+(d>=0?'+':'')+fmt(Math.round(d*1e6)/1e6);return d}
+  m.querySelectorAll('input').forEach(e=>e.oninput=calc)
+  m.querySelector('#dap').onclick=()=>{const d=Math.round(calc()*1e6)/1e6;m.remove();onApply(String(d))}
+  m.querySelector('#dcl').onclick=()=>m.remove()
+  m.onclick=e=>{if(e.target===m)m.remove()}
+  document.body.append(m);m.querySelector('.d1').focus()
+}
 /** 측정 현황: 틀의 분류·항목(값/%)과 아이템마다 얼마나 측정했는지, 뭐가 더 필요한지 */
 function measureStatus(s,t){
   const out=[],tv=tplVars(t),stat={}
@@ -1072,7 +1121,7 @@ function measureStatus(s,t){
   for(const x of tv){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0))acc[x.id]=s0}
   for(const r of s.records){for(const [k,v] of Object.entries(r.reset||{}))acc['g:'+k]=v
     for(const ch of changesOf(r)){if(!ch.change||ch.once)continue;const k=vkey(ch);if(acc[k])stacked.add(k);acc[k]=(acc[k]||0)+ch.change}}
-  for(const x of tv){const o=stat[x.id];if(!o&&x.unit==='flat'&&tv.some(q=>q.id===x.id.replace(/flat$/,'pct')&&stat[q.id]))continue   // %만 쓰는 항목은 값 줄 생략
+  for(const x of tv){const o=stat[x.id];if(x.id.startsWith('g:crit:')&&!o)continue;if(!o&&x.unit==='flat'&&tv.some(q=>q.id===x.id.replace(/flat$/,'pct')&&stat[q.id]))continue   // %만 쓰는 항목은 값 줄 생략
     if(!o&&x.unit==='pct'&&tv.some(q=>q.id===x.id.replace(/pct$/,'flat')&&stat[q.id]))continue
     const n=o?o.n:0,sizes=o?o.sizes.size:0,st=stacked.has(x.id),need=[]
     if(!n)need.push('한 번도 안 바꿈: 이것만 바꿔서 기록')
@@ -1111,15 +1160,18 @@ function vRecs(c,v){
     <div class="mut" style="margin-top:10px">바뀐 값 ${items.length?'(아이템 말고 직접)':''}</div>
     ${c.rows.map((r,k)=>`<div class="list-row" data-cr="${k}" style="flex-wrap:wrap">
       <select class="cgi">${gis.map(x=>`<option value="${x.v}"${x.v===r.gi?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
-      <input type="text" class="cval" value="${esc(r.val)}" placeholder="+5, -100, 1.2만" style="width:100px">
+      <input type="text" class="cval" value="${esc(r.val)}" placeholder="+5, -100, 1.2만" style="width:100px"><button class="sm cdh" title="지금 값 → 바꿀 값으로 계산">±</button>
       <span class="seg"><button data-u="flat" class="${r.unit!=='pct'?'on':''}">값</button><button data-u="pct" class="${r.unit==='pct'?'on':''}">%</button></span>
       <label class="row mut" style="gap:4px"><input type="checkbox" class="conce"${r.once?' checked':''}>이번만</label>
       <button class="sm danger cdel">✕</button></div>`).join('')}
     ${gis.length?'<button class="sm" id="addCh">+ 바뀐 값</button>':''}
     ${!c.rows.length&&!Object.values(c.acts).some(Boolean)?'<div class="mut" style="margin-top:4px">아무것도 안 바꿨으면 "기준 (변경 없음)" 기록이 돼요.</div>':''}
-    <div class="grid" style="margin-top:10px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-mv="${m.id}" value="${ed?((ed.samples&&ed.samples[m.id])||[ed.values[m.id]]).filter(isFinite).join(' '):''}" placeholder="${last&&isFinite(last.values[m.id])?fmt(mval(last,m.id)):''}"></label>`).join('')}
+    <div class="grid" style="margin-top:10px">${t.measures.map(m=>{const md=t.useCrit===false?'none':(m.crit||'none'),cur=(pre,VAL,SAM)=>ed?((ed[SAM]&&ed[SAM][m.id])||[(ed[VAL]||{})[m.id]]).filter(isFinite).join(' '):''
+      const ph=(VAL,SAM)=>{const a=last&&last[SAM]&&last[SAM][m.id],x=a&&a.length?a.reduce((p,q)=>p+q,0)/a.length:last&&(last[VAL]||{})[m.id];return isFinite(x)?fmt(x):''}
+      return(md!=='always'?`<label class="f">${esc(m.name)}${md==='can'?' (일반)':''}<input type="text" data-mv="${m.id}" value="${cur('m','values','samples')}" placeholder="${ph('values','samples')}"></label>`:'')+
+        (md!=='none'?`<label class="f">${esc(m.name)} (치명)<input type="text" data-cv="${m.id}" value="${cur('c','critValues','critSamples')}" placeholder="${ph('critValues','critSamples')}"></label>`:'')}).join('')}
       <label class="f">메모<input type="text" id="note" value="${ed?esc(ed.note):''}"></label></div>
-    <div class="mut" style="margin-top:6px">흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 치명타는 빼고 적어요. '이번만'은 그 기록에만 적용되고 다음 기록엔 안 이어져요 (잠깐 켜진 버프 등).</div>
+    <div class="mut" style="margin-top:6px">흔들리는 값은 여러 번 재서 띄어 적기 (1234 1250 1241). 일반·치명 칸을 섞지 마세요 (치명이 터진 숫자는 치명 칸에). 한 방(1타) 기준. '이번만'은 그 기록에만 적용돼요.</div>
     <div class="row" style="margin-top:12px"><button class="pri" id="rs">${ed?'수정 저장':'저장'}</button>${ed?'<button id="rc">취소</button>':''}</div></div>
   ${(()=>{const M=measureStatus(s,t);if(!M.length)return''
     const need=M.filter(x=>x.k!=='ok').length
@@ -1128,25 +1180,27 @@ function vRecs(c,v){
       ${M.map(x=>`<tr><td class="l">${esc(x.name)}</td><td>${x.n||''}</td><td>${x.sizes||''}</td><td>${x.stack?'○':''}</td><td>${x.k==='ok'?'<span class="good">✓</span>':x.k==='part'?'△':'<span class="bad">✗</span>'}</td><td class="l" style="white-space:normal">${esc(x.need)}</td></tr>`).join('')}</table></div></details>`})()}
   <h2>기록 내역 ${s.records.length}개</h2>
   ${sus.size?`<div class="card"><span class="bad">⚠ 표시</span> <span class="mut">= 마지막으로 찾은 공식과 크게 어긋난 기록이에요. 입력 실수나 기록 안 한 변화가 없었는지 확인하고, 고치거나 [빼기]로 공식 찾기에서 빼세요.</span></div>`:''}
-  ${s.records.length?`<div class="card scroll"><table><tr><th class="l">#</th><th class="l">바꾼 것</th>${t.measures.map(m=>`<th>${esc(m.name)}</th>`).join('')}<th class="l">메모</th><th></th></tr>
-    ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l" style="white-space:normal;min-width:120px">${esc(recText(t,r))}</td>${t.measures.map(m=>`<td><b>${mtext(r,m.id)}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
+  ${s.records.length?`<div class="card scroll"><table><tr><th class="l">#</th><th class="l">바꾼 것</th>${measVars(t).map(x=>`<th>${esc(x.name)}</th>`).join('')}<th class="l">메모</th><th></th></tr>
+    ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l" style="white-space:normal;min-width:120px">${esc(recText(t,r))}</td>${measVars(t).map(x=>`<td><b>${x.kind==='m'?mtext(r,x.mid):(r.critSamples&&r.critSamples[x.mid]&&r.critSamples[x.mid].length>1?fmt(r.critSamples[x.mid].reduce((a,b)=>a+b,0)/r.critSamples[x.mid].length)+' <span class="mut">('+r.critSamples[x.mid].length+'회)</span>':fmt((r.critValues||{})[x.mid]))}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
       <td><button class="sm" data-rk="${r.id}">${r.skip?'넣기':'빼기'}</button> <button class="sm" data-re="${r.id}">수정</button> <button class="sm danger" data-rd="${r.id}">✕</button></td></tr>`).join('')}</table></div>`:'<div class="card empty">아직 기록이 없어요.</div>'}`
   // 임시 저장
-  const snapRec=()=>{const o={rows:c.rows,acts:c.acts,mv:{},note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>o.mv[e.dataset.mv]=e.value)
+  const snapRec=()=>{const o={rows:c.rows,acts:c.acts,mv:{},note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>o.mv[e.dataset.mv]=e.value);v.querySelectorAll('[data-cv]').forEach(e=>o.mv['c:'+e.dataset.cv]=e.value)
     if(o.rows.length||Object.values(o.acts).some(Boolean)||o.note||Object.values(o.mv).some(x=>x))draftSet(dk,o);else draftDel(dk)}
-  if(c.fromDraft){const d0=c.fromDraft;c.fromDraft=null;v.querySelectorAll('[data-mv]').forEach(e=>{if(d0.mv&&d0.mv[e.dataset.mv]!=null)e.value=d0.mv[e.dataset.mv]});if(d0.note!=null)$('#note').value=d0.note}
+  if(c.fromDraft){const d0=c.fromDraft;c.fromDraft=null;v.querySelectorAll('[data-mv]').forEach(e=>{if(d0.mv&&d0.mv[e.dataset.mv]!=null)e.value=d0.mv[e.dataset.mv]})
+    v.querySelectorAll('[data-cv]').forEach(e=>{if(d0.mv&&d0.mv['c:'+e.dataset.cv]!=null)e.value=d0.mv['c:'+e.dataset.cv]});if(d0.note!=null)$('#note').value=d0.note}
   if(c.restored){const card=$('#rs').closest('.card');const b=document.createElement('div');b.className='row';b.style.marginBottom='6px'
     b.innerHTML='<span class="mut" style="flex:1">저장 안 한 입력을 불러왔어요.</span><button class="sm danger">입력 버리기</button>'
     b.querySelector('button').onclick=()=>{draftDel(dk);c.rows=null;render()};card.prepend(b)}
   v.addEventListener('input',snapRec);v.addEventListener('change',snapRec)
   // 다시 그릴 때 잰 값·메모는 남긴다
-  function keep(f){const vals={note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value)
+  function keep(f){const vals={note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value);v.querySelectorAll('[data-cv]').forEach(e=>vals['c:'+e.dataset.cv]=e.value)
     snapRec();c.fromDraft={mv:vals,note:vals.note};f()}
   const msd=$('#msd');if(msd)msd.ontoggle=()=>c.msOpen=msd.open
   v.querySelectorAll('[data-act-it]').forEach(b=>b.onclick=()=>{const id=b.dataset.actIt,a=c.acts[id]||0;c.acts[id]=a===0?1:a>0?-1:0;keep(()=>render())})
   v.querySelectorAll('[data-cr]').forEach(el=>{const r=c.rows[+el.dataset.cr]
     el.querySelector('.cgi').onchange=e=>r.gi=e.target.value
     el.querySelector('.cval').oninput=e=>r.val=e.target.value
+    el.querySelector('.cdh').onclick=()=>deltaHelper(d=>{r.val=d;keep(()=>render())})
     el.querySelector('.conce').onchange=e=>r.once=e.target.checked
     el.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{r.unit=b.dataset.u;keep(()=>render())})
     el.querySelector('.cdel').onclick=()=>{c.rows.splice(+el.dataset.cr,1);keep(()=>render())}})
@@ -1162,11 +1216,13 @@ function vRecs(c,v){
     for(const a of acts){const it=items.find(x=>x.id===a.itemId);if(!it)continue
       if(a.act<0&&!(eq[it.id]>0))return alert(`'${it.name}'은(는) 지금 안 끼고 있어서 뺄 수 없어요. (시작 상태에서 낀 아이템을 적었는지 확인해 주세요)`)
       changes.push(...itemChanges(it,a.act,eq[it.id]||0))}
-    const values={},samples={};v.querySelectorAll('[data-mv]').forEach(e=>{const a=nums(e.value);if(!a.length)return
-      values[e.dataset.mv]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)samples[e.dataset.mv]=a})
-    if(!Object.keys(values).length)return alert('잰 값을 하나 이상 적어 주세요.')
+    const values={},samples={},critValues={},critSamples={}
+    for(const [sel,V,S] of [['mv',values,samples],['cv',critValues,critSamples]])
+      v.querySelectorAll('[data-'+sel+']').forEach(e=>{const a=nums(e.value);if(!a.length)return;const id=e.getAttribute('data-'+sel)
+        V[id]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)S[id]=a})
+    if(!Object.keys(values).length&&!Object.keys(critValues).length)return alert('잰 값을 하나 이상 적어 주세요.')
     const f0=changes.find(q=>!q.once)||changes[0]
-    const r={id:ed?ed.id:uid(),time:ed?ed.time:Date.now(),changes,items:acts,samples,values,skip:ed?!!ed.skip:false,note:$('#note').value.trim(),
+    const r={id:ed?ed.id:uid(),time:ed?ed.time:Date.now(),changes,items:acts,samples,values,critValues,critSamples,skip:ed?!!ed.skip:false,note:$('#note').value.trim(),
       groupId:f0?f0.groupId:null,itemId:f0?f0.itemId:null,change:f0?f0.change:0,unit:f0?f0.unit:'flat'}
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;const i=x.records.findIndex(q=>q.id===r.id);if(i>=0)x.records[i]=r;else x.records.push(r)})
     draftDel(dk);c.edit=null;c.rows=null;render()}
@@ -1189,7 +1245,7 @@ function sessionData(s){
     const IT=i&&G?(G.items||[]).find(x=>x.id===i):null
     const known=isFinite((s.start||{})[k])
     return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known}})
-  const mvars=t.measures.map(m=>({id:'m:'+m.id,name:m.name,cat:'잰 값',unit:'flat'}))
+  const mvars=measVars(t)
   // % 는 두 가지로 누적: 더해서(합연산) / 곱해서(곱연산, ×(1+a%)×(1+b%)…)
   // 시작 상태를 적었으면 거기서부터 누적 (실제 총량), 아니면 0 부터 (변화량). '이번만' 변화는 그 기록에만
   const acc={},accC={}
@@ -1204,9 +1260,10 @@ function sessionData(s){
     const v={};gvars.forEach(x=>{v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0})
     for(const [k,d] of once){v[k]=(v[k]||0)+d;if(v[k+'*']!=null)v[k+'*']=((1+v[k+'*']/100)*(1+d/100)-1)*100}
     const tol={}
-    t.measures.forEach(m=>{const a=r.samples&&r.samples[m.id]
-      if(a&&a.length){v['m:'+m.id]=mval(r,m.id);if(a.length>1)tol['m:'+m.id]=(Math.max(...a)-Math.min(...a))/2}
-      else if(isFinite(r.values[m.id]))v['m:'+m.id]=r.values[m.id]})
+    for(const [pre,VAL,SAM] of [['m:','values','samples'],['c:','critValues','critSamples']])
+      t.measures.forEach(m=>{const a=r[SAM]&&r[SAM][m.id],vv=r[VAL]||{}
+        if(a&&a.length){v[pre+m.id]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)tol[pre+m.id]=(Math.max(...a)-Math.min(...a))/2}
+        else if(isFinite(vv[m.id]))v[pre+m.id]=vv[m.id]})
     return{no:i+1,r,v,tol}})
   return{t,gvars,mvars,rows}
 }
@@ -1214,13 +1271,15 @@ function vFind(c,v){
   const s=ses(c.id);if(!s)return back()
   const D=sessionData(s),t=D.t
   $('#title').textContent=s.name+' · 공식 찾기'
-  if(!t.measures.length||s.records.length<3){v.innerHTML='<div class="card empty">기록이 3개 이상 있어야 공식을 찾을 수 있어요.</div>';return}
-  c.target=c.target&&t.measures.some(m=>m.id===c.target)?c.target:t.measures[0].id
-  const all=[...D.gvars,...D.mvars.filter(m=>m.id!=='m:'+c.target)]
+  if(!measVars(t).length||s.records.length<3){v.innerHTML='<div class="card empty">기록이 3개 이상 있어야 공식을 찾을 수 있어요.</div>';return}
+  const TV=measVars(t)
+  if(c.target&&!c.target.includes(':'))c.target='m:'+c.target
+  c.target=c.target&&TV.some(x=>x.id===c.target)?c.target:(TV[0]||{}).id
+  const all=[...D.gvars,...D.mvars.filter(m=>m.id!==c.target)]
   if(!c.use)c.use=D.gvars.filter(x=>new Set(D.rows.map(r=>r.v[x.id])).size>1).map(x=>x.id)
   v.innerHTML=`<div class="card">
     <div style="float:right">${hb('find')}</div>
-    <label class="f">무엇의 공식을 찾을까요?<select id="ft">${t.measures.map(m=>`<option value="${m.id}"${m.id===c.target?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
+    <label class="f">무엇의 공식을 찾을까요? (한 방 기준)<select id="ft">${TV.map(x=>`<option value="${x.id}"${x.id===c.target?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
     <div class="mut" style="margin-top:10px">무엇으로 계산될까요? (분류별 변화량은 세션 처음부터 더한 값)</div>
     <div class="chips">${all.map(x=>`<button class="chip${c.use.includes(x.id)?' on':''}" data-use="${x.id}">${esc(x.name)}</button>`).join('')}</div>
     <div class="row" style="margin-top:14px"><button class="pri" id="qk">빠른 탐색</button><button class="pri" id="dp">심도 탐색</button>
@@ -1232,6 +1291,11 @@ function vFind(c,v){
       검증용 기록 남기기: 5개 중 1개는 찾는 데 안 쓰고, 찾은 공식이 처음 보는 기록도 맞히는지 확인해요 (기록 10개 이상일 때).<br>
       버튼을 다시 누르면 다시 찾아요. 후보는 최대 6개씩 보여 줘요.<br>
       찾은 후보는 세션에 자동으로 남고(대상·탐색 종류별 마지막 결과), [저장]한 공식은 따로 모여요. 세션 [내보내기] 파일에 둘 다 들어가요.</div></details></div>
+  ${(()=>{const L=((s.opt||{}).cyc2||{}).list||[];if(!L.length)return''
+    const FL=optFormulas(s),have=id=>FL.some(x=>normT(x.f.target)===id)
+    return`<div class="card"><div class="big">사이클에 필요한 공식</div><div class="row" style="margin-top:6px">${L.map(e=>{const x=TV.find(q=>q.id===e.target)
+      return`<span class="tag${have(e.target)?'':' bad'}">${esc(x?x.name:'?')} ${have(e.target)?'✓':'✗ 아직'}</span>`}).join('')}</div>
+      <div class="mut" style="margin-top:4px">✗인 것을 위에서 골라 찾고 [저장]하면 최적화의 사이클 계산에 쓰여요.</div></div>`})()}
   <div id="saved"></div><div id="out"></div>`
   showSaved(c)
   $('#ft').onchange=e=>{c.target=e.target.value;c.res=null;render()}
@@ -1239,13 +1303,13 @@ function vFind(c,v){
   $('#dt').onchange=e=>c.secs=+e.target.value
   $('#hold').onchange=e=>c.hold=e.target.checked
   const prep=()=>{
-    const vars=all.filter(x=>c.use.includes(x.id)),tk='m:'+c.target
+    const vars=all.filter(x=>c.use.includes(x.id)),tk=c.target
     const rows=D.rows.filter(r=>!r.r.skip&&isFinite(r.v[tk])&&vars.every(x=>isFinite(r.v[x.id])))
     // 흔들림은 기록마다 비슷하다고 보고, 여러 번 잰 기록 중 가장 큰 흔들림 비율을 모든 기록에 적용 (3번만 재면 폭이 작게 잡힐 수 있어서)
     const rel=Math.max(0,...rows.map(r=>(r.tol[tk]||0)/(Math.abs(r.v[tk])||1)))
     const tol=rows.map(r=>rel*Math.abs(r.v[tk]))
     return{vars,rows,X:rows.map(r=>vars.map(x=>r.v[x.id])),y:rows.map(r=>r.v[tk]),tol:tol.some(x=>x)?tol:null,
-      skipped:D.rows.filter(r=>r.r.skip).length,tname:t.measures.find(m=>m.id===c.target).name}
+      skipped:D.rows.filter(r=>r.r.skip).length,tname:TV.find(x=>x.id===c.target).name}
   }
   $('#qk').onclick=()=>{const P=prep();if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
     if(P.rows.length<3)return alert('이 값이 들어 있는 기록이 3개 이상 필요해요.')
@@ -1421,12 +1485,14 @@ function showRes(c){
       <details${i===0?'':''}><summary>기록별 예측</summary><div class="scroll"><table><tr><th class="l">#</th><th>실제</th><th>예측</th><th>차이</th></tr>
         ${P.rows.map((r,j)=>{const pr=m.predict((m.X||P.X)[j]),d=pr-P.y[j],out=(R.dropped||[]).includes(r.r.id);return`<tr class="${Math.abs(d)>Math.max(roundUnit(P.y),(P.tol&&P.tol[j])||0)*1.0000001+1e-9?'worst':''}"><td class="l">${out?'⚠':''}${r.no}</td><td>${fmt(P.y[j])}</td><td>${fmt(pr)}</td><td>${fmt(d)}</td></tr>`}).join('')}
       </table></div></details>
-      ${i===0?gainTable(m,{...P,vars:m.vars||P.vars,X:m.X||P.X}):''}
+
       <details data-graph="${i}"><summary>그래프</summary><div class="gbox"></div></details></div>`).join('')
   o.querySelectorAll('[data-graph]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)drawGraphs(d.querySelector('.gbox'),R.models[+d.dataset.graph],R)}))
   bindPins(c,o)
 }
 // ---------------------------------------------------------------- 최적화: 저장한 공식으로 내 상태 → 바꿔 보기 → 최적 셋팅
+/** 공식 대상 id (예전 기록은 잴 것 id 만 있음 → 일반) */
+const normT=t=>t&&t.includes(':')?t:'m:'+t
 /** 최적화에 쓸 수 있는 공식: 저장한 공식 + 지난 탐색의 추천 */
 function optFormulas(s){
   // 같은 틀을 쓰는 세션끼리는 변수(분류·항목)가 같아서 공식을 같이 쓸 수 있다
@@ -1475,32 +1541,39 @@ function vOpt(c,v){
   // [이름] 은 세션 이름("룬")과 틀 이름("룬 변화") 둘 다 받는다
   const names=Object.fromEntries([...tv,...allVars].map(x=>[x.name,x.id]))
   const baseId=id=>id.replace(/\*$/,'')
-  // 전투 주기: 일반 N번당 스킬 1번 → 주기 평균 (공속 공식/간격이 있으면 시간당)
-  const cyc=o.cycle||{}
-  const getF=key=>{const x=FL.find(q=>q.key===key);return x?{...x.f,fn:makeF(x.f.spec)}:null}
+  // 사이클: 공격(잴 것) 여러 개 × 사이클당 횟수. 치명은 잴 것의 치명 모드 + 내 정보의 치명 확률·피해로 평균
+  const cyc=o.cyc2||{list:[]}
+  const TV=measVars(t)
+  const bestF=target=>{const L=FL.filter(x=>normT(x.f.target)===target);const x=L.find(q=>q.key.indexOf('find:')!==0)||L[0];return x?{...x.f,fn:makeF(x.f.spec),label:x.label}:null}
   const single={...F,fn}
-  const Fn=cyc.on?(getF(cyc.normal)||single):null,Fs=cyc.on&&cyc.skill?getF(cyc.skill):null
-  const Fv=cyc.on&&(cyc.speed==='fcount'||cyc.speed==='fint')?getF(cyc.speedF):null
-  const forms=cyc.on?[Fn,Fs,Fv].filter(Boolean):[single]
-  const used=[...new Set(forms.flatMap(f=>f.vars.map(baseId)))]
+  const entries=cyc.on?(cyc.list||[]).map(e=>({...e,F:bestF(e.target),meas:t.measures.find(m=>m.id===e.target.slice(2)),kind:e.target[0]})):[]
+  const Fv=cyc.on&&cyc.speed==='fcount'?getFkey(cyc.speedF):null
+  function getFkey(key){const x=FL.find(q=>q.key===key);return x?{...x.f,fn:makeF(x.f.spec)}:null}
+  const forms=cyc.on?[...entries.map(e=>e.F),Fv].filter(Boolean):[single]
+  const used=[...new Set([...forms.flatMap(f=>f.vars.map(baseId)),...(cyc.on&&t.useCrit!==false?['g:crit:dmg:pct']:[])])]
   const val1=(f,z)=>f.fn(f.p,f.vars.map(id=>z[id]??z[baseId(id)]??0))
-  const objName=!cyc.on?F.targetName:(cyc.speed&&cyc.speed!=='none'?'시간당 데미지':'주기당 평균 데미지')
+  const objName=!cyc.on?F.targetName:(cyc.speed==='time'||cyc.speed==='fcount'?'시간당 데미지':'사이클당 평균 데미지')
   let parts=null
-  // 내 상태: 마지막(빼지 않은) 기록 + 직접 고친 값
   const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
   const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}return st}
   const isPct=id=>(byId[baseId(id)]||{}).unit==='pct'
+  const critOf=z=>{if(t.useCrit===false)return{p:0,m:1,ok:true}
+    const p=Math.min(1,Math.max(0,((num(cyc.rate)||0)+(+z['g:crit:rate:pct']||0))/100)),d=+z['g:crit:dmg:pct']||0
+    const m=d?(t.critStyle==='add'?1+d/100:d/100):1;return{p,m,ok:!!d}}
   const evalSt=(st,keep,extra)=>{const z=applyRules({...st},[...(o.rules||[]),...(extra||[])],names)
     if(!cyc.on){const r=val1(single,z);return isFinite(r)?r:NaN}
-    const n=Math.max(1,num(cyc.n)||1),cr=Math.min(1,Math.max(0,(exprVal(cyc.rate,z,names)||0)/100))
-    const mN=exprVal(cyc.multN,z,names),mS=exprVal(cyc.multS,z,names)
-    const kN=1+cr*((isFinite(mN)?mN:1)-1),kS=cyc.skillNoCrit?1:1+cr*((isFinite(mS)?mS:isFinite(mN)?mN:1)-1)
-    const dN=val1(Fn,z),dS=Fs?val1(Fs,z):0,cycle=n*dN*kN+dS*kS
+    const {p:p0,m,ok}=critOf(z);const p=p0;let cycle=0;const det=[]
+    for(const e of entries){if(!e.F){det.push({e,miss:true});continue}
+      const raw=val1(e.F,z),md=t.useCrit===false?'none':((e.meas&&e.meas.crit)||'none')
+      // 공격마다 추가 치명 확률 (±%)
+      const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100))
+      const avg=md==='none'?raw:md==='always'?(e.kind==='c'?raw:raw*m):(e.kind==='m'?raw*(1+p*(m-1)):raw/m*(1+p*(m-1)))
+      const n=num(e.count)||0;cycle+=n*avg;det.push({e,raw,avg,n,p})}
     let r=cycle,per=''
-    if(cyc.speed==='fcount'&&Fv){r=cycle*val1(Fv,z)/n;per='(재 둔 시간당)'}
-    else if(cyc.speed==='fint'&&Fv){r=cycle/(n*val1(Fv,z)+(num(cyc.skillTime)||0));per='/초'}
-    else if(cyc.speed==='int'){r=cycle/(n*(num(cyc.interval)||1)+(num(cyc.skillTime)||0));per='/초'}
-    if(keep)parts={n,dN,kN,dS,kS,cycle,r,per}
+    if(cyc.speed==='time'){r=cycle/(num(cyc.time)||1);per='/초'}
+    else if(cyc.speed==='fcount'&&Fv){const base=entries.find(e=>e.target===cyc.speedBase)||entries[0];const per0=num(cyc.period)||30
+      const cnt=val1(Fv,z),n0=num(base&&base.count)||1;r=cycle/(n0/(cnt/per0));per='/초'}
+    if(keep)parts={det,cycle,r,per,crit:{p,m,ok}}
     return isFinite(r)?r:NaN}
   // 아이템: 지금 낀 것, 특수 능력(조건부는 켬/끔)
   const items=t.items||[],slots=t.slots||[],eqNow=equipNow(s),condOn=o.condOn||{}
@@ -1552,28 +1625,35 @@ function vOpt(c,v){
     }
   }
   const fsel=(cls,sel,none)=>`<select class="${cls}">${none?`<option value="">${none}</option>`:''}${FL.map(x=>`<option value="${x.key}"${x.key===sel?' selected':''}>${esc(x.label)}</option>`).join('')}</select>`
+  const tsel=(sel,k)=>`<select class="cyt" data-k="${k}">${TV.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
   v.innerHTML=`<div class="card">
-    <div class="row" style="gap:6px"><label class="row" style="gap:6px;flex:1"><input type="checkbox" id="cyOn"${cyc.on?' checked':''}><b>전투 주기로 계산</b> <span class="mut">(일반공격 N번당 스킬 1번, 치명 확률)</span></label>${hb('cycle')}</div>
+    <div class="row" style="gap:6px"><label class="row" style="gap:6px;flex:1"><input type="checkbox" id="cyOn"${cyc.on?' checked':''}><b>사이클로 계산</b> <span class="mut">(일반공격·스킬 여러 개를 횟수만큼 묶어서)</span></label>${hb('cycle')}</div>
     ${!cyc.on?`<label class="f" style="margin-top:8px">쓸 공식<select id="of">${FL.map(x=>`<option value="${x.key}"${x===pick?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label>
       <div class="formula">${esc(F.formula)}</div>`:`
-      <label class="f" style="margin-top:8px">일반공격 공식${fsel('cyN',cyc.normal||pick.key)}</label>
-      <label class="f" style="margin-top:8px">스킬 공식${fsel('cyS',cyc.skill,'스킬 없음')}</label>
-      <div class="grid" style="margin-top:8px">
-        <label class="f">일반 몇 번당 스킬 1번<input type="text" class="cyn" value="${esc(cyc.n??'10')}" inputmode="decimal"></label>
-        <label class="f">치명 확률 %<input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>
-        <label class="f">일반 치명 배율<input type="text" class="cymn" value="${esc(cyc.multN??'')}" placeholder="2 (= 200%)"></label>
-        <label class="f">스킬 치명 배율<input type="text" class="cyms" value="${esc(cyc.multS??'')}" placeholder="비우면 일반과 같음"${cyc.skillNoCrit?' disabled':''}></label></div>
-      <label class="row mut" style="gap:4px;margin-top:6px"><input type="checkbox" class="cync"${cyc.skillNoCrit?' checked':''}>스킬은 치명이 안 터짐</label>
-      <div class="mut" style="margin-top:6px">배율·확률 칸에는 식도 돼요: 예) <code>1.5 + [치명피해 %] / 100</code></div>
-      <label class="f" style="margin-top:8px">공격 속도<select class="cysp">
-        ${[['none','넣지 않음 (주기당 데미지로 비교)'],['int','공격 간격(초)을 직접'],['fcount','공식: 정해진 시간 동안 공격 횟수'],['fint','공식: 공격 간격(초)']].map(([k,l])=>`<option value="${k}"${(cyc.speed||'none')===k?' selected':''}>${l}</option>`).join('')}</select></label>
-      ${cyc.speed==='int'?`<div class="grid" style="margin-top:8px"><label class="f">공격 간격(초)<input type="text" class="cyi" value="${esc(cyc.interval??'')}" placeholder="1"></label><label class="f">스킬 시간(초, 선택)<input type="text" class="cyt" value="${esc(cyc.skillTime??'')}" placeholder="0"></label></div>`:''}
-      ${cyc.speed==='fcount'||cyc.speed==='fint'?`<label class="f" style="margin-top:8px">속도 공식${fsel('cyv',cyc.speedF)}</label>${cyc.speed==='fint'?`<label class="f" style="margin-top:8px">스킬 시간(초, 선택)<input type="text" class="cyt" value="${esc(cyc.skillTime??'')}" placeholder="0"></label>`:''}`:''}
-      ${parts?`<div class="formula">일반 ${fmt(parts.dN)} × 치명 보정 ${fmt(parts.kN,3)} × ${fmt(parts.n)}번 + 스킬 ${fmt(parts.dS)} × ${fmt(parts.kS,3)}<br>= 주기 ${fmt(parts.cycle)}${parts.per?` → ${fmt(parts.r)} ${parts.per}`:''}</div>`:''}`}
+      <div class="mut" style="margin-top:8px">공격마다 사이클당 횟수(타수 포함)를 적어요. 공식은 [공식 찾기]에서 저장한 것이 자동으로 쓰여요.</div>
+      ${(cyc.list||[]).map((e,k)=>{const en=entries[k],d=parts&&parts.det[k]
+        const md=t.useCrit===false?'none':((t.measures.find(m=>m.id===(e.target||'').slice(2))||{}).crit||'none')
+        return`<div class="card" style="background:var(--card2)" data-cy="${k}"><div class="list-row">${tsel(e.target,k)}<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="횟수" style="width:70px"><span class="mut">회</span><button class="sm danger cydl">✕</button></div>
+          ${md==='can'?`<div class="list-row"><span class="mut">이 공격만 추가 치명 확률</span><input type="text" class="cyca" value="${esc(e.critAdd??'')}" placeholder="+0" style="width:70px"><span class="mut">%</span></div>`:''}
+          <div class="mut">${en&&en.F?'공식: '+esc(en.F.formula):'<span class="bad">이 공격의 공식이 아직 없어요 → [공식 찾기]에서 찾아 저장</span>'}</div>
+          ${d&&!d.miss?`<div class="mut">1회 평균 ${fmt(d.avg)}${md==='can'?` (치명 ${fmt(d.p*100,1)}%)`:''} × ${fmt(d.n)}회 = <b>${fmt(d.avg*d.n)}</b></div>`:''}</div>`}).join('')}
+      <button class="sm" id="cyAdd">+ 공격</button>
+      ${t.useCrit===false?'':`<label class="f" style="margin-top:8px">치명 확률 % <span class="mut">(지금 내 치명 확률. 아이템의 치명 확률 효과는 여기에 더해져요)</span><input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>`}
+      ${parts?`<div class="formula">치명 확률 ${fmt(parts.crit.p*100,2)}% · 치명 배율 ${fmt(parts.crit.m,3)}배${parts.crit.ok?'':' <span class="bad">(내 정보에 치명 피해가 없어요)</span>'}<br>사이클 ${fmt(parts.cycle)}${parts.per?` → ${fmt(parts.r)} ${parts.per}`:''}</div>`:''}
+      <label class="f" style="margin-top:8px">공격 속도<select class="cysp">${[['none','넣지 않음 (사이클당 데미지로 비교)'],['time','사이클 시간(초)을 직접'],['fcount','공식: 정해진 시간 동안 공격 횟수']].map(([k,l])=>`<option value="${k}"${(cyc.speed||'none')===k?' selected':''}>${l}</option>`).join('')}</select></label>
+      ${cyc.speed==='time'?`<label class="f" style="margin-top:6px">사이클 시간(초)<input type="text" class="cyti" value="${esc(cyc.time??'')}" placeholder="10"></label>`:''}
+      ${cyc.speed==='fcount'?`<label class="f" style="margin-top:6px">속도 공식${fsel('cyv',cyc.speedF)}</label>
+        <div class="grid" style="margin-top:6px"><label class="f">몇 초 동안 센 횟수?<input type="text" class="cypd" value="${esc(cyc.period??'30')}"></label>
+        <label class="f">그 횟수는 어느 공격?<select class="cybs">${(cyc.list||[]).map(e=>`<option value="${e.target}"${e.target===cyc.speedBase?' selected':''}>${esc((TV.find(x=>x.id===e.target)||{name:'?'}).name)}</option>`).join('')}</select></label></div>`:''}`}
   </div>
   <div class="card"><div class="big">내 상태 ${hb('state')}</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
     <div class="grid" style="margin-top:8px">${used.map(id=>`<label class="f">${esc((byId[id]||{name:id}).name)}<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}"></label>`).join('')}</div>
     <div class="big" style="margin-top:10px">예상 ${esc(objName)}: ${fmt(now)}</div></div>
+  <div class="card"><div class="big">무엇을 올리면 이득? ${hb('gain')}</div><div class="mut">지금 상태에서 하나씩 조금 올렸을 때 (아이템 특수 능력·사이클 포함)</div>
+    ${(()=>{const st0=state0(),ex=rulesOf(eqNow),rows=used.map(id=>{const x=byId[id];if(!x)return null
+        const stp=x.unit==='pct'?1:(()=>{const a=Math.abs(st0[id]||0)*0.01;if(!a)return 1;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
+        const z=state0();applyChange(z,id,'+',stp,x.unit==='pct');const r=evalSt(z,false,ex);return{x,stp,g:(r-now)/now}}).filter(q=>q&&isFinite(q.g)).sort((a,b)=>b.g-a.g)
+      return`<div class="scroll"><table><tr><th class="l">항목</th><th>올리는 양</th><th>변화</th></tr>${rows.map(q=>`<tr><td class="l">${esc(q.x.name)}</td><td>+${fmt(q.stp)}${q.x.unit==='pct'?'%':''}</td><td>${pctTxt(q.g)}</td></tr>`).join('')}</table></div>`})()}</div>
   <div class="card"><div class="big">특수 효과 ${hb('rules')}</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
     ${(o.rules||[]).map((r,k)=>`<div class="list-row" data-rule="${k}">${varSel(r.target,'rt')}<select class="rop2">${['+','='].map(q=>`<option${q===(r.op||'+')?' selected':''}>${q}</option>`).join('')}</select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rrm">✕</button></div>`).join('')}
     <button class="sm" id="addRule">+ 효과</button></div>
@@ -1602,10 +1682,17 @@ function vOpt(c,v){
   </div>`
   const save=f=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=false;render()}
   const of=$('#of');if(of)of.onchange=e=>save(op=>op.formula=e.target.value)
-  $('#cyOn').onchange=e=>save(op=>{op.cycle=op.cycle||{};op.cycle.on=e.target.checked;if(!op.cycle.normal)op.cycle.normal=pick.key})
-  const cy=(cls,key,get=el=>el.value)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>save(op=>{op.cycle=op.cycle||{};op.cycle[key]=get(el)})}
-  cy('cyN','normal');cy('cyS','skill');cy('cyn','n');cy('cyr','rate');cy('cymn','multN');cy('cyms','multS')
-  cy('cync','skillNoCrit',el=>el.checked);cy('cysp','speed');cy('cyi','interval');cy('cyt','skillTime');cy('cyv','speedF')
+  $('#cyOn').onchange=e=>save(op=>{op.cyc2=op.cyc2||{list:[]};op.cyc2.on=e.target.checked
+    if(!op.cyc2.list.length&&TV[0])op.cyc2.list.push({target:TV[0].id,count:'1'})})
+  const cy2=f=>save(op=>{op.cyc2=op.cyc2||{list:[]};f(op.cyc2)})
+  const ca=$('#cyAdd');if(ca)ca.onclick=()=>cy2(q=>q.list.push({target:(TV[0]||{}).id,count:'1'}))
+  v.querySelectorAll('[data-cy]').forEach(el=>{const k=+el.dataset.cy
+    el.querySelector('.cyt').onchange=e=>cy2(q=>q.list[k].target=e.target.value)
+    el.querySelector('.cyn').onchange=e=>cy2(q=>q.list[k].count=e.target.value)
+    const ca2=el.querySelector('.cyca');if(ca2)ca2.onchange=e=>cy2(q=>q.list[k].critAdd=e.target.value)
+    el.querySelector('.cydl').onclick=()=>cy2(q=>q.list.splice(k,1))})
+  const on=(cls,key)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>cy2(q=>q[key]=el.value)}
+  on('cysp','speed');on('cyti','time');on('cyr','rate');on('cyv','speedF');on('cypd','period');on('cybs','speedBase')
   v.querySelectorAll('[data-st]').forEach(e=>e.onchange=()=>save(op=>{op.state=op.state||{};const n=num(e.value);if(isFinite(n))op.state[e.dataset.st]=n;else delete op.state[e.dataset.st]}))
   // 규칙
   $('#addRule').onclick=()=>save(op=>(op.rules=op.rules||[]).push({target:allVars[0]&&allVars[0].id,op:'+',expr:''}))
