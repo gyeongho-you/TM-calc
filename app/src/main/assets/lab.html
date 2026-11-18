@@ -702,7 +702,8 @@ const HELP={
 · <b>횟수</b>: 한 사이클에 몇 번 (다타면 타수까지)<br>· <b>치명</b>: 불가 / 가능(확률대로) / 항상<br>· <b>추가 치명 확률</b>: 그 공격만 치명 확률이 더 높을 때</p>
 <div class="ex"><b>예시</b> (스킬 그룹 1배 기준 한 방 = 2,000)<br>평타 · 일반공격 · 100 · 5회 · 가능<br>스킬A · 스킬 · 300 → 6,000 · 2회 · 가능<br>스킬B 1~5타 · 스킬 · 500 → 10,000 · 5회 · 불가<br>스킬B 막타 · 스킬 · 1000 → 20,000 · 1회 · 항상</div>
 <p><b>치명 확률</b>은 위 칸에 지금 내 확률(%)을, <b>치명 피해</b>는 내 정보에 배율 %로 (1.5배 = 150) 적어요.</p>
-<p><b>공격 속도</b>는 공속 옵션이 있을 때만 넣어요.</p>`],
+<p><b>비교 방식</b><br>① <b>사이클당</b>: 한 바퀴에 몇 번씩 → 사이클당 평균 데미지<br>
+② <b>시간당</b>: 정해진 시간(예: 10초) 동안 몇 번씩 → 초당 데미지. 공속이 다른 셋팅을 비교할 때 써요 (그 셋팅에서 다시 세어 적기).</p>`],
   state:['내 상태',`
 <p>공식에 넣을 <b>지금 내 값</b>이에요. 기본은 마지막 기록(시작 상태 + 바꾼 양 누적)이에요.</p>
 <p>그 뒤로 게임에서 바뀐 게 있으면 여기서 고쳐요. 비우면 다시 마지막 기록 값이에요.</p>
@@ -1589,11 +1590,13 @@ function vOpt(c,v){
     const bp=num(meas&&(meas.basePct??meas.pct))||100,ep=num(e.pct)||100
     const r=ep/bp,how=`1배 기준 × ${fmt(ep/100,4)} (${fmt(ep)}%)`
     return{...e,mid,meas,N,C,r,how,bp,crit:e.crit||(t.useCrit===false?'none':'can')}}):[]
-  const Fv=cyc.on&&cyc.speed==='fcount'?getFkey(cyc.speedF):null
+  // 비교 방식: 사이클당(횟수) / 시간당(정해진 시간 동안 횟수 → 초당)
+  const byTime=cyc.mode==='time'||cyc.speed==='time'
+  const Fv=null
   function getFkey(key){const x=FL.find(q=>q.key===key);return x?{...x.f,fn:makeF(x.f.spec)}:null}
   const forms=cyc.on?[...entries.flatMap(e=>[e.N,e.C]),Fv].filter(Boolean):[single]
   const used=[...new Set([...forms.flatMap(f=>f.vars.map(baseId)),...(cyc.on&&t.useCrit!==false?['g:crit:dmg:pct']:[])])]
-  const objName=!cyc.on?F.targetName:(cyc.speed==='time'||cyc.speed==='fcount'?'시간당 데미지':'사이클당 평균 데미지')
+  const objName=!cyc.on?F.targetName:(byTime?'초당 데미지':'사이클당 평균 데미지')
   let parts=null
   const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
   const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}return st}
@@ -1612,8 +1615,8 @@ function vOpt(c,v){
       const avg=md==='none'?nd:md==='always'?cd:nd*(1-p)+cd*p
       const n=num(e.count)||0;cycle+=n*avg;det.push({e,avg,n,p,one:nd/e.r/(e.bp/100)})}
     let r=cycle,per=''
-    if(cyc.speed==='time'){r=cycle/(num(cyc.time)||1);per='/초'}
-    else if(cyc.speed==='fcount'&&Fv){const base=entries[+cyc.speedBase||0]||entries[0];const per0=num(cyc.period)||30
+    if(byTime){r=cycle/(num(cyc.time)||1);per='/초'}
+    else if(false){const base=entries[+cyc.speedBase||0]||entries[0];const per0=num(cyc.period)||30
       const cnt=val1(Fv,z),n0=num(base&&base.count)||1;r=cycle/(n0/(cnt/per0));per='/초'}
     if(keep)parts={det,cycle,r,per,crit:{p,m,ok}}
     return isFinite(r)?r:NaN}
@@ -1679,7 +1682,7 @@ function vOpt(c,v){
           <div class="grid" style="margin-top:6px">
             <label class="f">공격 그룹<select class="cyg">${t.measures.map(m=>`<option value="${m.id}"${m.id===en.mid?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
             <label class="f">배율 % (1배 = 100)<input type="text" class="cyp" value="${esc(e.pct??'')}" placeholder="100"></label>
-            <label class="f">사이클당 횟수 (타수 포함)<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="1"></label>
+            <label class="f">${byTime?`${esc(cyc.time||'?')}초 동안 횟수 (타수 포함)`:'사이클당 횟수 (타수 포함)'}<input type="text" class="cyn" value="${esc(e.count??'')}" placeholder="1"></label>
             ${t.useCrit===false?'':`<label class="f">치명<select class="cyc">${[['none','불가 (안 터짐)'],['can','가능 (확률대로)'],['always','항상 (확정 치명)']].map(([q,l])=>`<option value="${q}"${en.crit===q?' selected':''}>${l}</option>`).join('')}</select></label>
             ${en.crit==='can'?`<label class="f">이 공격 추가 치명 확률 ±%<input type="text" class="cyca" value="${esc(e.critAdd??'')}" placeholder="0"></label>`:''}`}
           </div>
@@ -1687,12 +1690,12 @@ function vOpt(c,v){
           ${d&&!d.miss?`<div class="mut">1회 평균 ${fmt(d.avg)}${en.crit==='can'&&t.useCrit!==false?` (치명 ${fmt(d.p*100,1)}%)`:''} × ${fmt(d.n)}회 = <b>${fmt(d.avg*d.n)}</b></div>`:''}</div>`}).join('')}
       <button class="sm" id="cyAdd">+ 공격</button>
       ${t.useCrit===false?'':`<label class="f" style="margin-top:8px">치명 확률 % <span class="mut">(지금 내 치명 확률. 아이템의 치명 확률 효과는 여기에 더해져요)</span><input type="text" class="cyr" value="${esc(cyc.rate??'')}" placeholder="0"></label>`}
-      ${parts?`<div class="formula">치명 확률 ${fmt(parts.crit.p*100,2)}% · 치명 배율 ${fmt(parts.crit.m,3)}배${parts.crit.ok?'':' <span class="bad">(내 정보에 치명 피해가 없어요)</span>'}<br>사이클 ${fmt(parts.cycle)}${parts.per?` → ${fmt(parts.r)} ${parts.per}`:''}</div>`:''}
-      <label class="f" style="margin-top:8px">공격 속도<select class="cysp">${[['none','넣지 않음 (사이클당 데미지로 비교)'],['time','사이클 시간(초)을 직접'],['fcount','공식: 정해진 시간 동안 공격 횟수']].map(([k,l])=>`<option value="${k}"${(cyc.speed||'none')===k?' selected':''}>${l}</option>`).join('')}</select></label>
-      ${cyc.speed==='time'?`<label class="f" style="margin-top:6px">사이클 시간(초)<input type="text" class="cyti" value="${esc(cyc.time??'')}" placeholder="10"></label>`:''}
-      ${cyc.speed==='fcount'?`<label class="f" style="margin-top:6px">속도 공식${fsel('cyv',cyc.speedF)}</label>
-        <div class="grid" style="margin-top:6px"><label class="f">몇 초 동안 센 횟수?<input type="text" class="cypd" value="${esc(cyc.period??'30')}"></label>
-        <label class="f">그 횟수는 어느 공격?<select class="cybs">${(cyc.list||[]).map((e,k)=>`<option value="${k}"${String(k)===String(cyc.speedBase)?' selected':''}>${esc(e.name||'공격 '+(k+1))}</option>`).join('')}</select></label></div>`:''}`}
+      ${parts?`<div class="formula">치명 확률 ${fmt(parts.crit.p*100,2)}% · 치명 배율 ${fmt(parts.crit.m,3)}배${parts.crit.ok?'':' <span class="bad">(내 정보에 치명 피해가 없어요)</span>'}<br>${byTime?`${esc(cyc.time||'?')}초 동안 합계`:'사이클'} ${fmt(parts.cycle)}${parts.per?` → 초당 ${fmt(parts.r)}`:''}</div>`:''}
+      <label class="f" style="margin-top:8px">비교 방식<select class="cymode">
+        <option value="cycle"${!byTime?' selected':''}>① 사이클당: 한 바퀴에 몇 번씩 (예: 일반 10회, 스킬1 2회)</option>
+        <option value="time"${byTime?' selected':''}>② 시간당: 정해진 시간 동안 몇 번씩 (예: 10초에 일반 23회) → 초당 데미지</option></select></label>
+      ${byTime?`<label class="f" style="margin-top:6px">몇 초 동안 센 횟수인가요?<input type="text" class="cyti" value="${esc(cyc.time??'')}" placeholder="10"></label>
+        <div class="mut">공속 옵션을 바꾸면 그 셋팅에서 횟수를 다시 세어 적어 주세요.</div>`:''}`}
   </div>
   <div class="card"><div class="big">내 상태 ${hb('state')}</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
     <div class="grid" style="margin-top:8px">${used.map(id=>`<label class="f">${esc((byId[id]||{name:id}).name)}<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}"></label>`).join('')}</div>
@@ -1740,7 +1743,8 @@ function vOpt(c,v){
     bind('cyc',(e,x)=>e.crit=x);bind('cyca',(e,x)=>e.critAdd=x)
     el.querySelector('.cydl').onclick=()=>cy2(q=>q.list.splice(k,1))})
   const on=(cls,key)=>{const el=v.querySelector('.'+cls);if(el)el.onchange=()=>cy2(q=>q[key]=el.value)}
-  on('cysp','speed');on('cyti','time');on('cyr','rate');on('cyv','speedF');on('cypd','period');on('cybs','speedBase')
+  on('cyti','time');on('cyr','rate')
+  const cm=v.querySelector('.cymode');if(cm)cm.onchange=()=>cy2(q=>{q.mode=cm.value;delete q.speed})
   v.querySelectorAll('[data-st]').forEach(e=>e.onchange=()=>save(op=>{op.state=op.state||{};const n=num(e.value);if(isFinite(n))op.state[e.dataset.st]=n;else delete op.state[e.dataset.st]}))
   // 규칙
   $('#addRule').onclick=()=>save(op=>(op.rules=op.rules||[]).push({target:allVars[0]&&allVars[0].id,op:'+',expr:''}))
