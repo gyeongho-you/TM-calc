@@ -957,6 +957,15 @@ class OverlayService : Service() {
         bringBubbleToFront()
     }
 
+    /** 항목(또는 항목 없는 분류)의 단위: flat / pct / both (안 정한 예전 것) */
+    private fun labUnit(g: JSONObject?, it: JSONObject?): String = (it ?: g)?.optString("unit")?.takeIf { it == "flat" || it == "pct" } ?: if (g?.optString("id") == "crit") "pct" else "both"
+
+    /** 새 분류·항목 단위 묻기 */
+    private fun labAskUnit(onOk: (String) -> Unit) {
+        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("단위 (한 번 정하면 다시 안 골라요)")
+            .setItems(arrayOf("값 (+1200 처럼)", "% (+4.38% 처럼)")) { _, w -> onOk(if (w == 1) "pct" else "flat") })
+    }
+
     private fun labArr(o: JSONObject?, key: String): List<JSONObject> {
         val a = o?.optJSONArray(key) ?: return emptyList()
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
@@ -1130,6 +1139,9 @@ class OverlayService : Service() {
         val tid = t.optString("id")
         val gis = groups.flatMap { g -> labArr(g, "items").ifEmpty { listOf(null) }.map { it -> Triple(g.optString("id"), it?.optString("id"), g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")) } }
         val giName = { r: LabRow -> gis.firstOrNull { it.first == r.gid && it.second == r.iid }?.third ?: "분류·항목 고르기" }
+        val giUnit = { gid: String?, iid: String? -> val g = groups.firstOrNull { it.optString("id") == gid }; labUnit(g, iid?.let { id -> labArr(g, "items").firstOrNull { it.optString("id") == id } }) }
+        // 단위가 정해진 항목은 값/% 를 자동으로
+        for (r in labRows) when (giUnit(r.gid, r.iid)) { "pct" -> r.pct = true; "flat" -> r.pct = false }
         labBody.addView(LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(labLabel(if (tItems.isNotEmpty()) "바뀐 값 (아이템 말고 직접)" else "바뀐 값"), LinearLayout.LayoutParams(0, -2, 1f))
@@ -1146,26 +1158,26 @@ class OverlayService : Service() {
                     overlayDialog(android.app.AlertDialog.Builder(ui).setItems(names.toTypedArray()) { _, w ->
                         when {
                             w < gis.size -> { r.gid = gis[w].first; r.iid = gis[w].second; renderLab() }
-                            w == gis.size -> labAskName("분류 추가 (예: 스킬, 장비)") { name ->
+                            w == gis.size -> labAskName("분류 추가 (예: 스킬, 장비)") { name -> labAskUnit { unit ->
                                 val nid = LabData.newId()
                                 LabData.update(this@OverlayService) { d ->
                                     val tt = LabData.template(d, tid) ?: return@update
                                     (tt.optJSONArray("groups") ?: org.json.JSONArray().also { tt.put("groups", it) })
-                                        .put(JSONObject().put("id", nid).put("name", name).put("items", org.json.JSONArray()))
+                                        .put(JSONObject().put("id", nid).put("name", name).put("unit", unit).put("items", org.json.JSONArray()))
                                 }
-                                r.gid = nid; r.iid = null; renderLab()
-                            }
+                                r.gid = nid; r.iid = null; r.pct = unit == "pct"; renderLab()
+                            } }
                             else -> overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("어느 분류에 항목을 넣을까요?")
                                 .setItems(groups.map { it.optString("name") }.toTypedArray()) { _, gi ->
                                     val g = groups[gi].optString("id")
-                                    labAskName("'${groups[gi].optString("name")}'에 항목 추가") { name ->
+                                    labAskName("'${groups[gi].optString("name")}'에 항목 추가") { name -> labAskUnit { unit ->
                                         val nid = LabData.newId()
                                         LabData.update(this@OverlayService) { d ->
                                             val gg = LabData.template(d, tid)?.optJSONArray("groups")?.let { a2 -> (0 until a2.length()).mapNotNull { a2.optJSONObject(it) }.firstOrNull { it.optString("id") == g } } ?: return@update
-                                            (gg.optJSONArray("items") ?: org.json.JSONArray().also { gg.put("items", it) }).put(JSONObject().put("id", nid).put("name", name))
+                                            (gg.optJSONArray("items") ?: org.json.JSONArray().also { gg.put("items", it) }).put(JSONObject().put("id", nid).put("name", name).put("unit", unit))
                                         }
-                                        r.gid = g; r.iid = nid; renderLab()
-                                    }
+                                        r.gid = g; r.iid = nid; r.pct = unit == "pct"; renderLab()
+                                    } }
                                 })
                         }
                     })
@@ -1203,8 +1215,10 @@ class OverlayService : Service() {
                         .setPositiveButton("적용") { _, _ -> r.text = LabData.fmt(d()).replace(",", ""); renderLab() }
                         .setNegativeButton("닫기", null))
                 })
-                addView(labChip("값", !r.pct) { r.pct = false; renderLab() })
-                addView(labChip("%", r.pct) { r.pct = true; renderLab() })
+                if (giUnit(r.gid, r.iid) == "both") {
+                    addView(labChip("값", !r.pct) { r.pct = false; renderLab() })
+                    addView(labChip("%", r.pct) { r.pct = true; renderLab() })
+                } else addView(TextView(ui).apply { text = if (r.pct) " % " else " 값 "; textSize = 13f; setTextColor(Color.parseColor("#9A9DA3")) })
                 addView(android.widget.CheckBox(ui).apply {
                     text = "이번만"; textSize = 12f; setTextColor(Color.parseColor("#D0D2D6")); isChecked = r.once
                     setOnCheckedChangeListener { _, c -> r.once = c }
@@ -1378,7 +1392,9 @@ class OverlayService : Service() {
                         else g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
                     fun cur(u: String) = startDraftGet(s.optString("id"), "$key:$u")
                         ?: if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
-                    val ef = labInput("값", cur("flat")); val ep = labInput("%", cur("pct"))
+                    val unit = labUnit(g, it)
+                    val ef = labInput("값", cur("flat")).apply { if (unit == "pct") { isEnabled = false; hint = "-" } }
+                    val ep = labInput("%", cur("pct")).apply { if (unit == "flat") { isEnabled = false; hint = "-" } }
                     for ((u, e) in listOf("flat" to ef, "pct" to ep)) e.addTextChangedListener(object : TextWatcher {
                         override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
                         override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -1543,10 +1559,12 @@ class OverlayService : Service() {
             val gis = groups.flatMap { g -> labArr(g, "items").ifEmpty { listOf(null) }.map { it -> Triple(g.optString("id"), it?.optString("id"), g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")) } }
             val lab = unknown.first()
             val isPct = (b.subs + a.subs).firstOrNull { it.first == lab }?.second?.pct ?: false
-            val names = gis.map { it.third + if (isPct) " %" else "" } + listOf("계산 안 함 (참고만)")
+            val gu = { gid: String, iid: String? -> val g = groups.firstOrNull { it.optString("id") == gid }; labUnit(g, iid?.let { id -> labArr(g, "items").firstOrNull { it.optString("id") == id } }) }
+            val ok = gis.filter { val u = gu(it.first, it.second); u == "both" || u == (if (isPct) "pct" else "flat") }
+            val names = ok.map { it.third + if (isPct) " %" else "" } + listOf("계산 안 함 (참고만)")
             overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 '$lab' 은(는) 어느 값인가요? (한 번만 물어봐요)")
                 .setItems(names.toTypedArray()) { _, w ->
-                    val v = if (w < gis.size) "g:${gis[w].first}:${gis[w].second ?: ""}:${if (isPct) "pct" else "flat"}" else "skip"
+                    val v = if (w < ok.size) "g:${ok[w].first}:${ok[w].second ?: ""}:${if (isPct) "pct" else "flat"}" else "skip"
                     LabData.update(this@OverlayService) { d -> val tt = LabData.template(d, tid) ?: return@update
                         (tt.optJSONObject("runeMap") ?: JSONObject().also { tt.put("runeMap", it) }).put(lab, v) }
                     labApplyRune(tid, a, b)
