@@ -103,4 +103,27 @@ class RuneParserTest {
         assertEquals("전설", r[1].grade); assertEquals(568, r[1].level); assertEquals(14000.0, r[1].atk!!.lo, 0.0)
         assertEquals(listOf("장비 속도"), r[1].subs.map { it.first })
     }
+
+    /** 실제 소환수 화면 OCR 자료(test/resources/ocr)는 하나도 룬 비교 화면으로 보면 안 됨 (계산 버튼 오탐 방지) */
+    @Test fun petScreensAreNeverRune() {
+        val dir = java.io.File("src/test/resources/ocr")
+        val files = dir.listFiles { f -> f.name.endsWith(".txt") }!!.sortedBy { it.name }
+        assertTrue(files.isNotEmpty())
+        for (f in files) {
+            val lines = f.readLines().filter { it.isNotBlank() && !it.startsWith("--") }.mapNotNull { l ->
+                val p = l.split("|"); if (p.size < 5) null else OcrLine(p[0], p[1].trim().toInt(), p[2].trim().toInt(), p[3].trim().toInt(), p[4].trim().toInt()) }
+            assertTrue("${f.name} 을(를) 룬으로 오탐", !RuneParser.isRuneCompare(lines))
+        }
+    }
+
+    @Test fun runeScreensAreRune() {
+        val lines = listOf(
+            L("장착중", 150, 272, 215, 305), L("찰나의 룬 [신화]", 335, 390, 550, 425), L("Lv.287", 335, 435, 442, 470),
+            L("주 옵션", 165, 510, 238, 538), L("공격력", 165, 566, 240, 598), L("5737+", 337, 566, 428, 598),
+            L("부 옵션", 165, 690, 238, 718), L("피해증가", 165, 745, 268, 776), L("4.38%", 668, 737, 758, 767),
+            L("찰나의 룬 [신화]", 335, 1110, 550, 1145), L("Lv.289", 335, 1155, 435, 1188),
+            L("주 옵션", 165, 1230, 238, 1258), L("공격력", 165, 1287, 240, 1320), L("5796+", 290, 1287, 428, 1320),
+            L("부 옵션", 165, 1410, 238, 1438), L("장비 공격", 165, 1462, 273, 1495), L("3595+", 665, 1455, 758, 1488))
+        assertTrue(RuneParser.isRuneCompare(lines))
+    }
 }
