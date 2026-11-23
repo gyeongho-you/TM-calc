@@ -1637,14 +1637,32 @@ class OverlayService : Service() {
                 full.recycle()
                 Triple(c, small, null)
             }
-            var mi = 0
             val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), 0) }
-            val mRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
-            fun drawM() { mRow.removeAllViews(); measures.forEachIndexed { i, m -> mRow.addView(labChip(m.optString("name"), i == mi) { mi = i; drawM() }) } }
-            if (measures.size > 1) { box.addView(labLabel("넣을 공격 그룹")); box.addView(mRow); drawM() }
-            box.addView(labLabel("사진을 누르면 전체 화면. 버프가 걸린 장은 쓰지 마세요. 숫자를 누르면 칸에 들어가요 (빨강 = 치명)."))
-            val added = ArrayList<String>()
-            val status = TextView(ui).apply { textSize = 12f; setTextColor(LAB_ACC) }
+            // 넣을 칸들: 공격 그룹마다 비치명 / 치명. 칸을 눌러 고르고 → 아래 추천 숫자를 누르면 그 칸에 들어감. 직접 적어도 됨
+            val fields = LinkedHashMap<String, EditText>()
+            var sel: String? = null
+            val selInfo = TextView(ui).apply { textSize = 12f; setTextColor(LAB_ACC) }
+            fun hl() { fields.forEach { (k, e) -> e.background = round(if (k == sel) 0xFF4A3F66.toInt() else 0xFF3A3D44.toInt(), 8) }
+                selInfo.text = "고른 칸: " + (sel?.let { k -> fields[k]?.tag as? String } ?: "-") }
+            box.addView(labLabel("넣을 칸을 누르고 → 사진 아래 숫자를 누르거나 직접 적기. [확인]을 눌러야 기록 칸에 들어가요."))
+            for (m in measures) for (crit in if (useCrit) listOf(false, true) else listOf(false)) {
+                val dk = (if (crit) "c:" else "m:") + m.optString("id")
+                val label = m.optString("name") + if (useCrit) (if (crit) " (치명)" else " (비치명)") else ""
+                val e = labInput(label, labDraft[dk] ?: "").apply {
+                    tag = label
+                    setOnFocusChangeListener { _, f -> if (f) { sel = dk; hl() } }
+                    setOnClickListener { sel = dk; hl() }
+                }
+                fields[dk] = e
+                box.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(2))
+                    addView(TextView(ui).apply { text = label; textSize = 12f; setTextColor(Color.parseColor("#D0D2D6")); layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                    addView(e, LinearLayout.LayoutParams(0, -2, 1.3f))
+                })
+            }
+            sel = fields.keys.firstOrNull(); hl()
+            box.addView(selInfo)
+            box.addView(labLabel("사진을 누르면 전체 화면. 버프가 걸린 장은 쓰지 마세요. 빨간 숫자 = 치명으로 보임 (확인하고 고르기)."))
             crops.forEachIndexed { k, (crop, small, _) ->
                 box.addView(labLabel("${k + 1}번째 (${k}초)"))
                 box.addView(android.widget.ImageView(ui).apply {
@@ -1661,20 +1679,17 @@ class OverlayService : Service() {
                         Triple(l.text.filter { it.isDigit() || it in "만억조경." }, n, crit)
                     }.distinctBy { it.first }
                     if (found.isEmpty()) chips.addView(TextView(ui).apply { text = "숫자를 못 읽었어요 — 사진 보고 직접 적기"; textSize = 12f; setTextColor(Color.parseColor("#9A9DA3")) })
-                    for ((txt, n, crit) in found) chips.addView(labChip((if (crit && useCrit) "치명 " else "") + txt + if (!n.exact) " (범위)" else "", false) {
-                        val m = measures.getOrNull(mi) ?: return@labChip
-                        val dk = (if (crit && useCrit) "c:" else "m:") + m.optString("id")
-                        labDraft[dk] = ((labDraft[dk] ?: "").trim() + " " + txt).trim()
-                        added += "${m.optString("name")}${if (crit && useCrit) "(치명)" else ""} $txt"
-                        status.text = "넣음: " + added.joinToString(", ")
+                    for ((txt, n, crit) in found) chips.addView(labChip((if (crit && useCrit) "🔴 " else "") + txt + if (!n.exact) " (범위)" else "", false) {
+                        val e = sel?.let { fields[it] } ?: run { toast("넣을 칸을 먼저 누르세요."); return@labChip }
+                        e.setText(txt); e.setSelection(e.text.length)
                     })
                 }
             }
-            box.addView(status)
             overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("데미지 찍기")
                 .setView(ScrollView(ui).apply { addView(box) })
-                .setPositiveButton("확인") { _, _ -> renderLab() }
-                .setNeutralButton("다시 찍기") { _, _ -> renderLab(); labShootDamage(measures, useCrit) }
+                .setPositiveButton("확인") { _, _ -> fields.forEach { (k, e) -> labDraft[k] = e.text.toString().trim() }; renderLab() }
+                .setNeutralButton("다시 찍기") { _, _ -> labShootDamage(measures, useCrit) }
+                .setNegativeButton("취소", null)
                 )
         }
     }
