@@ -916,7 +916,7 @@ const dexSpeed=p=>{const d=dexOf(p.name);return d&&d.m&&d.m[2]>0?d.m[2]:null}
 const petAtk=p=>{const c=p.combat;return c&&c[0]>0?c[0]:null}
 function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],P=deck.pets
   const hasPetIn=S.inputs.some(i=>scopeOf(S,i)==='pet'),atk=!hasPetIn&&P.length>0&&P.every(p=>petAtk(p))
-  const speed=P.length>0&&P.every(p=>petAps(p)),dex=!speed&&P.length>0&&P.every(p=>dexSpeed(p))
+  const speed=!!deck.aspdOn&&P.length>0&&P.every(p=>petAps(p)),dex=!speed&&P.length>0&&P.every(p=>dexSpeed(p))
   for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r
     if(atk)v*=petAtk(p)
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
@@ -960,9 +960,11 @@ function vSpec(v){
       <div class="grid" style="margin-top:4px"><label class="f">최대 마나<input type="text" class="sk" data-k="mana" value="${esc(sk.mana??'')}" placeholder="5"></label><label class="f">평타당 마나<input type="text" class="sk" data-k="per" value="${esc(sk.per??'')}" placeholder="1"></label>
         <label class="f">스킬 배율 %<input type="text" class="sk" data-k="pct" value="${esc(sk.pct??'')}" placeholder="300"></label><label class="f">스킬 타수<input type="text" class="sk" data-k="hits" value="${esc(sk.hits??'')}" placeholder="1"></label>
         <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label>
-        <label class="f">10초 공격 횟수 (배속 끄고 직접 세기)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label></div>
+        ${deck.aspdOn?`<label class="f">10초 공격 횟수 (평타+스킬, 배속 끄고)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label>`:''}</div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p)?`실전투 공격 ${fmt(petAtk(p))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${(BR&&TMCalc.savedPets)||window.SAVEDPETS?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
+      <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="aspdOn"${deck.aspdOn?' checked':''}>공격속도 직접 측정 <span class="mut">(켜면 소환수마다 10초 공격 횟수를 적고, 도감 S 순발 대신 그걸 써요)</span></label>
+      ${deck.aspdOn&&!base.speed?'<div class="bad">공격 횟수가 빈 소환수가 있어서 도감 S 순발로 계산 중 — 세 마리 다 적어야 적용돼요</div>':''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
       <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬·공격 횟수는 소환수 이름별로 기억해요 (종류마다 고정이라 한 번만 세면 돼요).</div>
       ${pets.length>1?`<div class="mut" style="margin-top:4px">덱 안 비중: 세기 = ${base.hasPetIn?'공식의 소환수 스펙':base.atk?'실전투 공격력':'<span class="bad">모두 같음 (저장한 소환수에서 불러오면 실전투 공격력 반영)</span>'} · 빠르기 = ${base.speed?'10초 공격 횟수':base.dex?'도감 S 순발':'<span class="bad">모두 같음 (도감에 있는 이름이면 S 순발 반영)</span>'}</div>
@@ -1024,6 +1026,7 @@ function vSpec(v){
     el.querySelector('.px').onclick=()=>dk((p,D)=>D.pets.splice(k,1))
     el.querySelectorAll('.pst').forEach(i=>i.onchange=()=>P(x=>{x.st=x.st||{};const n=num(i.value);if(isFinite(n))x.st[i.dataset.k]=n;else delete x.st[i.dataset.k]}))
     el.querySelectorAll('.sk').forEach(i=>i.onchange=()=>P((x,p)=>{x.skill=x.skill||{};x.skill[i.dataset.k]=i.value.trim();if(x.name){p.petSkills=p.petSkills||{};p.petSkills[x.name]={...x.skill}}}))})
+  const ao=$('#aspdOn');if(ao)ao.onchange=()=>dk((p,D)=>D.aspdOn=ao.checked)
   const gB=$('#gB');if(gB)gB.onchange=()=>saveSpec(p=>{p.grp=p.grp||{};p.grp.basic=gB.value})
   const gS=$('#gS');if(gS)gS.onchange=()=>saveSpec(p=>{p.grp=p.grp||{};p.grp.skill=gS.value})
   // 직접 공격 구성
