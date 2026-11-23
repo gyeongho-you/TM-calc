@@ -785,9 +785,9 @@ class MainWindow(
             addSeparator()
             add(JMenuItem("표시 설정…").apply { addActionListener { showDisplaySettings() } })
         })
-        add(JMenu("연구실").apply {
-            add(JMenuItem("연구실 열기 (브라우저)").apply { addActionListener { openLab() } })
-            add(JMenuItem("연구실 설명").apply {
+        add(JMenu("최적화").apply {
+            add(JMenuItem("최적화 · 연구실 열기 (브라우저)").apply { addActionListener { openLab() } })
+            add(JMenuItem("설명").apply {
                 addActionListener {
                     JOptionPane.showMessageDialog(this@MainWindow,
                         "게임의 데미지 공식을 직접 실험해서 찾고, 그 공식으로 가장 센 셋팅을 계산합니다.\n" +

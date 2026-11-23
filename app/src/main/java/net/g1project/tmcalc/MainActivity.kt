@@ -162,7 +162,7 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "연구실")) { _, which ->
+            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "최적화 (스펙 효율 · 연구실)")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()

@@ -818,7 +818,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-help]');if
   document.body.append(m)})
 
 // ---------------------------------------------------------------- 화면 이동
-let nav=[{v:'home'}]
+let nav=[{v:'front'}]
 const cur=()=>nav[nav.length-1]
 function go(v){nav.push(v);render();scrollTo(0,0)}
 function back(){if(nav.length>1){nav.pop();render();return true}return false}
@@ -830,7 +830,121 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems,gset:vGset})[c.v](c,$('#view'))
+  ;({front:vFront,home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems,gset:vGset})[c.v](c,$('#view'))
+}
+
+// ---------------------------------------------------------------- 최적화 (앞화면, 일반 사용자용): 공식 세트 + 내 스펙 + 공격 구성 → 무엇을 올리면 이득?
+/** 공식 세트: 연구실 게임 하나에서 만든 계산 묶음 (공식 · 받을 값 · 상한 · 공격 그룹 · 룬 연결) */
+function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fsel||{},tv=tplVars(t),vm=t.vmeta||{}
+  const forms={}
+  for(const m of TV){const L=FL.filter(x=>normT(x.f.target)===m.id);const x=L.find(q=>q.key===fsel[m.id])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];if(x)forms[m.id]={spec:x.f.spec,p:x.f.p,vars:x.f.vars,formula:x.f.formula}}
+  const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')))]
+  if(t.useCrit!==false)for(const k of ['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
+  const inputs=ids.map(id=>{const x=tv.find(q=>q.id===id);const M=vm[id]||{};return{id,name:(x?x.name:id).replace(/ 변화$/,''),unit:id.endsWith(':pct')?'pct':'flat',cap:isFinite(num(M.cap))?num(M.cap):(id==='g:crit:rate:pct'?100:null)}})
+  return{kind:'tmcalc-formula-set',v:1,id:uid(),name:meta.name||t.name,ver:meta.ver||'',memo:meta.memo||'',by:meta.by||'',made:Date.now(),game:t.name,
+    useCrit:t.useCrit!==false,measures:t.measures.map(m=>({id:m.id,name:m.name,basePct:num(m.basePct??m.pct)||100})),forms,inputs,runeMap:t.runeMap||{},runeTable:t.runeTable||{}}}
+const activeSet=()=>{const L=data.formulaSets||[];return L.find(s=>s.id===(data.spec||{}).setId)||L[0]||null}
+function specState(){const sp=data.spec||{};return{st:sp.st||{},cyc:sp.cyc||{mode:'cycle',time:'10',list:[]},steps:sp.steps||{},wi:sp.wi||[]}}
+function saveSpec(f){mutate(d=>{d.spec=d.spec||{};f(d.spec)});render()}
+/** 공식 세트로 계산: 한 바퀴(또는 초당) 데미지. 결과는 비교(%)로만 씀 */
+function setEval(S,st,cyc){
+  const z={};for(const i of S.inputs){let v=num(st[i.id]);if(!isFinite(v))v=0;if(i.cap!=null&&v>i.cap)v=i.cap;z[i.id]=v;if(i.unit==='pct')z[i.id+'*']=v}
+  const fOf=k=>{const f=S.forms[k];if(!f)return null;f.fn=f.fn||makeF(f.spec);return f}
+  const val=(f)=>f.fn(f.p,f.vars.map(id=>z[id]??z[id.replace(/\*$/,'')]??0))
+  const list=(cyc.list||[]).length?cyc.list:[{name:(S.measures[0]||{}).name,group:(S.measures[0]||{}).id,pct:'',count:'1',crit:'can'}]
+  const p0=S.useCrit?Math.min(1,Math.max(0,(z['g:crit:rate:pct']||0)/100)):0,cm=S.useCrit&&z['g:crit:dmg:pct']?z['g:crit:dmg:pct']/100:1
+  const byTime=cyc.mode==='time',T=num(cyc.time)||10
+  const kind=e=>byTime?(e.kind2||'count'):'count'
+  const realCd=e=>(num(e.cd)||0)*(1-(num(e.cdr)||0)/100),realIv=e=>(num(e.iv)||0)/(1+(num(e.aspd)||0)/100)
+  let usedT=0;for(const e of list)if(kind(e)==='cd'){const cd=realCd(e);if(cd>0)usedT+=T/cd*(num(e.cast)||0)}
+  const leftT=Math.max(0,T-usedT);let tot=0,miss=0
+  for(const e of list){const m=S.measures.find(x=>x.id===e.group)||S.measures[0];if(!m){miss++;continue}
+    const N=fOf('m:'+m.id),C=fOf('c:'+m.id);if(!N&&!C){miss++;continue}
+    const r=(num(e.pct)||100)/(m.basePct||100)
+    const nd=N?val(N)*r:val(C)*r/cm,cd=C?val(C)*r:nd*cm
+    const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100)),md=S.useCrit?(e.crit||'can'):'none'
+    const avg=md==='none'?nd:md==='always'?cd:nd*(1-p)+cd*p
+    const k=kind(e),h=num(e.hits)||1
+    const n=k==='cd'?(realCd(e)>0?T/realCd(e)*h:0):k==='fill'?(realIv(e)>0?leftT/realIv(e)*h:0):(num(e.count)||0)
+    tot+=avg*n}
+  return{r:byTime?tot/T:tot,miss}}
+function vFront(c,v){
+  $('#title').textContent='최적화'
+  $('#hdr').innerHTML='<button class="sm" id="toLab" title="공식을 찾는 곳">🔬 연구실</button>'
+  $('#toLab').onclick=()=>go({v:'home'})
+  const tab=LS.get('tmcalcFrontTab')||'spec'
+  v.innerHTML=`<div class="seg" style="display:flex;margin-top:6px"><button style="flex:1" data-ft="spec" class="${tab==='spec'?'on':''}">스펙 효율</button><button style="flex:1" data-ft="rune" class="${tab==='rune'?'on':''}">룬 비교</button></div><div id="ftv"></div>`
+  v.querySelectorAll('[data-ft]').forEach(b=>b.onclick=()=>{LS.set('tmcalcFrontTab',b.dataset.ft);render()})
+  if(tab==='rune'){$('#ftv').innerHTML=`<div class="card empty">룬 비교는 게임 위 레이어에서 룬 비교 화면을 읽어 바로 계산하는 기능이에요.<br>준비 중 — 먼저 [스펙 효율]에서 내 스펙과 공격 구성을 저장해 두세요. 룬 비교도 그 값을 그대로 써요.</div>`;return}
+  vSpec($('#ftv'))
+}
+function vSpec(v){
+  const S=activeSet(),sets=data.formulaSets||[],SS=specState()
+  if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
+    <div class="row" style="margin-top:10px"><button class="pri" id="sImp">공식 세트 불러오기</button><button id="sLab">🔬 연구실로</button></div></div>`
+    $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click();$('#sLab').onclick=()=>go({v:'home'});return}
+  const cyc=SS.cyc,byTime=cyc.mode==='time',st=SS.st
+  const base=setEval(S,st,cyc),ok=base.r>0&&isFinite(base.r)
+  const rows=ok?S.inputs.map(i=>{const def=i.unit==='pct'?1:(()=>{const a=Math.abs(num(st[i.id])||0)*0.01;if(!a)return 100;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
+    const stp=isFinite(num(SS.steps[i.id]))&&num(SS.steps[i.id])?num(SS.steps[i.id]):def,s2={...st,[i.id]:(num(st[i.id])||0)+stp},g=(setEval(S,s2,cyc).r/base.r-1)*100
+    return{i,stp,g,cap:i.cap!=null&&(num(st[i.id])||0)>=i.cap}}).sort((a,b)=>b.g-a.g):[]
+  const mx=Math.max(...rows.map(r=>r.g),1e-9),empty=S.inputs.filter(i=>!isFinite(num(st[i.id])))
+  const list=(cyc.list||[]).length?cyc.list:[]
+  v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
+      ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button><button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button></div>
+    ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
+  <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
+    <div class="grid" style="margin-top:8px">${S.inputs.map(i=>`<label class="f">${esc(i.name)}${i.id==='g:crit:dmg:pct'?' (1.5배=150)':''}${i.cap!=null?` (최대 ${fmt(i.cap)})`:''}<input type="text" inputmode="decimal" data-sv="${esc(i.id)}" value="${esc(st[i.id]??'')}" placeholder="입력"></label>`).join('')}</div>
+    <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙(펫 등)은 그대로라고 보고 계산해요.</div></details>
+  <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 공격 구성</summary>
+    <div class="seg" style="margin-top:8px"><button data-cm="cycle" class="${!byTime?'on':''}">한 바퀴당 (횟수)</button><button data-cm="time" class="${byTime?'on':''}">초당</button></div>
+    ${byTime?`<label class="f" style="margin-top:6px">몇 초 기준<input type="text" id="cTime" value="${esc(cyc.time??'10')}"></label>`:''}
+    ${list.map((e,k)=>`<div class="card" style="background:var(--card2)" data-ce="${k}"><div class="list-row"><input type="text" class="cn" value="${esc(e.name||'')}" placeholder="평타, 스킬A …" style="flex:1"><button class="sm danger cx">✕</button></div>
+      <div class="grid"><label class="f">공격 그룹<select class="cg">${S.measures.map(m=>`<option value="${m.id}"${m.id===e.group?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
+        <label class="f">배율 % (1배 = 100)<input type="text" class="cp" value="${esc(e.pct??'')}" placeholder="100"></label>
+        ${byTime?`<label class="f">종류<select class="ck">${[['count','직접 횟수'],['fill','평타 (남는 시간)'],['cd','스킬 (쿨타임)']].map(([q,l])=>`<option value="${q}"${(e.kind2||'count')===q?' selected':''}>${l}</option>`).join('')}</select></label>
+          ${(e.kind2||'count')==='count'?`<label class="f">${esc(cyc.time||'10')}초 동안 횟수<input type="text" class="cc" value="${esc(e.count??'')}" placeholder="1"></label>`:''}
+          ${e.kind2==='fill'?`<label class="f">기본 평타 간격 (초)<input type="text" class="civ" value="${esc(e.iv??'')}" placeholder="0.5"></label><label class="f">공속 %<input type="text" class="cas" value="${esc(e.aspd??'')}" placeholder="0"></label><label class="f">타수<input type="text" class="ch" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}
+          ${e.kind2==='cd'?`<label class="f">기본 쿨타임 (초)<input type="text" class="ccd" value="${esc(e.cd??'')}" placeholder="3"></label><label class="f">쿨감 %<input type="text" class="ccr" value="${esc(e.cdr??'')}" placeholder="0"></label><label class="f">시전 시간 (초)<input type="text" class="cct" value="${esc(e.cast??'')}" placeholder="0"></label><label class="f">타수<input type="text" class="ch" value="${esc(e.hits??'')}" placeholder="1"></label>`:''}`
+        :`<label class="f">한 바퀴에 횟수<input type="text" class="cc" value="${esc(e.count??'')}" placeholder="1"></label>`}
+        ${S.useCrit?`<label class="f">치명<select class="ckr">${[['none','안 터짐'],['can','확률대로'],['always','항상']].map(([q,l])=>`<option value="${q}"${(e.crit||'can')===q?' selected':''}>${l}</option>`).join('')}</select></label>`:''}</div></div>`).join('')||'<div class="mut" style="margin-top:6px">공격이 없으면 첫 공격 그룹 한 방으로 계산해요.</div>'}
+    <button class="sm" id="cAdd" style="margin-top:6px">+ 공격</button></details>
+  <div class="card"><div class="big">무엇을 올리면 이득?</div>
+    <div class="mut">지금 내 상태에서 하나씩 '올릴 양'만큼 올렸을 때 ${byTime?'초당':'한 바퀴'} 데미지가 몇 % 오르나 (올릴 양은 고칠 수 있어요)</div>
+    ${S.useCrit&&isFinite(num(st['g:crit:dmg:pct']))&&num(st['g:crit:dmg:pct'])<100?'<div class="bad" style="margin-top:6px">치명 피해는 배율 %로 적어요 (1.5배 = 150). 100보다 작으면 치명이 오히려 약하게 계산돼요.</div>':''}
+    ${empty.length?`<div class="bad" style="margin-top:6px">내 스펙 ${empty.length}칸이 비어 있어요 (${esc(empty.map(i=>i.name).join(', '))}) — 0으로 계산 중</div>`:''}
+    ${base.miss?`<div class="bad">공식이 없는 공격 그룹이 있어요 — 그 공격은 빼고 계산</div>`:''}
+    ${ok?`<div class="scroll"><table style="margin-top:6px"><tr><th class="l">스펙</th><th>올릴 양</th><th>데미지</th></tr>${rows.map((r,n)=>`<tr><td class="l"><b>${n+1}</b> ${esc(r.i.name)}${r.cap?' <span class="tag bad">최대</span>':''}<div style="height:6px;border-radius:3px;background:var(--acc);margin-top:3px;width:${Math.max(3,Math.max(0,r.g)/mx*100)}%"></div></td>
+      <td><input type="text" data-ss="${esc(r.i.id)}" value="${fmt(r.stp).replace(/,/g,'')}" style="width:84px;text-align:right">${r.i.unit==='pct'?'%':''}</td><td class="${r.g>0?'good':r.g<0?'bad':''}">${r.g>=0?'+':''}${fmt(r.g,3)}%</td></tr>`).join('')}</table></div>`:'<div class="mut" style="margin-top:6px">내 스펙을 적으면 계산돼요.</div>'}</div>
+  <details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">바꿔 보기 <span class="mut" style="font-weight:400">(이걸 바꾸면 몇 %?)</span></summary>
+    ${SS.wi.map((w,k)=>{const s2={...st};for(const r of w.rows||[]){const d=num(r.d);if(r.id&&isFinite(d))s2[r.id]=(num(s2[r.id])||0)+d}const g=ok?(setEval(S,s2,cyc).r/base.r-1)*100:NaN
+      return`<div class="card" style="background:var(--card2)" data-wi="${k}"><div class="list-row"><input type="text" class="wn" value="${esc(w.name||'')}" placeholder="이름 (예: 룬 B로 교체)" style="flex:1"><b class="${g>=0?'good':'bad'}">${isFinite(g)?(g>=0?'+':'')+fmt(g,3)+'%':'-'}</b><button class="sm danger wx">✕</button></div>
+        ${(w.rows||[]).map((r,j)=>`<div class="list-row" data-wr="${j}"><select class="wa" style="flex:1">${S.inputs.map(i=>`<option value="${esc(i.id)}"${i.id===r.id?' selected':''}>${esc(i.name)}</option>`).join('')}</select><input type="text" class="wd" value="${esc(r.d??'')}" placeholder="+500, -4.38" style="width:100px"><button class="sm danger wrx">✕</button></div>`).join('')}
+        <button class="sm ghost wra">+ 바뀌는 값</button></div>`}).join('')}
+    <button class="sm" id="wAdd" style="margin-top:6px">+ 바꿔 보기</button></details>`
+  const ss=$('#sSel');if(ss)ss.onchange=()=>saveSpec(sp=>sp.setId=ss.value)
+  $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  $('#sDel').onclick=()=>{if(!confirm(`'${S.name}' 공식 세트를 지울까요? (내 스펙은 남아요)`))return;mutate(d=>{d.formulaSets=(d.formulaSets||[]).filter(x=>x.id!==S.id)});render()}
+  v.querySelectorAll('[data-sv]').forEach(e=>e.onchange=()=>saveSpec(sp=>{sp.st=sp.st||{};const n=num(e.value);if(isFinite(n))sp.st[e.dataset.sv]=n;else delete sp.st[e.dataset.sv]}))
+  v.querySelectorAll('[data-ss]').forEach(e=>e.onchange=()=>saveSpec(sp=>{sp.steps=sp.steps||{};const n=num(e.value);if(isFinite(n)&&n)sp.steps[e.dataset.ss]=n;else delete sp.steps[e.dataset.ss]}))
+  const cy=f=>saveSpec(sp=>{sp.cyc=sp.cyc||{mode:'cycle',time:'10',list:[]};sp.cyc.list=sp.cyc.list||[];f(sp.cyc)})
+  v.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>cy(q=>q.mode=b.dataset.cm))
+  const ct=$('#cTime');if(ct)ct.onchange=()=>cy(q=>q.time=ct.value)
+  $('#cAdd').onclick=()=>cy(q=>q.list.push({name:'',group:(S.measures[0]||{}).id,pct:'',count:'1',crit:'can'}))
+  v.querySelectorAll('[data-ce]').forEach(el=>{const k=+el.dataset.ce
+    const b=(cls,key)=>{const x=el.querySelector('.'+cls);if(x)x.onchange=()=>cy(q=>q.list[k][key]=x.value)}
+    b('cn','name');b('cg','group');b('cp','pct');b('ck','kind2');b('cc','count');b('civ','iv');b('cas','aspd');b('ch','hits');b('ccd','cd');b('ccr','cdr');b('cct','cast');b('ckr','crit')
+    el.querySelector('.cx').onclick=()=>cy(q=>q.list.splice(k,1))})
+  const wv=f=>saveSpec(sp=>{sp.wi=sp.wi||[];f(sp.wi)})
+  $('#wAdd').onclick=()=>wv(W=>W.push({name:'',rows:[{id:(S.inputs[0]||{}).id,d:''}]}))
+  v.querySelectorAll('[data-wi]').forEach(el=>{const k=+el.dataset.wi
+    el.querySelector('.wn').onchange=e=>wv(W=>W[k].name=e.target.value)
+    el.querySelector('.wx').onclick=()=>wv(W=>W.splice(k,1))
+    el.querySelector('.wra').onclick=()=>wv(W=>W[k].rows.push({id:(S.inputs[0]||{}).id,d:''}))
+    el.querySelectorAll('[data-wr]').forEach(r=>{const j=+r.dataset.wr
+      r.querySelector('.wa').onchange=e=>wv(W=>W[k].rows[j].id=e.target.value)
+      r.querySelector('.wd').onchange=e=>wv(W=>W[k].rows[j].d=e.target.value)
+      r.querySelector('.wrx').onclick=()=>wv(W=>W[k].rows.splice(j,1))})})
 }
 
 // ---------------------------------------------------------------- 처음 화면: 게임(=틀) → ① 실험 ② 공식 ③ 아이템 ④ 최적화
@@ -948,8 +1062,11 @@ function importText(text){
         if(i<0)d.templates.push(o.template)
         else if(confirm(`'${d.templates[i].name}' 틀이 이미 있어요. 불러온 것으로 바꿀까요? (취소하면 새 틀로 추가)`))d.templates[i]=o.template
         else d.templates.push({...o.template,id:uid(),name:o.template.name+' (불러옴)'})})
-      toast('틀을 불러왔어요.');nav=[{v:'home'}];render();return
+      toast('틀을 불러왔어요.');nav=[{v:'front'},{v:'home'}];render();return
     }
+    if(o.kind==='tmcalc-formula-set'&&o.forms){
+      const S2={...o,id:uid()};mutate(d=>{d.formulaSets=d.formulaSets||[];d.formulaSets.push(S2);d.spec=d.spec||{};d.spec.setId=S2.id})
+      toast(`공식 세트 '${o.name}'을(를) 불러왔어요.`);nav=[{v:'front'}];render();return}
     if(o.kind==='tmcalc-lab-list'&&o.list){const t=tpl(o.templateId)||curGame();if(!t)throw 0
       const ex=listsOf(t).find(l=>l.name===o.list.name),merge=ex&&confirm(`'${ex.name}' 목록이 이미 있어요. [확인] 합치기 (같은 이름은 바꿔 끼움) / [취소] 새 목록으로`)
       mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(merge){const X=ex.id==='main'?{items:T.items=T.items||[]}:T.lists.find(l=>l.id===ex.id)
@@ -964,7 +1081,7 @@ function importText(text){
       if(d.sessions.some(q=>q.name===s.name))s.name+=' (불러옴)'
       d.sessions.push(s)
     })
-    toast('세션을 불러왔어요.');nav=[{v:'home'}];render()
+    toast('세션을 불러왔어요.');nav=[{v:'front'},{v:'home'}];render()
   }catch(_){alert('연구실 파일(실험·게임·목록)이 아니에요.')}
 }
 window.onPickedFile=importText
@@ -1199,6 +1316,11 @@ function vGset(c,v){
   <div class="card"><div class="big">세트 효과</div><div class="mut">같은 세트를 n개 이상 끼면 붙는 효과 (칸이 달라도 같이 셈). 아이템 고치기에서 세트를 고름.</div>
     ${sets.map(s=>`<div class="list-row"><div style="flex:1"><b>${esc(s.name)}</b>${s.distinct?' <span class="mut">(다른 아이템만 셈)</span>':''}<div class="mut">${esc((s.rows||[]).map(r=>`${r.n}개 → ${varName(t,r.vid)} +${r.val}`).join(' · ')||'효과 없음')}</div></div><button class="sm" data-set="${s.id}">고치기</button></div>`).join('')||'<div class="mut">세트 없음 (세트 없는 게임이면 비워 두기)</div>'}
     <button class="sm" id="addSet">+ 세트</button></div>
+  <div class="card"><div class="big">공식 세트 만들기</div><div class="mut">이 게임에서 고른 공식(④ 최적화의 그룹별 공식) · 상한 · 룬 연결을 묶어서 일반 사용자용 [최적화]에 써요. 파일로 내보내 다른 사람에게 줄 수도 있어요.</div>
+    <div class="grid" style="margin-top:8px"><label class="f">이름<input type="text" id="fsN" value="${esc(t.name)}"></label><label class="f">버전 (예: 패치 1.24 기준)<input type="text" id="fsV"></label><label class="f">만든 사람<input type="text" id="fsB"></label></div>
+    <label class="f" style="margin-top:6px">메모 (실험 당시 기준 상태 등)<input type="text" id="fsM"></label>
+    <div class="mut" style="margin-top:6px">${(()=>{const S=buildSet(t,{});const n=Object.keys(S.forms).length;return n?`공식 ${n}개 (${esc(Object.keys(S.forms).map(k=>(measVars(t).find(m=>m.id===k)||{name:k}).name).join(', '))}) · 받을 값 ${S.inputs.length}개 (${esc(S.inputs.map(i=>i.name).join(', '))})`:'<span class="bad">저장한 공식이 없어요 — ① 실험에서 공식을 찾아 [저장]</span>'})()}</div>
+    <div class="row" style="margin-top:8px"><button class="pri sm" id="fsUse">최적화에 쓰기</button><button class="sm" id="fsX">내보내기</button></div></div>
   <div class="row"><button class="sm" id="gx">이 게임 내보내기</button><button class="sm" id="gi">불러오기</button><span style="flex:1"></span><button class="sm danger" id="gd">게임 지우기</button></div>`
   const upd=f=>{mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(T)f(T)});render()}
   const meta=(T,id)=>{T.vmeta=T.vmeta||{};return T.vmeta[id]=T.vmeta[id]||{}}
@@ -1247,11 +1369,15 @@ function vGset(c,v){
     document.body.append(m);redraw()}
   v.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>editSet(sets.find(s=>s.id===b.dataset.set)))
   $('#addSet').onclick=()=>editSet(null)
+  const fsMeta=()=>({name:$('#fsN').value.trim(),ver:$('#fsV').value.trim(),by:$('#fsB').value.trim(),memo:$('#fsM').value.trim()})
+  $('#fsUse').onclick=()=>{const S=buildSet(t,fsMeta());if(!Object.keys(S.forms).length)return alert('저장한 공식이 없어요.')
+    mutate(d=>{d.formulaSets=d.formulaSets||[];d.formulaSets.push(S);d.spec=d.spec||{};d.spec.setId=S.id});toast('공식 세트를 만들었어요. [최적화]에서 써요.');nav=[{v:'front'}];render()}
+  $('#fsX').onclick=()=>{const S=buildSet(t,fsMeta());if(!Object.keys(S.forms).length)return alert('저장한 공식이 없어요.');saveJson('공식세트_'+fname(S.name)+'.json',S)}
   $('#gx').onclick=()=>saveJson('게임_'+fname(t.name)+'.json',{kind:'tmcalc-lab-template',exported:new Date().toISOString(),template:t})
   $('#gi').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
   $('#gd').onclick=()=>{const n=data.sessions.filter(s=>s.templateId===t.id).length
     if(!confirm(`'${t.name}' 게임을 지울까요?`+(n?`\n이 게임의 실험 ${n}개는 이름표를 잃어요 (기록 숫자는 남음).`:'')))return
-    mutate(d=>d.templates=d.templates.filter(q=>q.id!==t.id));nav=[{v:'home'}];render()}
+    mutate(d=>d.templates=d.templates.filter(q=>q.id!==t.id));nav=[{v:'front'},{v:'home'}];render()}
 }
 
 // ---------------------------------------------------------------- 시작 상태: 세션을 시작할 때 이미 붙어 있던 양
@@ -1290,7 +1416,7 @@ function vStart(c,v){
   const dk='start:'+s.id+(c.reset?':reset':'')
   if(formRestore(v,dk))draftBanner(v,()=>{draftDel(dk);render()})
   v.addEventListener('input',()=>formSnap(v,dk))
-  $('#sc').onclick=()=>c.fresh?(nav=[{v:'home'}],render()):back()
+  $('#sc').onclick=()=>c.fresh?(nav=[{v:'front'},{v:'home'}],render()):back()
   $('#ss').onclick=()=>{draftDel(dk)
     const o={};v.querySelectorAll('[data-sk]').forEach(e=>{const n=num(e.value);if(isFinite(n))o[e.dataset.sk]=n})
     const eqv={};v.querySelectorAll('[data-eq]').forEach(e=>{const n=num(e.value);if(isFinite(n)&&n>0)eqv[e.dataset.eq]=n})
@@ -1300,7 +1426,7 @@ function vStart(c,v){
       toast('상태를 다시 적었어요. 여기서부터 이어서 기록하세요.');return back()
     }
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x){x.start=o;x.equip0=eqv}})
-    toast('시작 상태를 저장했어요.');c.fresh?(nav=[{v:'home'}],render()):back()}
+    toast('시작 상태를 저장했어요.');c.fresh?(nav=[{v:'front'},{v:'home'}],render()):back()}
 }
 
 // ---------------------------------------------------------------- 기록 보기/고치기
@@ -1588,7 +1714,7 @@ function showSaved(c){
       ${f.calc?`<button class="sm" data-go-opt="${f.id}">최적화</button>`:''}<button class="sm" data-cp="${esc(f.formula)}">복사</button><button class="sm danger" data-sdel="${f.id}">✕</button></div></div>`).join(''):''
   el.querySelectorAll('[data-go-opt]').forEach(b=>b.onclick=()=>{const s0=ses(c.id),f=(s0.saved||[]).find(q=>q.id===b.dataset.goOpt)
     mutate(d=>{const T=d.templates.find(q=>q.id===s0.templateId);if(T&&f){T.opt=T.opt||{};T.opt.formula=f.id;T.opt.fsel=T.opt.fsel||{};T.opt.fsel[normT(f.target)]=f.id}})
-    LS.set('tmcalcLabGame',s0.templateId);LS.set('tmcalcLabTab','opt');nav=[{v:'home'}];render()})
+    LS.set('tmcalcLabGame',s0.templateId);LS.set('tmcalcLabTab','opt');nav=[{v:'front'},{v:'home'}];render()})
   el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp))
   el.querySelectorAll('[data-sdel]').forEach(b=>b.onclick=()=>{if(!confirm('저장한 공식을 지울까요?'))return
     mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x)x.saved=(x.saved||[]).filter(q=>q.id!==b.dataset.sdel)});showSaved(c)})
