@@ -1536,11 +1536,19 @@ class OverlayService : Service() {
 
     private fun labReadRune(tid: String) {
         labCapture(1, 0) { bs ->
-            val bmp = bs.firstOrNull() ?: return@labCapture
+            val bmp = bs.firstOrNull() ?: run { toast("화면을 찍지 못했습니다. 잠시 후 다시 눌러 주세요."); return@labCapture }
             ocrLines(bmp) { lines ->
                 bmp.recycle()
                 val runes = RuneParser.parse(lines)
-                if (runes.size < 2) { toast("룬 비교 화면(위 장착중 / 아래 바꿀 룬)을 찾지 못했습니다."); return@ocrLines }
+                if (runes.size < 2 || runes.any { it.atk == null && it.subs.isEmpty() }) {
+                    // 못 읽으면 읽힌 글자를 그대로 보여 줌 (이 화면을 찍어 보내면 고치기 쉬움)
+                    val nl = "\n"
+                    val txt = lines.sortedBy { it.top }.joinToString(nl) { "${it.text}  [${it.left},${it.top}]" }
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면을 못 읽었어요 (상자 ${runes.size}개)")
+                        .setMessage("위 장착중 / 아래 바꿀 룬이 같이 보이는 화면에서 눌러 주세요.$nl${nl}읽힌 글자:$nl" + txt.take(3000))
+                        .setPositiveButton("닫기", null))
+                    return@ocrLines
+                }
                 labApplyRune(tid, runes[0], runes[1])
             }
         }

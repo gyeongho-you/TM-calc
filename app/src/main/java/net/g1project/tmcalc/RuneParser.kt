@@ -68,18 +68,25 @@ object RuneParser {
     /** 위에서 아래 순서로 룬 상자들 (보통 [장착중, 바꿀 룬]) */
     fun parse(lines: List<OcrLine>): List<RuneInfo> {
         val ls = lines.filter { it.text.isNotBlank() }.sortedBy { it.top }
-        // 이름 줄: "찰나의 룬 [신화]" — 룬이 들어가고 [등급]
-        val names = ls.filter { it.text.contains("룬") && gradeIn(it.text) != null }
-        if (names.isEmpty()) return emptyList()
-        val stop = ls.firstOrNull { l -> names.last().top < l.top && listOf("분해", "장착", "탭하여", "레벨업", "자동 제작").any { l.text.replace(" ", "").contains(it.replace(" ", "")) } && !l.text.contains("장착중") }
+        val lvRe = Regex("[Ll][Vv]\\s*[.,]?\\s*(\\d{1,4})")
+        // 상자 기준점: "주 옵션" 글자 (OCR이 '주옵션'·'주 옵선'으로 읽어도). 없으면 "Lv.숫자" 줄
+        val heads = ls.filter { val t = it.text.replace(" ", ""); t.startsWith("주") && t.contains("옵") && t.length <= 5 }
+            .ifEmpty { ls.filter { lvRe.containsMatchIn(it.text) && !it.text.contains("던전") } }
+        if (heads.isEmpty()) return emptyList()
+        // 이름 줄: 기준점 위쪽에서 "룬"이 든 가장 긴 줄 ("찰나의 룬 [신화]" 이 둘로 나뉘어 읽혀도)
+        val names = heads.map { hd -> ls.filter { it.bottom <= hd.top + hd.height && it.top >= hd.top - hd.height * 8 && it.text.contains("룬") && it.text.replace(" ", "").length > 1 }
+            .maxByOrNull { it.text.length } ?: hd }
+        val stop = ls.firstOrNull { l -> heads.last().top < l.top && listOf("분해", "장착", "탭하여", "레벨업", "자동제작").any { l.text.replace(" ", "").contains(it) } && !l.text.contains("장착중") }
         return names.mapIndexed { k, nl ->
-            val h = nl.height
-            val y0 = nl.top - h
-            val y1 = names.getOrNull(k + 1)?.let { it.top - 3 * h } ?: (stop?.top ?: Int.MAX_VALUE)
+            val h = heads[k].height
+            val y0 = minOf(nl.top, heads[k].top) - 3 * h
+            val y1 = names.getOrNull(k + 1)?.let { minOf(it.top, heads[k + 1].top) - 3 * h } ?: (stop?.top ?: Int.MAX_VALUE)
             val card = ls.filter { it.cy in y0 until y1 }
-            val name = nl.text.substringBefore("[").trim().ifEmpty { null }
-            val level = card.firstNotNullOfOrNull { Regex("[Ll][Vv]\\.?\\s*(\\d{1,4})").find(it.text)?.groupValues?.get(1)?.toIntOrNull() }
-            val subHead = card.firstOrNull { it.text.replace(" ", "").contains("부옵션") }
+            val name = nl.text.substringBefore("[").substringBefore("(").trim().takeIf { it.contains("룬") }
+            val level = card.firstNotNullOfOrNull { lvRe.find(it.text)?.groupValues?.get(1)?.toIntOrNull() }
+            // 등급: 이름 줄의 [신화] 또는 위쪽 등급 표시 ("신화")
+            val grade = gradeIn(nl.text) ?: card.filter { it.top <= heads[k].top }.firstNotNullOfOrNull { l -> GRADES.firstOrNull { l.text.replace(" ", "").contains(it) } }
+            val subHead = card.firstOrNull { val t = it.text.replace(" ", ""); t.startsWith("부") && t.contains("옵") && t.length <= 5 }
             val mainEnd = subHead?.top ?: Int.MAX_VALUE
             // 같은 줄(높이 비슷)에서 라벨 오른쪽의 첫 숫자
             fun valueRight(label: OcrLine, after: Int): RuneNum? {
@@ -120,7 +127,7 @@ object RuneParser {
                     if (v != null) subs += label to v
                 }
             }
-            RuneInfo(gradeIn(nl.text), name, level, atk, others, subs)
+            RuneInfo(grade, name, level, atk, others, subs)
         }
     }
 }
