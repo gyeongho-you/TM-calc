@@ -759,6 +759,12 @@ class MainWindow(
             val res = javaClass.getResourceAsStream("/lab.html") ?: error("연구실 화면 파일이 없습니다")
             val bytes = res.use { it.readBytes() }
             if (!f.exists() || !f.readBytes().contentEquals(bytes)) f.writeBytes(bytes)
+            // 최적화 › 덱: 도감(이름·속성·타입·도감 S 능력치)을 같은 폴더 pets.js 로 (공속 비중 = 도감 순발)
+            runCatching {
+                val arr = org.json.JSONArray()
+                for (pt in pets.db.pets) arr.put(org.json.JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+                java.io.File(dir, "pets.js").writeText("window.PETDB=" + arr.toString() + ";", Charsets.UTF_8)
+            }
             Desktop.getDesktop().browse(f.toURI())
             setStatus("연구실을 브라우저로 열었습니다")
         }.onFailure { JOptionPane.showMessageDialog(this, "연구실을 열지 못했습니다: ${it.message}", "연구실", JOptionPane.WARNING_MESSAGE) }

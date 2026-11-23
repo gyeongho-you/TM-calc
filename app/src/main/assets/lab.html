@@ -68,6 +68,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:13px;margin-top:6px}
 <main id="view"></main>
 <input id="file" type="file" accept=".json,application/json" style="display:none">
 
+<script src="pets.js" onerror="0"></script>
 <script id="core">
 
 // ---------------------------------------------------------------- 숫자
@@ -903,16 +904,22 @@ function deckGroups(S,sp){const ms=S.measures,find=re=>(ms.find(m=>re.test(m.nam
   return{basic:(sp.grp||{}).basic||find(/평타|일반|기본/)||(ms[0]||{}).id,skill:(sp.grp||{}).skill||find(/스킬/)||(ms[1]||ms[0]||{}).id}}
 /** 10초 동안 공격 횟수(배속 끄고 직접 센 값, 소환수 종류마다 고정) → 초당 공격 */
 const petAps=p=>{const n=num((p.skill||{}).aps);return n>0?n/10:null}
+/** 도감: 폰은 앱에서, PC 는 같은 폴더 pets.js 에서 (없으면 빈 목록) */
+let _petdb=null
+function petDb(){if(_petdb)return _petdb;try{if(typeof TMCalc!=='undefined'&&TMCalc.petDb)_petdb=JSON.parse(TMCalc.petDb())}catch(e){}if(!_petdb)_petdb=window.PETDB||[];return _petdb}
+const dexOf=name=>{const k=String(name||'').replace(/\s/g,'');return k?petDb().find(x=>String(x.n).replace(/\s/g,'')===k):null}
+/** 공속은 태생(도감 S 순발)에 맞춰 설계 → 도감 S 순발을 공격 빈도 비율로 */
+const dexSpeed=p=>{const d=dexOf(p.name);return d&&d.m&&d.m[2]>0?d.m[2]:null}
 /** 덱 합계. 비중: ① 실 전투능력(게임 표시)이 다 있으면 그 비율 ② 10초 공격 횟수가 다 있으면 초당 ③ 없으면 같은 속도
  *  base: 지금 내 상태 (전투능력은 '지금' 값이라, 바뀐 상태는 지금 대비 비율로 늘린다) */
 function deckEval(S,st,deck,g,base){let r=0,miss=0;const per=[],P=deck.pets
-  const power=P.length>0&&P.every(p=>num(p.power)>0),speed=!power&&P.length>0&&P.every(p=>petAps(p))
+  const power=P.length>0&&P.every(p=>num(p.power)>0),speed=!power&&P.length>0&&P.every(p=>petAps(p)),dex=!power&&!speed&&P.length>0&&P.every(p=>dexSpeed(p))
   for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r
     if(power){const e0=setEval(S,petState(S,base||st,p),cy).r;v=e0>0?num(p.power)*e.r/e0:0}
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
-    else if(speed)v=e.r/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/petAps(p))
+    else if(speed||dex)v=e.r/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
     r+=v;miss+=e.miss;per.push(v)}
-  return{r,miss,per,speed,power}}
+  return{r,miss,per,speed,power,dex}}
 function vSpec(v){
   const S=activeSet(),sets=data.formulaSets||[],SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
@@ -951,11 +958,11 @@ function vSpec(v){
         <label class="f">스킬 배율 %<input type="text" class="sk" data-k="pct" value="${esc(sk.pct??'')}" placeholder="300"></label><label class="f">스킬 타수<input type="text" class="sk" data-k="hits" value="${esc(sk.hits??'')}" placeholder="1"></label>
         <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label>
         <label class="f">10초 공격 횟수 (배속 끄고 직접 세기)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label></div>
-      <div class="mut">한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
+      <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${BR&&TMCalc.savedPets?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
       <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬·공격 횟수는 소환수 이름별로 기억해요 (종류마다 고정이라 한 번만 세면 돼요).</div>
-      ${pets.length>1?(base.power?'<div class="mut" style="margin-top:4px">덱 안 비중: 실 전투능력 비율로 계산 중</div>':base.speed?'<div class="mut" style="margin-top:4px">덱 안 비중: 10초 공격 횟수로 계산 중 (실 전투능력을 적으면 그걸 우선)</div>':'<div class="bad" style="margin-top:4px">실 전투능력(또는 공격 횟수)이 빈 소환수가 있어서 모두 같은 비중으로 계산 중 — 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>'):''}`
+      ${pets.length>1?(base.power?'<div class="mut" style="margin-top:4px">덱 안 비중: 실 전투능력 비율로 계산 중</div>':base.speed?'<div class="mut" style="margin-top:4px">덱 안 비중: 10초 공격 횟수로 계산 중 (실 전투능력을 적으면 그걸 우선)</div>':base.dex?'<div class="mut" style="margin-top:4px">덱 안 비중: 공속 = 도감 S 순발 비율로 계산 중 (실 전투능력을 적으면 그걸 우선)</div>':'<div class="bad" style="margin-top:4px">실 전투능력이 빈 소환수가 있고 도감에서 못 찾은 이름도 있어서 모두 같은 비중으로 계산 중 — 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>'):''}`
     :'<div class="mut" style="margin-top:6px">덱이 없으면 아래 공격 구성으로 계산해요. [+ 새 덱]으로 소환수 3마리를 넣으면 속성·타입 강화까지 덱 기준으로 계산해요.</div>'}</details>
   ${useDeck?'':`<details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">공격 구성 <span class="mut" style="font-weight:400">(덱 없이 직접)</span></summary>
     <div class="seg" style="margin-top:8px"><button data-cm="cycle" class="${!byTime?'on':''}">한 바퀴당 (횟수)</button><button data-cm="time" class="${byTime?'on':''}">초당</button></div>

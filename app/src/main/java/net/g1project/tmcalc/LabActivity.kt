@@ -78,6 +78,13 @@ class LabActivity : Activity() {
             return arr.toString()
         }
 
+        /** 도감 (이름·속성·타입·도감 S 능력치) — 최적화 › 덱의 공속 비중 */
+        @JavascriptInterface fun petDb(): String {
+            val arr = org.json.JSONArray()
+            for (pt in PetStore.load(this@LabActivity).pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+            return arr.toString()
+        }
+
         @JavascriptInterface fun getActive(): String = AppPrefs.labActive(this@LabActivity).orEmpty()
 
         @JavascriptInterface fun setActive(id: String) = AppPrefs.setLabActive(this@LabActivity, id.ifBlank { null })
