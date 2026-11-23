@@ -1277,7 +1277,13 @@ class OverlayService : Service() {
         if (slots.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
         labBody.addView(LinearLayout(ui).apply {
             gravity = Gravity.END
-            addView(headerButton("데미지 찍기 (1초 간격 3장)") { labShootDamage(measures, useCrit) })
+            // 1초 간격으로 몇 장 찍을지 (기본 3, 1~10)
+            val sp = getSharedPreferences("lab_shot", MODE_PRIVATE)
+            val n = sp.getInt("count", 3)
+            addView(headerButton("−") { sp.edit().putInt("count", maxOf(1, n - 1)).apply(); renderLab() })
+            addView(TextView(ui).apply { text = "${n}장"; textSize = 13f; setTextColor(Color.WHITE); setPadding(dp(4), 0, dp(4), 0) })
+            addView(headerButton("+") { sp.edit().putInt("count", minOf(10, n + 1)).apply(); renderLab() })
+            addView(headerButton("데미지 찍기 (1초 간격)") { labShootDamage(measures, useCrit) })
         })
         labBody.addView(TextView(ui).apply {
             text = "한 방 데미지. 치명 터진 건 치명 칸에, 안 터진 건 비치명 칸에. 흔들리면 여러 번 재서 띄어 적기 (1234 1250). 1억210만처럼 줄여 보이면 그대로 적기 (범위로 계산)."
@@ -1628,7 +1634,7 @@ class OverlayService : Service() {
 
     /** 1초 간격 3장: 버프(캐릭터 위)까지 보이게 넓게 잘라 보여 주고, 읽은 데미지 숫자를 후보로 (빨강 = 치명) */
     private fun labShootDamage(measures: List<JSONObject>, useCrit: Boolean) {
-        labCapture(3, 1100) { bs ->
+        labCapture(getSharedPreferences("lab_shot", MODE_PRIVATE).getInt("count", 3).coerceIn(1, 10), 1100) { bs ->
             if (bs.isEmpty()) { toast("화면을 찍지 못했습니다. 다시 눌러 주세요."); return@labCapture }
             val crops = bs.map { full ->
                 val y0 = (full.height * 0.12).toInt(); val y1 = (full.height * 0.58).toInt()
@@ -1663,12 +1669,22 @@ class OverlayService : Service() {
             sel = fields.keys.firstOrNull(); hl()
             box.addView(selInfo)
             box.addView(labLabel("사진을 누르면 전체 화면. 버프가 걸린 장은 쓰지 마세요. 빨간 숫자 = 치명으로 보임 (확인하고 고르기)."))
+            val imgs = ArrayList<android.widget.ImageView>()
+            box.addView(LinearLayout(ui).apply { gravity = Gravity.END
+                addView(headerButton("사진 모두 숨기기/보이기") { val show = imgs.all { it.visibility != View.VISIBLE }; imgs.forEach { it.visibility = if (show) View.VISIBLE else View.GONE } }) })
             crops.forEachIndexed { k, (crop, small, _) ->
-                box.addView(labLabel("${k + 1}번째 (${k}초)"))
-                box.addView(android.widget.ImageView(ui).apply {
+                val img = android.widget.ImageView(ui).apply {
                     setImageBitmap(crop); adjustViewBounds = true
                     setOnClickListener { overlayDialog(android.app.AlertDialog.Builder(ui).setView(android.widget.ImageView(ui).apply { setImageBitmap(small); adjustViewBounds = true }).setPositiveButton("닫기", null)) }
-                }, LinearLayout.LayoutParams(-1, -2))
+                }
+                imgs += img
+                box.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    addView(labLabel("${k + 1}번째 (${k}초)"), LinearLayout.LayoutParams(0, -2, 1f))
+                    // 공간 차지하는 사진은 숨기기 (추천 숫자는 그대로)
+                    addView(headerButton("숨기기") { img.visibility = if (img.visibility == View.VISIBLE) View.GONE else View.VISIBLE })
+                })
+                box.addView(img, LinearLayout.LayoutParams(-1, -2))
                 val chips = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
                 box.addView(android.widget.HorizontalScrollView(ui).apply { addView(chips) })
                 ocrLines(crop) { lines ->
