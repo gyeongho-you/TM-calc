@@ -878,7 +878,8 @@ function vFront(c,v){
   const tab=LS.get('tmcalcFrontTab')||'spec'
   v.innerHTML=`<div class="seg" style="display:flex;margin-top:6px"><button style="flex:1" data-ft="spec" class="${tab==='spec'?'on':''}">스펙 효율</button><button style="flex:1" data-ft="rune" class="${tab==='rune'?'on':''}">룬 비교</button></div><div id="ftv"></div>`
   v.querySelectorAll('[data-ft]').forEach(b=>b.onclick=()=>{LS.set('tmcalcFrontTab',b.dataset.ft);render()})
-  if(tab==='rune'){$('#ftv').innerHTML=`<div class="card empty">룬 비교는 게임 위 레이어에서 룬 비교 화면을 읽어 바로 계산하는 기능이에요.<br>준비 중 — 먼저 [스펙 효율]에서 내 스펙과 공격 구성을 저장해 두세요. 룬 비교도 그 값을 그대로 써요.</div>`;return}
+  if(tab==='rune'){$('#ftv').innerHTML=`<div class="card empty">룬 비교는 게임 위 레이어에서 룬 비교 화면을 읽어 바로 계산하는 기능이에요.<br>먼저 <button class="pri sm" id="goSpec">스펙 효율</button> 에서 내 스펙과 덱을 저장해 두세요. 룬 비교도 그 값을 그대로 써요.</div>`
+    $('#goSpec').onclick=()=>{LS.set('tmcalcFrontTab','spec');render()};return}
   vSpec($('#ftv'))
 }
 // TM2 덱: 속성·타입 목록 (도감 기준, 룬의 '화염' = 불)
