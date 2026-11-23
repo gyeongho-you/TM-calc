@@ -50,7 +50,7 @@ object LabData {
         val neg = s.startsWith("-")
         s = s.removePrefix("+").removePrefix("-")
         var total = 0.0
-        for ((unit, mul) in listOf("억" to 1e8, "만" to 1e4)) {
+        for ((unit, mul) in listOf("경" to 1e16, "조" to 1e12, "억" to 1e8, "만" to 1e4)) {
             val i = s.indexOf(unit)
             if (i >= 0) {
                 val a = s.substring(0, i)

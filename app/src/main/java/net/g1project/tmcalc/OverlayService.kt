@@ -1130,7 +1130,12 @@ class OverlayService : Service() {
         val tid = t.optString("id")
         val gis = groups.flatMap { g -> labArr(g, "items").ifEmpty { listOf(null) }.map { it -> Triple(g.optString("id"), it?.optString("id"), g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")) } }
         val giName = { r: LabRow -> gis.firstOrNull { it.first == r.gid && it.second == r.iid }?.third ?: "분류·항목 고르기" }
-        labBody.addView(labLabel(if (tItems.isNotEmpty()) "바뀐 값 (아이템 말고 직접)" else "바뀐 값"))
+        labBody.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(labLabel(if (tItems.isNotEmpty()) "바뀐 값 (아이템 말고 직접)" else "바뀐 값"), LinearLayout.LayoutParams(0, -2, 1f))
+            // 룬 비교 화면(위 장착중 / 아래 바꿀 룬)을 띄우고 누르면 차이를 자동으로
+            addView(headerButton("룬 읽기") { labReadRune(tid) })
+        })
         labRows.toList().forEachIndexed { i, r ->
             val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(2), 0, dp(4)) }
             box.addView(LinearLayout(ui).apply {
@@ -1256,8 +1261,12 @@ class OverlayService : Service() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         if (slots.size % 2 == 1) line?.addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
+        labBody.addView(LinearLayout(ui).apply {
+            gravity = Gravity.END
+            addView(headerButton("데미지 찍기 (1초 간격 3장)") { labShootDamage(measures, useCrit) })
+        })
         labBody.addView(TextView(ui).apply {
-            text = "한 방 데미지. 치명 터진 건 치명 칸에, 안 터진 건 비치명 칸에. 흔들리면 여러 번 재서 띄어 적기 (1234 1250)."
+            text = "한 방 데미지. 치명 터진 건 치명 칸에, 안 터진 건 비치명 칸에. 흔들리면 여러 번 재서 띄어 적기 (1234 1250). 1억210만처럼 줄여 보이면 그대로 적기 (범위로 계산)."
             textSize = 11f
             setTextColor(Color.parseColor("#9A9DA3"))
             setPadding(0, dp(4), 0, 0)
@@ -1306,7 +1315,10 @@ class OverlayService : Service() {
                 val values = JSONObject(); val samples = JSONObject(); val critValues = JSONObject(); val critSamples = JSONObject()
                 measureEdits.forEach { (dk, e) ->
                     val crit = dk.startsWith("c:"); val id = dk.substring(2)
-                    val a = e.text.toString().trim().split(Regex("[\\s/]+")).mapNotNull { LabData.number(it) }
+                    // 1억210만처럼 뒷자리가 숨겨진 값은 범위 양 끝을 같이 넣음 (평균 = 가운데, 흔들림 = 범위)
+                    val a = e.text.toString().trim().split(Regex("[\\s/]+")).filter { it.isNotEmpty() }.flatMap { tok ->
+                        val rn = RuneParser.num(tok)
+                        if (rn != null && !rn.exact && !rn.pct) listOf(rn.lo, rn.hi) else listOfNotNull(LabData.number(tok)) }
                     if (a.isNotEmpty()) {
                         (if (crit) critValues else values).put(id, a.average())
                         if (a.size > 1) (if (crit) critSamples else samples).put(id, org.json.JSONArray(a))
@@ -1449,6 +1461,198 @@ class OverlayService : Service() {
     }
 
     /** 이름 하나 묻기 (분류/항목 바로 추가) */
+    // ---------------------------------------------------------------- TM2 룬 도우미: 룬 비교 화면 읽기 · 데미지 찍기
+
+    /** 레이어를 숨기고 n장 찍기 (간격 ms). 다 찍으면 레이어를 다시 보이고 cb */
+    private fun labCapture(n: Int, gapMs: Long, cb: (List<Bitmap>) -> Unit) {
+        val shooter = ScreenshotService.instance
+        if (shooter == null) {
+            toast("접근성 설정에서 '${getString(R.string.app_name)}'을(를) 켜 주세요.")
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        if (busy) return
+        busy = true
+        val labWas = labOpen()
+        labPanel?.visibility = View.INVISIBLE
+        bubble.visibility = View.INVISIBLE
+        val out = ArrayList<Bitmap>()
+        fun done() {
+            bubble.visibility = View.VISIBLE
+            if (labWas) labPanel?.visibility = View.VISIBLE
+            busy = false
+            cb(out)
+        }
+        fun shot(k: Int) {
+            shooter.capture { bmp, err ->
+                if (bmp != null) out += bmp
+                else if (err == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW) { toast("게임이 화면 캡처를 막고 있습니다."); done(); return@capture }
+                if (k + 1 < n) main.postDelayed({ shot(k + 1) }, gapMs) else done()
+            }
+        }
+        main.postDelayed({ shot(0) }, HIDE_DELAY_MS)
+    }
+
+    private fun ocrLines(bmp: Bitmap, ok: (List<OcrLine>) -> Unit) {
+        recognizer.process(InputImage.fromBitmap(bmp, 0))
+            .addOnSuccessListener { text ->
+                ok(text.textBlocks.flatMap { it.lines }.mapNotNull { l -> val r = l.boundingBox ?: return@mapNotNull null; OcrLine(l.text, r.left, r.top, r.right, r.bottom) })
+            }
+            .addOnFailureListener { e -> toast("글자 인식 실패: ${e.message}") }
+    }
+
+    /** 룬 수치 표 (등급|옵션 → 레벨 → 정확한 값) 로 만 단위 표시값 추정. 표가 모자라면 범위 가운데 */
+    private fun runeValue(table: JSONObject?, grade: String?, label: String, level: Int?, n: RuneNum): Pair<Double, Boolean> {
+        if (n.exact) return n.lo to false
+        val pts = table?.optJSONObject("$grade|$label")?.let { o -> o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it.toDouble() to o.optDouble(k) } }.toList() } ?: emptyList()
+        if (level != null && pts.map { it.first }.distinct().size >= 2) {
+            // 레벨 → 값 직선 맞추기 (최소제곱), 화면 범위 안으로
+            val mx = pts.map { it.first }.average(); val my = pts.map { it.second }.average()
+            val sxx = pts.sumOf { (it.first - mx) * (it.first - mx) }
+            if (sxx > 0) {
+                val b = pts.sumOf { (it.first - mx) * (it.second - my) } / sxx
+                val v = Math.round(my + b * (level - mx)).toDouble().coerceIn(n.lo, n.hi)
+                return v to true
+            }
+        }
+        return Math.floor(n.mid) to true
+    }
+
+    private fun labReadRune(tid: String) {
+        labCapture(1, 0) { bs ->
+            val bmp = bs.firstOrNull() ?: return@labCapture
+            ocrLines(bmp) { lines ->
+                bmp.recycle()
+                val runes = RuneParser.parse(lines)
+                if (runes.size < 2) { toast("룬 비교 화면(위 장착중 / 아래 바꿀 룬)을 찾지 못했습니다."); return@ocrLines }
+                labApplyRune(tid, runes[0], runes[1])
+            }
+        }
+    }
+
+    /** 옛 룬 → 새 룬 차이를 바뀐 값 줄로. 처음 보는 옵션 이름은 어느 값인지 한 번 물어보고 기억 (게임 설정 runeMap) */
+    private fun labApplyRune(tid: String, a: RuneInfo, b: RuneInfo) {
+        val o = LabData.load(this)
+        val t = LabData.template(o, tid) ?: return
+        val map = t.optJSONObject("runeMap") ?: JSONObject()
+        val table = t.optJSONObject("runeTable")
+        val labels = (listOf("공격력") + a.subs.map { it.first } + b.subs.map { it.first }).distinct()
+        val unknown = labels.filter { !map.has(it) }
+        if (unknown.isNotEmpty()) {
+            val groups = labArr(t, "groups")
+            val gis = groups.flatMap { g -> labArr(g, "items").ifEmpty { listOf(null) }.map { it -> Triple(g.optString("id"), it?.optString("id"), g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")) } }
+            val lab = unknown.first()
+            val isPct = (b.subs + a.subs).firstOrNull { it.first == lab }?.second?.pct ?: false
+            val names = gis.map { it.third + if (isPct) " %" else "" } + listOf("계산 안 함 (참고만)")
+            overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 '$lab' 은(는) 어느 값인가요? (한 번만 물어봐요)")
+                .setItems(names.toTypedArray()) { _, w ->
+                    val v = if (w < gis.size) "g:${gis[w].first}:${gis[w].second ?: ""}:${if (isPct) "pct" else "flat"}" else "skip"
+                    LabData.update(this@OverlayService) { d -> val tt = LabData.template(d, tid) ?: return@update
+                        (tt.optJSONObject("runeMap") ?: JSONObject().also { tt.put("runeMap", it) }).put(lab, v) }
+                    labApplyRune(tid, a, b)
+                }.setNegativeButton("취소", null))
+            return
+        }
+        // 정확히 읽힌 값은 수치 표에 쌓기 (나중에 만 단위 복원)
+        LabData.update(this) { d ->
+            val tt = LabData.template(d, tid) ?: return@update
+            val tb = tt.optJSONObject("runeTable") ?: JSONObject().also { tt.put("runeTable", it) }
+            for (r in listOf(a, b)) {
+                if (r.grade == null || r.level == null) continue
+                for ((lab, n) in listOfNotNull(r.atk?.let { "공격력" to it }) + r.subs) if (n.exact)
+                    (tb.optJSONObject("${r.grade}|$lab") ?: JSONObject().also { tb.put("${r.grade}|$lab", it) }).put(r.level.toString(), n.lo)
+            }
+        }
+        data class D(val label: String, val old: Double, val new: Double, val est: Boolean, val vid: String?, val pct: Boolean)
+        val rows = labels.map { lab ->
+            val na = if (lab == "공격력") a.atk else a.subs.firstOrNull { it.first == lab }?.second
+            val nb = if (lab == "공격력") b.atk else b.subs.firstOrNull { it.first == lab }?.second
+            val va = na?.let { runeValue(table, a.grade, lab, a.level, it) }; val vb = nb?.let { runeValue(table, b.grade, lab, b.level, it) }
+            val vid = map.optString(lab).takeIf { it.startsWith("g:") }
+            D(lab, va?.first ?: 0.0, vb?.first ?: 0.0, (va?.second ?: false) || (vb?.second ?: false), vid, (na ?: nb)?.pct ?: false)
+        }
+        val fmtV = { v: Double, p: Boolean -> LabData.fmt(Math.round(v * 100) / 100.0) + if (p) "%" else "" }
+        val sb = StringBuilder("${a.name ?: "?"} [${a.grade ?: "?"}] Lv.${a.level ?: "?"} → [${b.grade ?: "?"}] Lv.${b.level ?: "?"}\n\n")
+        for (r in rows) {
+            val d = r.new - r.old
+            sb.append("${r.label}: ${fmtV(r.old, r.pct)} → ${fmtV(r.new, r.pct)}  (${if (d >= 0) "+" else ""}${fmtV(d, r.pct)})")
+            if (r.est) sb.append(" ≈추정")
+            if (r.vid == null) sb.append("  · 계산 안 함")
+            sb.append("\n")
+        }
+        for ((lab, nb) in b.others) { val na = a.others.firstOrNull { it.first == lab }?.second
+            if (na != null) sb.append("$lab: ${na.text} → ${nb.text}  · 참고 (계산 안 함)\n") }
+        if (rows.any { it.est }) sb.append("\n≈추정: 1.7만처럼 줄여 보인 값. 같은 등급의 정확한 값이 쌓이면 더 정확해져요.")
+        fun apply(once: Boolean) {
+            val sum = LinkedHashMap<String, Double>()
+            for (r in rows) if (r.vid != null && r.new != r.old) sum[r.vid] = (sum[r.vid] ?: 0.0) + (r.new - r.old)
+            if (sum.isEmpty()) { toast("계산에 쓰는 값은 안 바뀌어요."); return }
+            for ((vid, d) in sum) {
+                val p = vid.split(":")
+                labRows += LabRow(p[1], p[2].ifEmpty { null }, p[3] == "pct", LabData.fmt(Math.round(d * 100) / 100.0).replace(",", ""), once)
+            }
+            renderLab()
+            toast("바뀐 값 ${sum.size}줄 넣었어요. 이제 [데미지 찍기]로 데미지를 넣고 저장하세요.")
+        }
+        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 바꾸기").setMessage(sb.toString())
+            .setPositiveButton("영구 적용") { _, _ -> apply(false) }
+            .setNeutralButton("이번만") { _, _ -> apply(true) }
+            .setNegativeButton("취소", null))
+    }
+
+    /** 1초 간격 3장: 버프(캐릭터 위)까지 보이게 넓게 잘라 보여 주고, 읽은 데미지 숫자를 후보로 (빨강 = 치명) */
+    private fun labShootDamage(measures: List<JSONObject>, useCrit: Boolean) {
+        labCapture(3, 1100) { bs ->
+            if (bs.isEmpty()) { toast("화면을 찍지 못했습니다. 다시 눌러 주세요."); return@labCapture }
+            val crops = bs.map { full ->
+                val y0 = (full.height * 0.12).toInt(); val y1 = (full.height * 0.58).toInt()
+                val c = Bitmap.createBitmap(full, 0, y0, full.width, y1 - y0)
+                val small = Bitmap.createScaledBitmap(full, full.width / 2, full.height / 2, true)
+                full.recycle()
+                Triple(c, small, null)
+            }
+            var mi = 0
+            val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), 0) }
+            val mRow = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+            fun drawM() { mRow.removeAllViews(); measures.forEachIndexed { i, m -> mRow.addView(labChip(m.optString("name"), i == mi) { mi = i; drawM() }) } }
+            if (measures.size > 1) { box.addView(labLabel("넣을 공격 그룹")); box.addView(mRow); drawM() }
+            box.addView(labLabel("사진을 누르면 전체 화면. 버프가 걸린 장은 쓰지 마세요. 숫자를 누르면 칸에 들어가요 (빨강 = 치명)."))
+            val added = ArrayList<String>()
+            val status = TextView(ui).apply { textSize = 12f; setTextColor(LAB_ACC) }
+            crops.forEachIndexed { k, (crop, small, _) ->
+                box.addView(labLabel("${k + 1}번째 (${k}초)"))
+                box.addView(android.widget.ImageView(ui).apply {
+                    setImageBitmap(crop); adjustViewBounds = true
+                    setOnClickListener { overlayDialog(android.app.AlertDialog.Builder(ui).setView(android.widget.ImageView(ui).apply { setImageBitmap(small); adjustViewBounds = true }).setPositiveButton("닫기", null)) }
+                }, LinearLayout.LayoutParams(-1, -2))
+                val chips = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+                box.addView(android.widget.HorizontalScrollView(ui).apply { addView(chips) })
+                ocrLines(crop) { lines ->
+                    val found = lines.mapNotNull { l ->
+                        val n = RuneParser.num(l.text) ?: return@mapNotNull null
+                        if (n.pct || n.lo < 1000 || !l.text.any { it.isDigit() }) return@mapNotNull null
+                        val crit = colorSign(crop, intArrayOf(l.left, l.top, l.right, l.bottom)) < 0
+                        Triple(l.text.filter { it.isDigit() || it in "만억조경." }, n, crit)
+                    }.distinctBy { it.first }
+                    if (found.isEmpty()) chips.addView(TextView(ui).apply { text = "숫자를 못 읽었어요 — 사진 보고 직접 적기"; textSize = 12f; setTextColor(Color.parseColor("#9A9DA3")) })
+                    for ((txt, n, crit) in found) chips.addView(labChip((if (crit && useCrit) "치명 " else "") + txt + if (!n.exact) " (범위)" else "", false) {
+                        val m = measures.getOrNull(mi) ?: return@labChip
+                        val dk = (if (crit && useCrit) "c:" else "m:") + m.optString("id")
+                        labDraft[dk] = ((labDraft[dk] ?: "").trim() + " " + txt).trim()
+                        added += "${m.optString("name")}${if (crit && useCrit) "(치명)" else ""} $txt"
+                        status.text = "넣음: " + added.joinToString(", ")
+                    })
+                }
+            }
+            box.addView(status)
+            overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("데미지 찍기")
+                .setView(ScrollView(ui).apply { addView(box) })
+                .setPositiveButton("확인") { _, _ -> renderLab() }
+                .setNeutralButton("다시 찍기") { _, _ -> renderLab(); labShootDamage(measures, useCrit) }
+                )
+        }
+    }
+
     private fun labAskName(title: String, onOk: (String) -> Unit) {
         val e = labInput("이름")
         overlayDialog(android.app.AlertDialog.Builder(ui)
