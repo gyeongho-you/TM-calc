@@ -910,16 +910,19 @@ function petDb(){if(_petdb)return _petdb;try{if(typeof TMCalc!=='undefined'&&TMC
 const dexOf=name=>{const k=String(name||'').replace(/\s/g,'');return k?petDb().find(x=>String(x.n).replace(/\s/g,'')===k):null}
 /** 공속은 태생(도감 S 순발)에 맞춰 설계 → 도감 S 순발을 공격 빈도 비율로 */
 const dexSpeed=p=>{const d=dexOf(p.name);return d&&d.m&&d.m[2]>0?d.m[2]:null}
-/** 덱 합계. 비중: ① 실 전투능력(게임 표시)이 다 있으면 그 비율 ② 10초 공격 횟수가 다 있으면 초당 ③ 없으면 같은 속도
- *  base: 지금 내 상태 (전투능력은 '지금' 값이라, 바뀐 상태는 지금 대비 비율로 늘린다) */
-function deckEval(S,st,deck,g,base){let r=0,miss=0;const per=[],P=deck.pets
-  const power=P.length>0&&P.every(p=>num(p.power)>0),speed=!power&&P.length>0&&P.every(p=>petAps(p)),dex=!power&&!speed&&P.length>0&&P.every(p=>dexSpeed(p))
+/** 덱 합계 = 소환수마다 (한 바퀴 데미지 × 세기) ÷ 한 바퀴 시간
+ *  세기: 공식에 소환수 자기 스펙이 없으면 실전투 공격력(저장한 소환수에서 계산한 값)으로 소환수끼리 차이를 줌
+ *  빠르기: 10초 공격 횟수(직접 센 값)가 다 있으면 그것, 아니면 도감 S 순발 (공속은 태생에 맞춰 설계) */
+const petAtk=p=>{const c=p.combat;return c&&c[0]>0?c[0]:null}
+function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],P=deck.pets
+  const hasPetIn=S.inputs.some(i=>scopeOf(S,i)==='pet'),atk=!hasPetIn&&P.length>0&&P.every(p=>petAtk(p))
+  const speed=P.length>0&&P.every(p=>petAps(p)),dex=!speed&&P.length>0&&P.every(p=>dexSpeed(p))
   for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r
-    if(power){const e0=setEval(S,petState(S,base||st,p),cy).r;v=e0>0?num(p.power)*e.r/e0:0}
+    if(atk)v*=petAtk(p)
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
-    else if(speed||dex)v=e.r/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
+    if(speed||dex)v=v/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
     r+=v;miss+=e.miss;per.push(v)}
-  return{r,miss,per,speed,power,dex}}
+  return{r,miss,per,speed,dex,atk,hasPetIn}}
 function vSpec(v){
   const S=activeSet(),sets=data.formulaSets||[],SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
@@ -927,7 +930,7 @@ function vSpec(v){
     $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click();$('#sLab').onclick=()=>go({v:'home'});return}
   const st=SS.st,cyc=SS.cyc,deck=curDeck(sp),pets=deck?deck.pets:[],useDeck=pets.length>0,g=deckGroups(S,sp)
   const inUser=S.inputs.filter(i=>scopeOf(S,i)==='user'),inElem=S.inputs.filter(i=>scopeOf(S,i)==='elem'),inType=S.inputs.filter(i=>scopeOf(S,i)==='type'),inPet=S.inputs.filter(i=>scopeOf(S,i)==='pet')
-  const evalAll=s=>useDeck?deckEval(S,s,deck,g,st):setEval(S,s,cyc)
+  const evalAll=s=>useDeck?deckEval(S,s,deck,g):setEval(S,s,cyc)
   const base=evalAll(st),ok=base.r>0&&isFinite(base.r),byTime=!useDeck&&cyc.mode==='time'
   // 효율 표에 올릴 값: 공통 + (덱에 있는) 속성·타입 강화
   const deckEl=[...new Set(pets.map(p=>normElem(p.elem)).filter(Boolean))],deckTy=[...new Set(pets.map(p=>p.type).filter(Boolean))]
@@ -952,17 +955,18 @@ function vSpec(v){
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
       <button class="sm" id="dNew">+ 새 덱</button>${deck?'<button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}</div>
     ${deck?`${pets.map((p,k)=>{const sk=p.skill||{},cy=petCycle(S,p,g);return`<div class="card" style="background:var(--card2)" data-pt="${k}">
-      <div class="list-row"><input type="text" class="pn" value="${esc(p.name||'')}" placeholder="소환수 이름" style="flex:1"><input type="text" class="ppw" value="${esc(p.power??'')}" placeholder="실 전투능력 (1000만)" title="게임에 보이는 실 전투능력 — 덱 안 비중" style="width:130px"><select class="pe">${['',...ELEMS].map(e=>`<option value="${e}"${normElem(p.elem||'')===e?' selected':''}>${e||'속성'}</option>`).join('')}</select><select class="pty">${['',...TYPES].map(t=>`<option value="${t}"${(p.type||'')===t?' selected':''}>${t||'타입'}</option>`).join('')}</select><button class="sm danger px">✕</button></div>
+      <div class="list-row"><input type="text" class="pn" value="${esc(p.name||'')}" placeholder="소환수 이름" style="flex:1"><select class="pe">${['',...ELEMS].map(e=>`<option value="${e}"${normElem(p.elem||'')===e?' selected':''}>${e||'속성'}</option>`).join('')}</select><select class="pty">${['',...TYPES].map(t=>`<option value="${t}"${(p.type||'')===t?' selected':''}>${t||'타입'}</option>`).join('')}</select><button class="sm danger px">✕</button></div>
       ${inPet.length?`<div class="grid">${inPet.map(i=>`<label class="f">${esc(i.name)}<input type="text" class="pst" data-k="${esc(i.id)}" value="${esc((p.st||{})[i.id]??'')}"></label>`).join('')}</div>`:''}
       <div class="grid" style="margin-top:4px"><label class="f">최대 마나<input type="text" class="sk" data-k="mana" value="${esc(sk.mana??'')}" placeholder="5"></label><label class="f">평타당 마나<input type="text" class="sk" data-k="per" value="${esc(sk.per??'')}" placeholder="1"></label>
         <label class="f">스킬 배율 %<input type="text" class="sk" data-k="pct" value="${esc(sk.pct??'')}" placeholder="300"></label><label class="f">스킬 타수<input type="text" class="sk" data-k="hits" value="${esc(sk.hits??'')}" placeholder="1"></label>
         <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label>
         <label class="f">10초 공격 횟수 (배속 끄고 직접 세기)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label></div>
-      <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
-      ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${BR&&TMCalc.savedPets?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
+      <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p)?`실전투 공격 ${fmt(petAtk(p))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
+      ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${(BR&&TMCalc.savedPets)||window.SAVEDPETS?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
       <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬·공격 횟수는 소환수 이름별로 기억해요 (종류마다 고정이라 한 번만 세면 돼요).</div>
-      ${pets.length>1?(base.power?'<div class="mut" style="margin-top:4px">덱 안 비중: 실 전투능력 비율로 계산 중</div>':base.speed?'<div class="mut" style="margin-top:4px">덱 안 비중: 10초 공격 횟수로 계산 중 (실 전투능력을 적으면 그걸 우선)</div>':base.dex?'<div class="mut" style="margin-top:4px">덱 안 비중: 공속 = 도감 S 순발 비율로 계산 중 (실 전투능력을 적으면 그걸 우선)</div>':'<div class="bad" style="margin-top:4px">실 전투능력이 빈 소환수가 있고 도감에서 못 찾은 이름도 있어서 모두 같은 비중으로 계산 중 — 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>'):''}`
+      ${pets.length>1?`<div class="mut" style="margin-top:4px">덱 안 비중: 세기 = ${base.hasPetIn?'공식의 소환수 스펙':base.atk?'실전투 공격력':'<span class="bad">모두 같음 (저장한 소환수에서 불러오면 실전투 공격력 반영)</span>'} · 빠르기 = ${base.speed?'10초 공격 횟수':base.dex?'도감 S 순발':'<span class="bad">모두 같음 (도감에 있는 이름이면 S 순발 반영)</span>'}</div>
+        ${(!base.hasPetIn&&!base.atk)||(!base.speed&&!base.dex)?'<div class="bad">→ 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>':''}`:''}`
     :'<div class="mut" style="margin-top:6px">덱이 없으면 아래 공격 구성으로 계산해요. [+ 새 덱]으로 소환수 3마리를 넣으면 속성·타입 강화까지 덱 기준으로 계산해요.</div>'}</details>
   ${useDeck?'':`<details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">공격 구성 <span class="mut" style="font-weight:400">(덱 없이 직접)</span></summary>
     <div class="seg" style="margin-top:8px"><button data-cm="cycle" class="${!byTime?'on':''}">한 바퀴당 (횟수)</button><button data-cm="time" class="${byTime?'on':''}">초당</button></div>
@@ -1001,13 +1005,13 @@ function vSpec(v){
   const dr=$('#dRen');if(dr)dr.onclick=()=>{const n=prompt('덱 이름',deck.name);if(n)dk((p,D)=>D.name=n.trim())}
   const dd=$('#dDel');if(dd)dd.onclick=()=>{if(confirm(`'${deck.name}' 덱을 지울까요?`))saveSpec(p=>{p.decks=(p.decks||[]).filter(d=>d.id!==deck.id);p.deckId=null})}
   const pa=$('#pAdd');if(pa)pa.onclick=()=>dk((p,D)=>D.pets.push({name:'',elem:'',type:'',skill:{}}))
-  const pi=$('#pImp');if(pi)pi.onclick=()=>{let L=[];try{L=JSON.parse(TMCalc.savedPets())}catch(e){}
+  const pi=$('#pImp');if(pi)pi.onclick=()=>{let L=[];try{L=BR&&TMCalc.savedPets?JSON.parse(TMCalc.savedPets()):(window.SAVEDPETS||[])}catch(e){}
     if(!L.length)return alert('저장한 소환수가 없어요. 계산 화면에서 소환수를 읽고 [저장]해 주세요.')
     const m=document.createElement('div');m.className='hmask'
     m.innerHTML=`<div class="hbox"><h3>저장한 소환수</h3>${L.map((x,i)=>`<div class="list-row" style="cursor:pointer;border-bottom:1px solid var(--line);padding:6px 0" data-pk="${i}"><div style="flex:1"><b>${esc(x.label||x.name)}</b> <span class="mut">${esc(x.name)} Lv.${x.level} · ${esc(x.element)} · ${esc(x.type)}</span></div></div>`).join('')}<div class="row" style="margin-top:10px"><button id="pkc">닫기</button></div></div>`
     m.querySelector('#pkc').onclick=()=>m.remove()
     m.querySelectorAll('[data-pk]').forEach(r=>r.onclick=()=>{const x=L[+r.dataset.pk];m.remove()
-      dk((p,D)=>{const sk=(p.petSkills||{})[x.name]||{};const pet={name:x.name,label:x.label,elem:normElem(x.element),type:x.type,skill:{...sk},st:{}}
+      dk((p,D)=>{const sk=(p.petSkills||{})[x.name]||{};const pet={name:x.name,label:x.label,elem:normElem(x.element),type:x.type,skill:{...sk},st:{},combat:x.combat||null}
         // 소환수 자기 스펙 칸: 이름에 공격·방어·순발·체력이 들어간 값이면 저장한 능력치로
         for(const i of inPet){const n=i.name;const j=/공격/.test(n)?0:/방어/.test(n)?1:/순발|속도/.test(n)?2:/체력|생명/.test(n)?3:-1;if(j>=0)pet.st[i.id]=x.stats[j]}
         D.pets.push(pet)})})
@@ -1016,7 +1020,6 @@ function vSpec(v){
     const P=f=>dk((p,D)=>f(D.pets[k],p))
     el.querySelector('.pn').onchange=e=>P((x,p)=>{x.name=e.target.value.trim();const sk=(p.petSkills||{})[x.name];if(sk&&!num((x.skill||{}).mana))x.skill={...sk}})
     el.querySelector('.pe').onchange=e=>P(x=>x.elem=e.target.value)
-    el.querySelector('.ppw').onchange=e=>P(x=>{const n=num(e.target.value);if(n>0)x.power=n;else delete x.power})
     el.querySelector('.pty').onchange=e=>P(x=>x.type=e.target.value)
     el.querySelector('.px').onclick=()=>dk((p,D)=>D.pets.splice(k,1))
     el.querySelectorAll('.pst').forEach(i=>i.onchange=()=>P(x=>{x.st=x.st||{};const n=num(i.value);if(isFinite(n))x.st[i.dataset.k]=n;else delete x.st[i.dataset.k]}))

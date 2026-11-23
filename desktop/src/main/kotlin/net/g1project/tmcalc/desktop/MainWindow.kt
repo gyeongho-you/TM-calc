@@ -763,7 +763,16 @@ class MainWindow(
             runCatching {
                 val arr = org.json.JSONArray()
                 for (pt in pets.db.pets) arr.put(org.json.JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
-                java.io.File(dir, "pets.js").writeText("window.PETDB=" + arr.toString() + ";", Charsets.UTF_8)
+                // 저장한 소환수 (덱에 불러오기): 이름·속성·타입·능력치 + 실전투 능력치(캐릭터 배율 뺀 상대값)
+                val sv = org.json.JSONArray()
+                for (pr in presets()) {
+                    val pt = pets.db.find(pr.name)
+                    val f = runCatching { 1 + growthAmp() * Calculator.scoreFactor(Calculator.abilityScore(pr.stats)) }.getOrDefault(1.0)
+                    sv.put(org.json.JSONObject().put("label", pr.label).put("name", pr.name).put("level", pr.level)
+                        .put("element", pt?.element ?: "").put("type", pt?.type ?: "").put("stats", org.json.JSONArray(pr.stats.toList()))
+                        .put("combat", org.json.JSONArray(pr.stats.map { Math.round(it * f * 10) / 10.0 })))
+                }
+                java.io.File(dir, "pets.js").writeText("window.PETDB=" + arr.toString() + ";window.SAVEDPETS=" + sv.toString() + ";", Charsets.UTF_8)
             }
             Desktop.getDesktop().browse(f.toURI())
             setStatus("연구실을 브라우저로 열었습니다")

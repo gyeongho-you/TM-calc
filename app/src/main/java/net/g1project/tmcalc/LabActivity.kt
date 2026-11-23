@@ -58,6 +58,12 @@ class LabActivity : Activity() {
 
     private fun toast(m: String) = runOnUiThread { Toast.makeText(this, m, Toast.LENGTH_SHORT).show() }
 
+    /** 실전투 능력치(공·방·순·체) = 능력치 × (1 + 성장증폭 × 총능 보너스). 캐릭터 배율은 덱 안에서 같아서 뺌 */
+    private fun combatOf(stats: IntArray, amp: Double): org.json.JSONArray {
+        val f = runCatching { 1 + amp * Calculator.scoreFactor(Calculator.abilityScore(stats)) }.getOrDefault(1.0)
+        return org.json.JSONArray(stats.map { Math.round(it * f * 10) / 10.0 })
+    }
+
     private inner class Bridge {
         @JavascriptInterface fun load(): String = LabData.load(this@LabActivity).toString()
 
@@ -73,7 +79,8 @@ class LabActivity : Activity() {
                 val pet = db.find(p.name)
                 arr.put(JSONObject().put("label", p.label).put("name", p.name).put("level", p.level)
                     .put("element", pet?.element ?: "").put("type", pet?.type ?: "").put("grade", pet?.grade ?: "")
-                    .put("stats", org.json.JSONArray(p.stats.toList())))
+                    .put("stats", org.json.JSONArray(p.stats.toList()))
+                    .put("combat", combatOf(p.stats, AppPrefs.growthAmp(this@LabActivity))))
             }
             return arr.toString()
         }
