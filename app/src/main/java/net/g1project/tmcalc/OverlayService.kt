@@ -876,6 +876,11 @@ class OverlayService : Service() {
     private val labRows = ArrayList<LabRow>()
     /** 다시 그려도 적던 잰 값·메모가 안 지워지게 */
     private val labDraft = HashMap<String, String>()
+    // 시작 상태 입력 중인 값: 창을 닫거나 다시 그려도(앱이 다시 켜져도) [저장] 전까지 남게
+    private fun startDraftPrefs() = getSharedPreferences("lab_start_draft", MODE_PRIVATE)
+    private fun startDraftGet(sid: String, key: String): String? = startDraftPrefs().getString("$sid|$key", null)
+    private fun startDraftSet(sid: String, key: String, v: String) = startDraftPrefs().edit().putString("$sid|$key", v).apply()
+    private fun startDraftClear(sid: String) { val p = startDraftPrefs(); p.edit().apply { p.all.keys.filter { it.startsWith("$sid|") }.forEach { remove(it) } }.apply() }
     private var labOnce = false
     private var labLoadedEdit: String? = "-"
 
@@ -1359,8 +1364,14 @@ class OverlayService : Service() {
                     val key = g.optString("id") + ":" + (it?.optString("id") ?: "")
                     val label = if (g.optString("id") == "crit" && it?.optString("id") == "dmg") "치명 피해 (1.5배=150)"
                         else g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
-                    fun cur(u: String) = if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
+                    fun cur(u: String) = startDraftGet(s.optString("id"), "$key:$u")
+                        ?: if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
                     val ef = labInput("값", cur("flat")); val ep = labInput("%", cur("pct"))
+                    for ((u, e) in listOf("flat" to ef, "pct" to ep)) e.addTextChangedListener(object : TextWatcher {
+                        override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
+                        override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
+                        override fun afterTextChanged(x: Editable?) { startDraftSet(s.optString("id"), "$key:$u", x?.toString() ?: "") }
+                    })
                     edits["$key:flat"] = ef; edits["$key:pct"] = ep
                     labBody.addView(LinearLayout(ui).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -1381,6 +1392,7 @@ class OverlayService : Service() {
                     edits.forEach { (key, e) -> LabData.number(e.text.toString())?.let { o.put(key, it) } }
                     val sid = s.optString("id")
                     LabData.update(this@OverlayService) { d -> LabData.session(d, sid)?.put("start", o) }
+                    startDraftClear(sid)
                     toast("시작 상태를 저장했습니다.")
                     labStartOpen = false
                     renderLab()

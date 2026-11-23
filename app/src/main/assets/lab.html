@@ -570,7 +570,17 @@ function loadData(){
     if(t.useCrit===false)t.groups=t.groups.filter(g=>g.id!=='crit')
     else if(!t.groups.some(g=>g.id==='crit'))t.groups.push({id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률'},{id:'dmg',name:'피해'}]})
     t.critStyle='mult'}   // 치명 피해는 항상 배율 % (1.5배 = 150)
+  migrateV2()
   try{active=BR?TMCalc.getActive():(localStorage.getItem('tmcalcLabActive')||'')}catch(e){active=''}
+}
+/** v1.6.1 이전 자료: 최적화가 세션마다 → 게임(틀)마다. 원본은 처음 한 번 브라우저 저장소에 백업 */
+function migrateV2(){
+  if(data.templates.every(t=>t.opt))return
+  try{if(!localStorage.getItem('tmcalcLabBackupV1'))localStorage.setItem('tmcalcLabBackupV1',JSON.stringify(data))}catch(e){}
+  for(const t of data.templates){if(t.opt)continue
+    const ss=data.sessions.filter(s=>s.templateId===t.id).sort((a,b)=>b.created-a.created),src=ss.find(s=>s.opt)||ss[0]
+    t.opt=src?{...JSON.parse(JSON.stringify(src.opt||{})),list:'main',eq:equipNow(src)}:{list:'main',eq:{}}}
+  data.v=2
 }
 /** 고치기 전에 항상 새로 읽는다 (게임 위 [연구] 창이 그 사이에 기록을 넣었을 수 있음) */
 function mutate(fn){
@@ -642,15 +652,15 @@ const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${S
 const HELP={
   start:['연구실 사용법',`
 <p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내고</b>, 그걸로 <b>가장 센 셋팅</b>을 찾는 곳이에요.</p>
-<p><b>① 틀 만들기</b> (한 번만)<br>· <b>분류</b>: 바꿔 볼 것 (룬, 스킬, 장비 …)<br>· <b>공격 그룹</b>: 데미지를 잴 큰 묶음 (일반공격, 스킬)<br>· (선택) <b>아이템</b>: 끼고 빼는 것들 목록</p>
-<p><b>② 세션 시작</b> → 시작 상태(지금 내 값) 적기 → 게임 위 버튼이 [연구]로 바뀌어요</p>
-<p><b>③ 기록</b>: 하나 바꾸고 → 한 방 데미지 적기, 반복 (10번 이상 추천)</p>
-<p><b>④ 공식 찾기</b>: 공격 그룹마다 공식을 찾아 [저장]</p>
-<p><b>⑤ 최적화</b>: 사이클(평타 몇 번, 스킬 몇 번)을 등록하면 "뭘 올려야 이득인지", "제일 센 조합"을 알려 줘요.</p>
+<p><b>맨 위 🎮 게임</b>: 게임마다 하나. <b>⚙ 게임 설정</b>에서 분류(바꿀 수 있는 것)·공격 그룹·칸·세트·상태창 규칙을 정해요.</p>
+<p><b>① 실험</b>: [+ 새 실험] → 시작 상태 적기 → 게임 위 [연구] 버튼으로 하나 바꾸고 데미지 적기 반복 → [공식 찾기] → [저장]</p>
+<p><b>② 공식</b>: 저장한 공식 모음. 공격 그룹마다 여러 개 둘 수 있어요.</p>
+<p><b>③ 아이템</b>: 가진 아이템(또는 지금 낀 옵션)을 등록만 해 두는 목록. 여러 개 만들 수 있어요.</p>
+<p><b>④ 최적화</b>: 공식·목록 고르기 → 지금 낀 것 체크 → 내 상태(상태창 값) → 최적 조합 / 바꿀 옵션 찾기 / 무엇을 올리면 이득?</p>
 <div class="ex"><b>예시</b><br>기록: 처음 1,000 → 룬 공격 +200 → 1,200 → 무기 +10% → 1,320 …<br>공식: <b>데미지 = (1000 + 룬) × (1 + 무기%)</b><br>최적화: "룬B로 바꾸면 +8.7%"</div>
-<p>처음이면 아래 [예시 세션 넣기]로 한번 눌러 보세요.</p>`],
-  session:['세션이란?',`
-<p>실험 한 번의 묶음이에요. 세션마다 기록이 따로 모여요.</p>
+<p>처음이면 ① 실험의 [예시 넣기]로 한번 눌러 보세요.</p>`],
+  session:['실험이란?',`
+<p>실험 한 번의 묶음이에요. 실험마다 기록이 따로 모여요.</p>
 <p><b>시작</b>을 누르면 그 세션이 "진행 중"이 되고, 게임 위 버튼이 [연구]로 바뀌어요. 그 상태에서 버튼을 누르면 바로 기록할 수 있어요. <b>멈추기</b>를 누르면 다시 [계산] 버튼이에요.</p>
 <p><b>기록</b> 보기·고치기 / <b>시작 상태</b> 처음 값 적기 / <b>공식 찾기</b> / <b>최적화</b> / <b>내보내기</b> 파일로 저장(다른 폰·PC에서 불러오기 가능)</p>
 <div class="ex"><b>팁</b><br>실험 도중 기록 안 한 변화(장비를 몰래 바꿈, 버프가 끝남)가 생기면 기록이 어긋나요. 그럴 땐 새 세션을 만드는 게 좋아요.</div>`],
@@ -743,6 +753,19 @@ const HELP={
 <p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 사이클 평균)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
 <p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요.</p>
 <div class="ex"><b>예시</b><br>스킬 데미지 % +1% → +0.62%<br>치명 피해 % +1% → +0.41%<br>→ 스킬 데미지 %를 올리는 게 더 이득</div>`],
+  statRule:['상태창 규칙',`
+<p>최적화 [내 상태]에서 값을 어떻게 정할지예요. 게임마다 한 번만 정하면 돼요.</p>
+<p><b>상태창 숫자 입력</b> (기본): 게임 상태창에 총합이 보이는 값. 그 숫자를 그대로 적고, 지금 낀 아이템 몫은 그 안에 들어 있는 것으로 봐요.</p>
+<p><b>상태창에 안 보임</b>: 어디에도 총합이 안 보이는 값 (예: 룬에만 붙는 룬 공격력 %). 지금 낀 아이템 값을 더해서 써요.</p>
+<p><b>상태창 ○○에 포함</b>: 이 값을 올리면 상태창 ○○ 숫자가 같이 오르는 경우. 그 숫자에서 이 몫을 빼서 따로 계산해요 (두 번 세지 않게). 단위가 같은 것만 고를 수 있어요.</p>
+<p><b>% 곱해져 보임</b>: 상태창 공격력에 공격력 %가 이미 곱해져 보이는 경우 (공격력 % 템을 끼면 상태창 공격력도 오름). 원래 값으로 되돌려서 계산해요.</p>
+<p><b>최대</b>: 상한 (치명 확률 100 등). 넘는 건 계산에서 버려요. 상태창이 최대로 보이면 [내 상태]에서 실제 합을 적을 수 있어요.</p>
+<div class="ex"><b>어떻게 알아요?</b><br>아이템 하나를 끼고 상태창 숫자가 어떻게 바뀌는지 보면 돼요.</div>`],
+  craft:['바꿀 옵션 찾기',`
+<p>룬처럼 <b>직접 만들고 옵션을 다시 돌리는</b> 게임용이에요.</p>
+<p><b>옵션 가치표</b>: 지금 낀 아이템의 옵션(기본 스펙 제외)을 하나씩 뺐을 때 얼마나 줄어드는지. 가장 적게 줄어드는 게 가장 약한 옵션이에요.</p>
+<p><b>노릴 옵션</b>: 가장 약한 옵션 자리를, 그 칸 옵션 규칙(⚙ 게임 설정 › 칸)의 각 옵션 최대 수치로 바꿨을 때 순위예요.</p>
+<div class="ex"><b>준비</b><br>아이템 고치기에서 효과를 "옵션"으로 넣고, 칸 옵션 규칙에 나올 수 있는 옵션과 최대 수치를 적어 두세요.</div>`],
   slots:['칸이란?',`
 <p>동시에 낄 수 있는 수에 <b>제한이 있는 묶음</b>이에요.</p>
 <p><b>최대 개수</b>: 스킬 칸 1개, 룬 칸 6개처럼 개수로 제한<br><b>코스트 합</b>: 총 코스트 20 안에서 (아이템마다 코스트를 적어요)</p>
@@ -787,79 +810,114 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems})[c.v](c,$('#view'))
+  ;({home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems,gset:vGset})[c.v](c,$('#view'))
 }
 
-// ---------------------------------------------------------------- 처음 화면: 세션 + 틀
+// ---------------------------------------------------------------- 처음 화면: 게임(=틀) → ① 실험 ② 공식 ③ 아이템 ④ 최적화
+const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}}
+function curGame(){let id=LS.get('tmcalcLabGame');if(!tpl(id)){const a=data.sessions.find(s=>s.id===active);id=a&&tpl(a.templateId)?a.templateId:(data.templates[0]||{}).id;if(id)LS.set('tmcalcLabGame',id)}return tpl(id)}
+/** 아이템 목록: '기본 목록' = t.items (게임 위 [연구] 창이 쓰는 목록) + 추가 목록 t.lists */
+const listsOf=t=>[{id:'main',name:t.mainListName||'기본 목록',items:t.items||[]},...(t.lists||[])]
+const listOf=(t,id)=>listsOf(t).find(l=>l.id===id)
+function mutList(tid,lid,f){mutate(d=>{const T=d.templates.find(q=>q.id===tid);if(!T)return
+  if(lid==='main'){T.items=T.items||[];f({items:T.items},T)}else{const L=(T.lists||[]).find(l=>l.id===lid);if(L)f(L,T)}})}
+/** 틀의 저장 공식 모음 (② 공식 목록): 그 틀 세션들의 [저장] */
+function gameFormulas(t){const L=[]
+  for(const s of data.sessions.filter(x=>x.templateId===t.id))for(const f of s.saved||[])L.push({s,f})
+  return L.sort((a,b)=>(b.f.time||0)-(a.f.time||0))}
+function saveJson(name,obj){const text=JSON.stringify(obj,null,1)
+  if(BR)return TMCalc.saveFile(name,text)
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()}
+const fname=s=>String(s).replace(/[\\/:*?"<>|]/g,'_')
 function vHome(c,v){
   $('#title').textContent='연구실'
-  const ss=[...data.sessions].sort((a,b)=>(b.id===active)-(a.id===active)||b.created-a.created)
-  v.innerHTML=`
-  <div class="card" style="display:flex;align-items:center;gap:10px"><span style="flex:1">처음이세요? 사용법과 예시를 보세요.</span><button class="sm pri" data-help="start">사용법</button></div>
-  <h2>세션 ${hb('session')}<span class="sp"></span><button class="pri sm" id="nS">+ 새 세션</button></h2>
-  ${ss.length?ss.map(s=>{const t=tpl(s.templateId),on=s.id===active
+  const t=curGame(),tab=LS.get('tmcalcLabTab')||'exp'
+  $('#hdr').innerHTML=''
+  if(!t){v.innerHTML=`<div class="card"><div class="big">게임부터 만들어요</div><div class="mut" style="margin-top:6px">게임 = 그 게임의 데미지 시스템 (바꿀 수 있는 옵션, 공격 그룹, 아이템 칸). 게임마다 하나.</div>
+      <div class="row" style="margin-top:12px"><button class="pri" id="nT">+ 새 게임</button><button id="sample">예시 넣기</button><button id="imp">불러오기</button><button data-help="start">사용법</button></div></div>`
+    $('#nT').onclick=()=>go({v:'tpl',id:null});$('#sample').onclick=()=>{addSample();render()};$('#imp').onclick=()=>BR?TMCalc.pickFile():$('#file').click();return}
+  const tabs=[['exp','① 실험'],['form','② 공식'],['items','③ 아이템'],['opt','④ 최적화']]
+  v.innerHTML=`<div class="row" style="margin-top:6px"><select id="gsel" style="flex:1;font-weight:600">${data.templates.map(x=>`<option value="${x.id}"${x.id===t.id?' selected':''}>🎮 ${esc(x.name)}</option>`).join('')}<option value="__new">+ 새 게임</option></select>
+    <button class="sm" id="gset">⚙ 게임 설정</button><button class="qm" data-help="start" title="사용법">?</button></div>
+  <div class="seg" style="display:flex;margin-top:10px">${tabs.map(([k,l])=>`<button style="flex:1" data-tab="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div>
+  <div id="tabv"></div>`
+  $('#gsel').onchange=e=>{if(e.target.value==='__new')return go({v:'tpl',id:null});LS.set('tmcalcLabGame',e.target.value);render()}
+  $('#gset').onclick=()=>go({v:'gset',id:t.id})
+  v.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{LS.set('tmcalcLabTab',b.dataset.tab);render()})
+  const tv=$('#tabv')
+  if(tab==='exp')homeExp(t,tv);else if(tab==='form')homeForm(t,tv);else if(tab==='items')homeItems(t,tv);else{c.id=t.id;vOpt(c,tv)}
+  $('#title').textContent='연구실'
+}
+function homeExp(t,v){
+  const ss=data.sessions.filter(s=>s.templateId===t.id).sort((a,b)=>(b.id===active)-(a.id===active)||b.created-a.created)
+  v.innerHTML=`<h2>실험 ${hb('session')}<span class="sp"></span><button class="pri sm" id="nS">+ 새 실험</button></h2>
+  <details class="card"><summary><b>? 재기 전에 꼭</b></summary><div style="font-size:13px;margin-top:8px;line-height:1.7">
+    · <b>같은 대상</b>에서 재요. 허수아비나 같은 몬스터요. 대상이 바뀌면 방어력이 달라져서 공식이 틀려져요.<br>
+    · 데미지가 <b>1.2만, 1.2K</b>처럼 줄여서 보이면 정확한 숫자가 보이게 설정을 바꾸고 재요.<br>
+    · <b>조건부 효과</b>(체력 50% 이하일 때, 보스에게만, 스택)는 켠 상태나 끈 상태 하나로 고정하고 재요.<br>
+    · 데미지가 <b>랜덤</b>이면 같은 상태에서 여러 번 재서 같이 적어요.<br>
+    · <b>데미지에 영향 주는 것만</b> 바꿔요. 체력·방어력 같은 건 섞지 않아요.<br>
+    · 한 번에 <b>하나씩</b> 바꾸는 게 제일 정확해요.</div></details>
+  ${ss.length?ss.map(s=>{const on=s.id===active
     return`<div class="card${on?' on':''}">
       <div class="big">${esc(s.name)}${on?'<span class="badge">진행 중</span>':''}</div>
-      <div class="mut">틀: ${esc(t?t.name:'(지운 틀)')} · 기록 ${s.records.length}개${(s.saved||[]).length?` · 저장한 공식 ${s.saved.length}개`:''} · ${fdate(s.created)}</div>
+      <div class="mut">기록 ${s.records.length}개${(s.saved||[]).length?` · 저장한 공식 ${s.saved.length}개`:''} · ${fdate(s.created)}</div>
       <div class="row" style="margin-top:10px">
         <button class="${on?'':'pri'}" data-act="${s.id}">${on?'멈추기':'시작'}</button>
         <button data-recs="${s.id}">기록</button>
         <button data-start="${s.id}">시작 상태${Object.keys(s.start||{}).length?' ✓':''}</button>
         <button data-find="${s.id}">공식 찾기</button>
-        <button data-opt="${s.id}">최적화</button>
         <span style="flex:1"></span>
         <button class="sm" data-ren="${s.id}">이름</button>
         <button class="sm" data-exp="${s.id}">내보내기</button>
         <button class="sm danger" data-del="${s.id}">삭제</button>
-      </div></div>`}).join(''):`<div class="card empty">세션이 없어요.<br>틀을 만든 뒤 [+ 새 세션]으로 시작하세요.</div>`}
-  <p class="mut">시작한 세션이 있으면 게임 위 버튼이 보라색 [연구]로 바뀌어요. 누르면 종류·변경 값·잰 값을 바로 기록할 수 있어요. [멈추기]를 누르면 다시 [계산]이에요.</p>
-  <h2>틀 ${hb('tpl')}<span class="sp"></span><button class="sm" id="nT">+ 새 틀</button></h2>
-  ${data.templates.length?data.templates.map(t=>`<div class="card">
-      <div class="big">${esc(t.name)}</div>
-      <div class="mut">분류: ${t.groups.map(g=>esc(g.name)+((g.items||[]).length?'('+g.items.map(x=>esc(x.name)+(x.reduce?'[감소]':'')).join('·')+')':(g.reduce?'[감소]':''))).join(', ')||'-'}</div>
-      <div class="mut">잴 것: ${t.measures.map(m=>esc(m.name)).join(', ')||'-'}</div>
-      <div class="mut">아이템: ${(t.items||[]).length}개 · 칸: ${(t.slots||[]).map(q=>esc(q.name)).join(', ')||'-'}</div>
-      <div class="row" style="margin-top:8px"><button class="sm" data-tedit="${t.id}">수정</button><button class="sm" data-titems="${t.id}">아이템</button><button class="sm" data-texp="${t.id}">내보내기</button><button class="sm danger" data-tdel="${t.id}">삭제</button>
-      <span class="mut">세션 ${data.sessions.filter(s=>s.templateId===t.id).length}개가 사용 중</span></div></div>`).join('')
-    :`<div class="card empty">틀이 없어요. 무엇을 바꿔 가며(분류) 무엇을 잴지(잴 것) 정해 두는 거예요.<br><button class="pri" id="nT2" style="margin-top:10px">틀 만들기</button></div>`}
-  <div class="row" style="margin-top:20px"><button class="sm" id="imp">세션·틀 불러오기</button><button class="sm" id="sample">예시 세션 넣기</button></div>`
-  $('#nS').onclick=()=>data.templates.length?go({v:'newSes'}):(alert('먼저 틀을 만들어 주세요.'),go({v:'tpl',id:null}))
-  $('#nT').onclick=()=>go({v:'tpl',id:null})
-  const n2=$('#nT2');if(n2)n2.onclick=()=>go({v:'tpl',id:null})
+      </div></div>`}).join(''):`<div class="card empty">실험이 없어요. [+ 새 실험]으로 시작하세요.</div>`}
+  <p class="mut">시작한 실험이 있으면 게임 위 버튼이 보라색 [연구]로 바뀌어요. [멈추기]를 누르면 다시 [계산]이에요.</p>
+  <div class="row" style="margin-top:12px"><button class="sm" id="imp">실험·게임 불러오기</button><button class="sm" id="sample">예시 넣기</button></div>`
+  $('#nS').onclick=()=>go({v:'newSes',tid:t.id})
   v.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{const id=b.dataset.act
-    if(id===active){setActive('');toast('세션을 멈췄어요. 버튼이 [계산]으로 돌아가요.')}
+    if(id===active){setActive('');toast('실험을 멈췄어요. 버튼이 [계산]으로 돌아가요.')}
     else{setActive(id);toast(`'${ses(id).name}' 진행 중. 게임 위 버튼이 [연구]로 바뀌었어요.`)}
     render()})
   v.querySelectorAll('[data-recs]').forEach(b=>b.onclick=()=>go({v:'recs',id:b.dataset.recs}))
   v.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>go({v:'start',id:b.dataset.start}))
   v.querySelectorAll('[data-find]').forEach(b=>b.onclick=()=>go({v:'find',id:b.dataset.find}))
-  v.querySelectorAll('[data-opt]').forEach(b=>b.onclick=()=>go({v:'opt',id:b.dataset.opt}))
-  v.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.ren),n=prompt('세션 이름',s.name)
+  v.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.ren),n=prompt('실험 이름',s.name)
     if(n&&n.trim()){mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.name=n.trim()});render()}})
   v.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.del)
-    if(!confirm(`'${s.name}' 세션과 기록 ${s.records.length}개를 지울까요? 되돌릴 수 없어요.`))return
+    if(!confirm(`'${s.name}' 실험과 기록 ${s.records.length}개를 지울까요? 되돌릴 수 없어요.`))return
     mutate(d=>d.sessions=d.sessions.filter(q=>q.id!==s.id));if(active===s.id)setActive('');render()})
   v.querySelectorAll('[data-exp]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.exp)
-    // 맨 위 formulas 는 사람이 읽기 쉬운 요약 (불러올 때는 session 만 씀)
-    const text=JSON.stringify({kind:'tmcalc-lab-session',exported:new Date().toISOString(),template:tpl(s.templateId)||null,
-      formulas:{saved:(s.saved||[]).map(f=>({target:f.targetName,formula:f.formula,maxError:f.maxAbs,exact:f.exact})),
-        candidates:(s.findings||[]).map(f=>({target:f.targetName,search:f.kind==='deep'?'심도':'빠른',time:new Date(f.time).toISOString(),records:f.records,
-          list:f.candidates.map(m=>({rank:m.rank,formula:m.formula,maxError:m.maxAbs,exact:m.exact,validation:m.testAbs}))}))},
-      session:s},null,1)
-    const name=s.name.replace(/[\\/:*?"<>|]/g,'_')+'.json'
-    if(BR)return TMCalc.saveFile(name,text)
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()})
-  v.querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>go({v:'tpl',id:b.dataset.tedit}))
-  v.querySelectorAll('[data-titems]').forEach(b=>b.onclick=()=>go({v:'items',id:b.dataset.titems}))
-  v.querySelectorAll('[data-texp]').forEach(b=>b.onclick=()=>{const t=tpl(b.dataset.texp)
-    const text=JSON.stringify({kind:'tmcalc-lab-template',exported:new Date().toISOString(),template:t},null,1),name='틀_'+t.name.replace(/[\\/:*?"<>|]/g,'_')+'.json'
-    if(BR)return TMCalc.saveFile(name,text)
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click()})
-  v.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{const t=tpl(b.dataset.tdel),n=data.sessions.filter(s=>s.templateId===t.id).length
-    if(!confirm(`'${t.name}' 틀을 지울까요?`+(n?`\n이 틀을 쓰는 세션 ${n}개는 분류·잴 것 이름을 잃어요 (기록 숫자는 남음).`:'')))return
-    mutate(d=>d.templates=d.templates.filter(q=>q.id!==t.id));render()})
+    saveJson(fname(s.name)+'.json',{kind:'tmcalc-lab-session',exported:new Date().toISOString(),template:tpl(s.templateId)||null,
+      formulas:{saved:(s.saved||[]).map(f=>({target:f.targetName,formula:f.formula,maxError:f.maxAbs,exact:f.exact}))},session:s})})
   $('#imp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
   $('#sample').onclick=()=>{addSample();render()}
+}
+function homeForm(t,v){
+  const L=gameFormulas(t),TV=measVars(t)
+  v.innerHTML=`<h2>공식 목록</h2><div class="mut">실험의 [공식 찾기]에서 [저장]한 공식. 최적화에서 공격 그룹마다 하나씩 골라 씀.</div>
+  ${TV.map(m=>{const fs=L.filter(x=>normT(x.f.target)===m.id);return`<h2>${esc(m.name)}</h2>
+    ${fs.map(({s,f})=>`<div class="card"><div class="row"><div style="flex:1">${f.label?`<div class="big">${esc(f.label)}</div>`:''}
+      <div class="mut">실험: ${esc(s.name)}${f.time?' · '+fdate(f.time):''} · ${f.exact?'<span class="good">완전 일치</span>':`최대 오차 ${fmt(f.maxAbs)}`}${f.calc?'':' · <span class="bad">최적화에 못 씀 (예전 저장)</span>'}</div></div>
+      <button class="sm" data-fr="${s.id}:${f.id}">이름</button><button class="sm" data-fx="${s.id}:${f.id}">내보내기</button><button class="sm danger" data-fd="${s.id}:${f.id}">✕</button></div>
+      <div class="formula">${esc(f.formula)}</div></div>`).join('')||'<div class="card empty">없음 — ① 실험 › 공식 찾기 › [저장]</div>'}`}).join('')}`
+  const sp=k=>k.split(':'),F=k=>{const [sid,fid]=sp(k),s=ses(sid);return s&&(s.saved||[]).find(f=>f.id===fid)}
+  v.querySelectorAll('[data-fr]').forEach(b=>b.onclick=()=>{const f=F(b.dataset.fr),n=prompt('공식 이름',f.label||f.targetName||'');if(n==null)return
+    const [sid,fid]=sp(b.dataset.fr);mutate(d=>{const x=d.sessions.find(q=>q.id===sid),y=x&&(x.saved||[]).find(q=>q.id===fid);if(y)y.label=n.trim()});render()})
+  v.querySelectorAll('[data-fd]').forEach(b=>b.onclick=()=>{if(!confirm('이 공식을 지울까요?'))return
+    const [sid,fid]=sp(b.dataset.fd);mutate(d=>{const x=d.sessions.find(q=>q.id===sid);if(x)x.saved=(x.saved||[]).filter(q=>q.id!==fid)});render()})
+  v.querySelectorAll('[data-fx]').forEach(b=>b.onclick=()=>{const f=F(b.dataset.fx);saveJson('공식_'+fname(f.label||f.targetName||'공식')+'.json',{kind:'tmcalc-lab-formula',exported:new Date().toISOString(),formula:f})})
+}
+function homeItems(t,v){
+  const LL=listsOf(t),slots=t.slots||[]
+  v.innerHTML=`<h2>아이템 목록 ${hb('items')}<span class="sp"></span><button class="sm pri" id="nL">+ 새 목록</button></h2>
+  <div class="mut">가진 것(또는 지금 낀 옵션들)을 등록만 해 두는 곳. 낀 것 체크는 ④ 최적화에서. 칸·옵션 규칙·세트는 ⚙ 게임 설정에서.</div>
+  ${LL.map(l=>`<div class="card" data-l="${l.id}" style="cursor:pointer"><div class="row"><div style="flex:1"><div class="big">${esc(l.name)}${l.id==='main'?' <span class="tag">게임 위 [연구] 창에서도 씀</span>':''}</div>
+    <div class="mut">${slots.map(q=>`${esc(q.name)} ${l.items.filter(i=>i.slotId===q.id).length}`).join(' · ')||`아이템 ${l.items.length}개`}</div></div><span class="mut">›</span></div></div>`).join('')}
+  <div class="row"><button class="sm" id="impL">목록 불러오기</button></div>`
+  $('#nL').onclick=()=>{const n=prompt('목록 이름','새 목록');if(!n)return;mutate(d=>{const T=d.templates.find(q=>q.id===t.id);(T.lists=T.lists||[]).push({id:uid(),name:n.trim(),items:[]})});render()}
+  v.querySelectorAll('[data-l]').forEach(c=>c.onclick=()=>go({v:'items',id:t.id,lid:c.dataset.l}))
+  $('#impL').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
 }
 function importText(text){
   try{
@@ -872,6 +930,12 @@ function importText(text){
         else d.templates.push({...o.template,id:uid(),name:o.template.name+' (불러옴)'})})
       toast('틀을 불러왔어요.');nav=[{v:'home'}];render();return
     }
+    if(o.kind==='tmcalc-lab-list'&&o.list){const t=tpl(o.templateId)||curGame();if(!t)throw 0
+      const ex=listsOf(t).find(l=>l.name===o.list.name),merge=ex&&confirm(`'${ex.name}' 목록이 이미 있어요. [확인] 합치기 (같은 이름은 바꿔 끼움) / [취소] 새 목록으로`)
+      mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(merge){const X=ex.id==='main'?{items:T.items=T.items||[]}:T.lists.find(l=>l.id===ex.id)
+          for(const it of o.list.items){const i=X.items.findIndex(x=>x.name===it.name);if(i>=0)X.items[i]={...it,id:X.items[i].id};else X.items.push({...it,id:uid()})}}
+        else (T.lists=T.lists||[]).push({id:uid(),name:o.list.name+(ex?' (불러옴)':''),items:o.list.items.map(it=>({...it,id:uid()}))})})
+      toast('목록을 불러왔어요.');render();return}
     if(o.kind!=='tmcalc-lab-session'||!o.session)throw 0
     mutate(d=>{
       let tid=o.template&&o.template.id
@@ -881,7 +945,7 @@ function importText(text){
       d.sessions.push(s)
     })
     toast('세션을 불러왔어요.');nav=[{v:'home'}];render()
-  }catch(_){alert('연구실 세션·틀 파일이 아니에요.')}
+  }catch(_){alert('연구실 파일(실험·게임·목록)이 아니에요.')}
 }
 window.onPickedFile=importText
 $('#file').onchange=async e=>{const f=e.target.files[0];if(f)importText(await f.text());e.target.value=''}
@@ -902,8 +966,8 @@ function vTpl(c,v){
   if(!c.draft){const d0=draftGet(dk);if(d0){c.draft=d0;c.restored=true}}
   if(!c.draft)c.draft=orig?JSON.parse(JSON.stringify(orig)):{id:uid(),name:'',groups:[{id:uid(),name:'룬'},{id:uid(),name:'무기'}],measures:[{id:uid(),name:'데미지'}]}
   const t=c.draft
-  $('#title').textContent=orig?'틀 수정':'새 틀'
-  v.innerHTML=`<div class="card"><label class="f">틀 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 테이밍마스터2 데미지"></label>
+  $('#title').textContent=orig?'분류 · 공격 그룹':'새 게임'
+  v.innerHTML=`<div class="card"><label class="f">게임 이름<input type="text" id="tn" value="${esc(t.name)}" placeholder="예: 테이밍마스터2"></label>
     <div class="mut" style="margin-top:4px">틀은 <b>게임 하나의 데미지 시스템 전체</b>를 담아요 (바꿀 수 있는 것들, 공격 그룹, 아이템). 보통 게임마다 틀 하나면 돼요.</div></div>
   <div class="card"><div class="big">분류 ${hb('tpl')}</div><div class="mut">바꿔 가며 실험할 것 (룬, 무기, 장비, 버프, 적 방어 …). 기록할 때 이 중에서 고르고 ±값이나 %를 적어요.</div>
     ${t.groups.map((g,i)=>g.sys?'':`<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid var(--line)"><div class="list-row"><input type="text" data-g="${i}" value="${esc(g.name)}" placeholder="분류 이름">
@@ -962,18 +1026,19 @@ function vTpl(c,v){
   $('#tc').onclick=()=>back()
   $('#ts').onclick=()=>{sync();draftDel(dk)
     t.name=t.name.trim();t.groups=t.groups.filter(g=>g.name.trim());t.groups.forEach(g=>g.items=(g.items||[]).filter(x=>x.name.trim()));t.measures=t.measures.filter(m=>m.name.trim())
-    if(!t.name)return alert('틀 이름을 적어 주세요.')
+    if(!t.name)return alert('게임 이름을 적어 주세요.')
     if(!t.measures.length)return alert('공격 그룹(잴 것)을 하나 이상 넣어 주세요.')
-    mutate(d=>{const i=d.templates.findIndex(q=>q.id===t.id);if(i>=0)d.templates[i]=t;else d.templates.push(t)})
+    mutate(d=>{const i=d.templates.findIndex(q=>q.id===t.id);if(i>=0)Object.assign(d.templates[i],{name:t.name,groups:t.groups,measures:t.measures,useCrit:t.useCrit,critStyle:t.critStyle});else d.templates.push(t)})
+    if(!orig)LS.set('tmcalcLabGame',t.id)
     back()}
 }
 
 // ---------------------------------------------------------------- 새 세션
 function vNewSes(c,v){
-  $('#title').textContent='새 세션'
+  $('#title').textContent='새 실험'
   v.innerHTML=`<div class="card">
-    <label class="f">세션 이름 (나중에 바꿀 수 있어요)<input type="text" id="sn" value="세션 ${data.sessions.length+1}"></label>
-    <label class="f" style="margin-top:12px">틀<select id="st">${data.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
+    <label class="f">실험 이름 (나중에 바꿀 수 있어요)<input type="text" id="sn" value="실험 ${data.sessions.filter(x=>x.templateId===c.tid).length+1}"></label>
+    <label class="f" style="margin-top:12px">게임<select id="st">${data.templates.map(t=>`<option value="${t.id}"${t.id===c.tid?' selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
     <div class="mut" id="sti" style="margin-top:6px"></div>
     <div class="row" style="margin-top:14px"><button class="pri" id="sgo">만들고 시작</button><button id="smk">만들기만</button></div></div>`
   const info=()=>{const t=tpl($('#st').value);$('#sti').textContent=t?`분류: ${t.groups.map(g=>g.name).join(', ')||'-'} · 잴 것: ${t.measures.map(m=>m.name).join(', ')}`:''}
@@ -985,61 +1050,184 @@ function vNewSes(c,v){
   $('#sgo').onclick=()=>make(true);$('#smk').onclick=()=>make(false)
 }
 
-// ---------------------------------------------------------------- 칸·아이템 (틀에 저장 → 기록의 끼기/빼기, 최적화)
+// ---------------------------------------------------------------- ③ 아이템 목록 하나 (등록만)
+const varName=(t,vid)=>{const x=tplVars(t).find(q=>q.id===vid);return x?x.name.replace(/ 변화$/,''):'(지운 값)'}
+const effText=(t,it)=>{const f=e=>`${varName(t,e.vid)} ${num(e.val)>=0?'+':''}${e.val}`,es=(it.effects||[]).filter(e=>e.vid&&String(e.val).trim()!=='')
+  const b=es.filter(e=>!e.r).map(f),r=es.filter(e=>e.r).map(f)
+  return [b.length?'기본 '+b.join(' · '):'',r.length?'옵션 '+r.join(' · '):'',(it.rules||[]).length?`특수 ${it.rules.length}`:''].filter(Boolean).join('  |  ')||'효과 없음'}
 function vItems(c,v){
   const t=tpl(c.id);if(!t)return back()
-  $('#title').textContent=t.name+' · 아이템'
-  const slots=t.slots||[],items=t.items||[],tv=tplVars(t)
-  const vsel=(sel,cls)=>`<select class="${cls}">${tv.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
-  v.innerHTML=`<div class="card"><div class="big">칸 ${hb('slots')}</div><div class="mut">같이 낄 수 있는 개수나 코스트에 제한이 있는 묶음 (스킬 칸, 룬 칸 …)</div>
-    ${slots.map((q,k)=>`<div class="list-row" data-sl="${k}"><input type="text" class="sn" value="${esc(q.name)}" placeholder="칸 이름 (룬)" style="flex:1">
+  const L=listOf(t,c.lid||'main');if(!L)return back()
+  $('#title').textContent=t.name+' · '+L.name
+  const slots=t.slots||[],sets=t.sets||[],orphan=L.items.filter(i=>!slots.some(q=>q.id===i.slotId))
+  const row=it=>`<div class="list-row" data-it="${it.id}" style="cursor:pointer;border-bottom:1px solid var(--line);padding-bottom:6px"><div style="flex:1;min-width:0"><b>${esc(it.name||'(이름 없음)')}</b>${it.set?` <span class="tag">${esc((sets.find(s=>s.id===it.set)||{}).name||'')}</span>`:''} <span class="mut">${esc(it.owned??1)}개 보유${num(it.dupMax)>1?` · 같은 것 ${esc(it.dupMax)}개까지`:''}</span><div class="mut">${esc(effText(t,it))}</div></div><span class="mut">›</span></div>`
+  v.innerHTML=`<div class="row"><button class="sm" id="lr">이름</button><button class="sm" id="lx">내보내기</button>${L.id==='main'?'':'<button class="sm danger" id="ld">목록 지우기</button>'}</div>
+  ${slots.map(q=>`<h2>${esc(q.name)} <span class="mut">${q.mode==='cost'?`코스트 ${esc(q.max||'∞')}까지`:`최대 ${esc(q.max||'∞')}개`}</span><span class="sp"></span><button class="sm" data-add="${q.id}">+ 아이템</button></h2>
+    <div class="card">${L.items.filter(i=>i.slotId===q.id).map(row).join('')||'<div class="mut">없음</div>'}</div>`).join('')||'<div class="card empty">칸이 없어요 — ⚙ 게임 설정에서 칸 종류부터 추가</div>'}
+  ${orphan.length?`<h2>칸 없음 <span class="mut">눌러서 칸 고르기</span></h2><div class="card">${orphan.map(row).join('')}</div>`:''}
+  ${slots.length?`<div class="card" style="background:var(--card2)"><div class="big">빠르게 여러 개 적기</div><div class="mut">한 줄에 하나: <code>이름 / 칸 / 옵션 값, 옵션 값</code> · 기본 스펙은 <code>/ 기본: 공격력 170</code><br>
+    옵션 이름은 게임 설정의 값 이름 그대로 (예: <code>룬 공격력 % 8</code>, <code>룬 공격력 200</code>). 그 칸 옵션 규칙에 있는 것은 '옵션', 나머지는 '기본 스펙'. 1,000 처럼 쉼표 숫자 OK.</div>
+    <textarea id="qt" rows="3" style="width:100%;margin-top:6px;font:inherit;background:var(--in);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px" placeholder="룬#4 / 룬 / 룬 공격력 % 8, 치명 피해 % 3"></textarea>
+    <button class="sm pri" id="qa" style="margin-top:6px">추가</button></div>`:''}`
+  $('#lr').onclick=()=>{const n=prompt('목록 이름',L.name);if(!n)return;mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(L.id==='main')T.mainListName=n.trim();else{const x=T.lists.find(l=>l.id===L.id);if(x)x.name=n.trim()}});render()}
+  $('#lx').onclick=()=>saveJson('목록_'+fname(L.name)+'.json',{kind:'tmcalc-lab-list',exported:new Date().toISOString(),templateId:t.id,list:{name:L.name,items:L.items}})
+  const ld=$('#ld');if(ld)ld.onclick=()=>{if(!confirm(`'${L.name}' 목록(아이템 ${L.items.length}개)을 지울까요?`))return
+    mutate(d=>{const T=d.templates.find(q=>q.id===t.id);T.lists=(T.lists||[]).filter(l=>l.id!==L.id);if(T.opt&&T.opt.list===L.id){T.opt.list='main';T.opt.eq={};T.opt.ex={}}});back()}
+  v.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>editItem2(t,L,{id:uid(),name:'',slotId:b.dataset.add,owned:'1',dupMax:'1',dupEffect:'all',effects:[],rules:[]},true))
+  v.querySelectorAll('[data-it]').forEach(r=>r.onclick=()=>editItem2(t,L,L.items.find(i=>i.id===r.dataset.it),false))
+  const qa=$('#qa');if(qa)qa.onclick=()=>{const tv=tplVars(t).map(x=>({...x,nm:x.name.replace(/ 변화$/,'')}));let ok=0;const errs=[],add=[]
+    $('#qt').value.split('\n').forEach((line,li)=>{if(!line.trim())return;const [nm,sl,...rest]=line.split('/').map(s=>s.trim()),at=`${li+1}줄`
+      if(!nm)return errs.push(`${at}: 이름 없음`)
+      const q=slots.find(x=>x.name===sl);if(!q)return errs.push(`${at}: 칸 '${sl||''}' 없음 (있는 칸: ${slots.map(x=>x.name).join(', ')})`)
+      const eff=[],bad=[],allow=q.allow||[]
+      for(let seg of rest){let base=false;const mm=seg.match(/^기본\s*[:：]\s*(.*)$/);if(mm){base=true;seg=mm[1]}
+        seg=seg.replace(/(\d),(?=\d{3}(?!\d))/g,'$1')
+        for(const tk of seg.split(',').map(x=>x.trim()).filter(Boolean)){const m=tk.match(/^(.*?)\s*([+-]?\d+(?:\.\d+)?)\s*(%?)$/)
+          if(!m||!m[1].trim()){bad.push(tk);continue}
+          let n=m[1].trim();if(m[3]&&!/%$/.test(n))n+=' %'
+          const x=tv.find(z=>z.nm===n)||tv.find(z=>z.nm.replace(/\s/g,'')===n.replace(/\s/g,''));if(!x){bad.push(tk+' (값 이름 없음)');continue}
+          const isR=!base&&allow.some(a=>a.vid===x.id)
+          if(isR&&eff.filter(e=>e.r).length>=(num(q.optMax)||0)){bad.push(tk+' (옵션 칸 초과)');continue}
+          if(isR&&q.noDup&&eff.some(e=>e.r&&e.vid===x.id)){bad.push(tk+' (같은 옵션 중복)');continue}
+          eff.push({vid:x.id,val:m[2],r:isR?1:0})}}
+      if(bad.length)errs.push(`${at}: 못 읽음 — ${bad.join(', ')}`)
+      add.push({id:uid(),name:nm,slotId:q.id,owned:'1',dupMax:'1',dupEffect:'all',effects:eff,rules:[]});ok++})
+    if(add.length)mutList(t.id,L.id,X=>X.items.push(...add))
+    alert(`${ok}개 추가했어요.`+(errs.length?`\n\n확인 필요:\n${errs.join('\n')}`:''));render()}
+}
+/** 아이템 고치기 창: 기본 스펙(제한 없음) + 옵션(칸 옵션 규칙 안에서) */
+function editItem2(t,L,it,isNew){
+  const tv=tplVars(t),slots=t.slots||[],sets=t.sets||[],d=JSON.parse(JSON.stringify(it));d.effects=d.effects||[];d.rules=d.rules||[]
+  const m=document.createElement('div');m.className='hmask'
+  const slotOf=()=>slots.find(q=>q.id===d.slotId)||{allow:[],optMax:0,mode:'count'}
+  const vsel=(sel,list,k)=>`<select data-eo="${k}" style="flex:1">${list.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name.replace(/ 변화$/,''))}</option>`).join('')}</select>`
+  const row=(e,k,list)=>`<div class="list-row">${vsel(e.vid,list,k)}<input type="text" data-ev="${k}" value="${esc(e.val??'')}" placeholder="+10" style="width:80px"><button class="sm danger" data-ed="${k}">✕</button></div>`
+  const body=()=>{const q=slotOf(),allowIds=(q.allow||[]).map(a=>a.vid),allowed=tv.filter(x=>allowIds.includes(x.id)),nr=d.effects.filter(e=>e.r).length,om=num(q.optMax)||0
+    return`<div class="mut" style="margin-top:12px"><b>기본 스펙</b> (원래 붙어 있는 고정 효과 · 제한 없음). 데미지와 상관없는 효과(체력 등)는 안 적어도 됨.</div>
+    ${d.effects.map((e,k)=>e.r?'':row(e,k,tv)).join('')}<button class="sm ghost" data-addb>+ 기본 효과</button>
+    ${om||nr?`<div class="mut" style="margin-top:12px"><b>옵션</b> <span class="${nr>om?'bad':''}">${nr}/${om}개${nr>om?' ⚠ 초과':''}</span> · 랜덤으로 붙고 다시 돌릴 수 있는 것 (이 칸 옵션 규칙 안에서)</div>
+      ${d.effects.map((e,k)=>e.r?row(e,k,allowed.concat(tv.filter(x=>x.id===e.vid&&!allowIds.includes(x.id)))):'').join('')}
+      ${nr<om&&allowed.length?'<button class="sm ghost" data-addr>+ 옵션</button>':''}`:'<div class="mut" style="margin-top:12px">이 칸은 붙는 옵션 없음 (⚙ 게임 설정 › 칸 › 옵션 규칙)</div>'}
+    <div class="mut" style="margin-top:12px">특수 능력 (선택) ${hb('itemRule')}</div>
+    ${d.rules.map((r,k)=>`<div class="list-row"><select data-rt="${k}" style="flex:1">${tv.map(x=>`<option value="${x.id}"${x.id===r.target?' selected':''}>${esc(x.name)}</option>`).join('')}</select><select data-ro="${k}"><option${(r.op||'+')==='+'?' selected':''}>+</option><option${r.op==='='?' selected':''}>=</option></select><input type="text" data-rx="${k}" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger" data-rd="${k}">✕</button></div>`).join('')}
+    <button class="sm ghost" data-addu>+ 특수 능력</button>`}
+  m.innerHTML=`<div class="hbox"><h3>${isNew?'아이템 추가':'아이템 고치기'}</h3>
+    <label class="f">이름<input type="text" id="in" value="${esc(d.name)}" placeholder="전설 반지, 룬#3 …"></label>
+    <div class="grid" style="margin-top:8px"><label class="f">칸<select id="is">${slots.find(q=>q.id===d.slotId)?'':'<option value="">(칸 고르기)</option>'}${slots.map(q=>`<option value="${q.id}"${q.id===d.slotId?' selected':''}>${esc(q.name)}</option>`).join('')}</select></label>
+      <label class="f">가진 개수 (0 = 아직 없음)<input type="text" id="io" value="${esc(d.owned??'1')}"></label>
+      <label class="f">같은 것 최대 착용<input type="text" id="idm" value="${esc(d.dupMax??'1')}"></label>
+      <label class="f" id="icl">코스트<input type="text" id="ico" value="${esc(d.cost??'1')}"></label>
+      <label class="f">효과 중복<select id="ide"><option value="all"${d.dupEffect!=='one'?' selected':''}>둘 다 적용</option><option value="one"${d.dupEffect==='one'?' selected':''}>하나만 적용</option></select></label>
+      <label class="f">세트<select id="iset"><option value="">없음</option>${sets.map(s=>`<option value="${s.id}"${d.set===s.id?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label></div>
+    <label class="row mut" style="gap:4px;margin-top:6px"><input type="checkbox" id="icd"${d.cond?' checked':''}>조건이 있어야 켜지는 특수 능력 (최적화에서 켬/끔)</label>
+    <div id="er"></div>
+    <div class="row" style="margin-top:14px"><button class="pri" id="sok" style="flex:1">저장</button><button id="scl">닫기</button>${isNew?'':'<button class="danger" id="sdl">지우기</button>'}</div></div>`
+  const $m=s=>m.querySelector(s)
+  const sync=()=>{m.querySelectorAll('[data-eo]').forEach(s=>{const k=+s.dataset.eo;d.effects[k].vid=s.value;d.effects[k].val=$m(`[data-ev="${k}"]`).value})
+    m.querySelectorAll('[data-rt]').forEach(s=>{const k=+s.dataset.rt;d.rules[k]={target:s.value,op:$m(`[data-ro="${k}"]`).value,expr:$m(`[data-rx="${k}"]`).value}})}
+  const redraw=()=>{$m('#er').innerHTML=body();$m('#icl').style.display=slotOf().mode==='cost'?'':'none';bind()}
+  const bind=()=>{m.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>{sync();d.effects.splice(+b.dataset.ed,1);redraw()})
+    m.querySelectorAll('[data-rd]').forEach(b=>b.onclick=()=>{sync();d.rules.splice(+b.dataset.rd,1);redraw()})
+    const ab=$m('[data-addb]');if(ab)ab.onclick=()=>{sync();d.effects.push({vid:(tv[0]||{}).id,val:'',r:0});redraw()}
+    const ar=$m('[data-addr]');if(ar)ar.onclick=()=>{sync();const q=slotOf(),a=(q.allow||[]).find(x=>!q.noDup||!d.effects.some(e=>e.r&&e.vid===x.vid))||q.allow[0];d.effects.push({vid:a.vid,val:'',r:1});redraw()}
+    const au=$m('[data-addu]');if(au)au.onclick=()=>{sync();d.rules.push({target:(tv[0]||{}).id,op:'+',expr:''});redraw()}
+    m.querySelectorAll('[data-help]').forEach(b=>b.onclick=()=>showHelp(b.dataset.help))}
+  $m('#is').onchange=e=>{sync();d.slotId=e.target.value;const q=slotOf(),bad=d.effects.filter(x=>x.r&&!(q.allow||[]).some(a=>a.vid===x.vid))
+    if(bad.length){if(confirm(`새 칸 옵션 규칙에 없는 옵션 ${bad.length}개 (${bad.map(x=>varName(t,x.vid)).join(', ')})\n[확인] 기본 스펙으로 옮기기 / [취소] 지우기`))bad.forEach(x=>x.r=0);else d.effects=d.effects.filter(x=>!bad.includes(x))}
+    redraw()}
+  $m('#scl').onclick=()=>m.remove();m.onclick=e=>{if(e.target===m)m.remove()}
+  $m('#sok').onclick=()=>{sync();const q=slotOf(),nr=d.effects.filter(e=>e.r).length
+    if(!slots.some(x=>x.id===d.slotId))return alert('칸을 골라 주세요.')
+    if(nr>(num(q.optMax)||0))return alert(`옵션이 ${nr}개 — 이 칸은 최대 ${num(q.optMax)||0}개예요. 옵션을 지우고 저장하세요.`)
+    if(q.noDup){const ids=d.effects.filter(e=>e.r).map(e=>e.vid);if(new Set(ids).size<ids.length)return alert('이 칸은 같은 옵션을 중복으로 못 붙여요.')}
+    d.name=$m('#in').value.trim();d.owned=$m('#io').value.trim()||'1';d.dupMax=$m('#idm').value.trim()||'1';d.cost=$m('#ico').value.trim();d.dupEffect=$m('#ide').value;d.set=$m('#iset').value||null;d.cond=$m('#icd').checked
+    d.effects=d.effects.filter(e=>e.vid);d.rules=d.rules.filter(r=>r.target&&String(r.expr).trim())
+    mutList(t.id,L.id,X=>{const i=X.items.findIndex(x=>x.id===d.id);if(i>=0)X.items[i]=d;else X.items.push(d)});m.remove();render()}
+  const dl=$m('#sdl');if(dl)dl.onclick=()=>{if(!confirm(`'${d.name||'이 아이템'}'을 지울까요?`))return;mutList(t.id,L.id,X=>X.items.splice(X.items.findIndex(x=>x.id===d.id),1));m.remove();render()}
+  document.body.append(m);redraw()
+}
+
+// ---------------------------------------------------------------- ⚙ 게임 설정: 분류·공격 그룹(틀 수정) + 칸·옵션 규칙 + 세트 + 상태창 규칙
+function vGset(c,v){
+  const t=tpl(c.id);if(!t)return back()
+  $('#title').textContent=t.name+' · 게임 설정'
+  const tv=tplVars(t),slots=t.slots||[],sets=t.sets||[],vm=t.vmeta||{}
+  const used=new Set();for(const s of data.sessions)if(s.templateId===t.id){for(const r of s.records)for(const ch of changesOf(r))used.add(vkey(ch));for(const k in s.start||{})used.add('g:'+k)}
+  for(const l of listsOf(t))for(const it of l.items)for(const e of it.effects||[])used.add(e.vid)
+  const showAll=!!c.all,vlist=tv.filter(x=>showAll||used.has(x.id)||vm[x.id])
+  const vn=x=>esc(x.name.replace(/ 변화$/,''))
+  v.innerHTML=`<div class="card"><div class="big">${esc(t.name)}</div><div class="mut">분류(바꿀 수 있는 것)·항목·공격 그룹·치명 사용</div>
+    <div class="card" style="background:var(--card2);font-size:13px">⚠ <b>데미지에 영향 주는 것만 등록.</b> 체력·방어력·이동속도 등은 X — 섞이면 공식 찾기가 엉뚱한 결과를 낼 수 있음. (체력 비례 데미지처럼 데미지에 실제로 들어가면 등록)</div>
+    <div class="row"><button class="pri sm" id="etpl">분류 · 공격 그룹 고치기</button></div></div>
+  <div class="card"><div class="big">상태창 규칙 ${hb('statRule')}</div><div class="mut">최적화 [내 상태]에서 값을 어떻게 정할지. 게임마다 한 번만.</div>
+    <div class="scroll"><table><tr><th class="l">값</th><th class="l">내 상태 값</th><th class="l">% 곱해져 보임</th><th>최대</th></tr>
+    ${vlist.map(x=>{const M=vm[x.id]||{},st=M.stat||'';return`<tr><td class="l">${vn(x)}</td>
+      <td class="l"><select data-vs="${x.id}" style="font-size:13px;padding:4px"><option value=""${!st?' selected':''}>상태창 숫자 입력</option><option value="0"${st==='0'?' selected':''}>상태창에 안 보임 (낀 것 합)</option>${tv.filter(p=>p.id!==x.id&&p.unit===x.unit).map(p=>`<option value="in:${p.id}"${st==='in:'+p.id?' selected':''}>상태창 ${vn(p)}에 포함</option>`).join('')}</select></td>
+      <td class="l">${x.unit==='flat'?`<select data-vm="${x.id}" style="font-size:13px;padding:4px"><option value="">없음</option>${tv.filter(p=>p.unit==='pct').map(p=>`<option value="${p.id}"${M.mul===p.id?' selected':''}>${vn(p)}</option>`).join('')}</select>`:''}</td>
+      <td><input type="text" data-vc="${x.id}" value="${esc(M.cap??'')}" placeholder="-" style="width:60px;text-align:right;padding:4px"></td></tr>`}).join('')}</table></div>
+    <label class="row mut" style="gap:4px;margin-top:6px"><input type="checkbox" id="vall"${showAll?' checked':''}>모든 값 보기 (안 쓰는 값까지)</label></div>
+  <div class="card"><div class="big">칸 종류 ${hb('slots')}</div><div class="mut">같이 낄 수 있는 개수·코스트 (보통 값 — 레벨 올라 늘면 최적화에서 바로 고침) + 아이템 하나에 붙는 옵션 규칙</div>
+    ${slots.map((q,k)=>`<div class="card" style="background:var(--card2)" data-sl="${k}"><div class="list-row"><input type="text" class="sn" value="${esc(q.name)}" placeholder="칸 이름 (룬)" style="flex:1">
       <select class="sm2"><option value="count"${q.mode!=='cost'?' selected':''}>최대 개수</option><option value="cost"${q.mode==='cost'?' selected':''}>코스트 합</option></select>
-      <input type="text" class="sx" value="${esc(q.max??'')}" placeholder="6" style="width:60px"><button class="sm danger sdl">✕</button></div>`).join('')}
+      <input type="text" class="sx" value="${esc(q.max??'')}" placeholder="6" style="width:56px"><button class="sm danger sdl">✕</button></div>
+      <div class="row"><span class="mut" style="flex:1;font-size:12px">${num(q.optMax)?`옵션 최대 ${esc(q.optMax)}개${q.noDup?' · 중복 불가':''} · ${esc((q.allow||[]).map(a=>varName(t,a.vid)+' ~'+a.max).join(', ')||'들어갈 옵션 없음')}`:'붙는 옵션 없음 (기본 효과만)'}</span><button class="sm srule">옵션 규칙</button></div></div>`).join('')}
     <button class="sm" id="addSl">+ 칸</button></div>
-  <h2>아이템 ${items.length}개 ${hb('items')}<span class="sp"></span><button class="sm pri" id="addIt"${slots.length?'':' disabled'}>+ 아이템</button></h2>
-  ${slots.length?'':'<div class="card empty">먼저 칸을 만들어 주세요.</div>'}
-  ${items.map((it,k)=>{const sl=slots.find(q=>q.id===it.slotId)
-    return`<div class="card" data-it="${k}">
-    <div class="list-row"><input type="text" class="in" value="${esc(it.name)}" placeholder="이름 (스킬A, 화염 룬, 3번 노드 …)" style="flex:1"><button class="sm danger idl">✕</button></div>
-    <input type="text" class="ids" value="${esc(it.desc||'')}" placeholder="설명 (선택, 게임 설명문 그대로)" style="width:100%;margin-top:6px">
-    <div class="grid" style="margin-top:6px">
-      <label class="f">칸<select class="isl">${slots.map(q=>`<option value="${q.id}"${q.id===it.slotId?' selected':''}>${esc(q.name)}</option>`).join('')}</select></label>
-      ${sl&&sl.mode==='cost'?`<label class="f">코스트<input type="text" class="ico" value="${esc(it.cost??'')}" placeholder="1"></label>`:''}
-      <label class="f">가진 개수<input type="text" class="iow" value="${esc(it.owned??'1')}"></label>
-      <label class="f">같은 것 최대 착용<input type="text" class="idm" value="${esc(it.dupMax??'1')}"></label>
-      <label class="f">효과 중복<select class="ide"><option value="all"${it.dupEffect!=='one'?' selected':''}>둘 다 적용</option><option value="one"${it.dupEffect==='one'?' selected':''}>하나만 적용</option></select></label></div>
-    <div class="mut" style="margin-top:8px">효과 (낄 때 바뀌는 값)</div>
-    ${(it.effects||[]).map((e,j)=>`<div class="list-row" data-ef="${j}">${vsel(e.vid,'ev')}<input type="text" class="eval" value="${esc(e.val??'')}" placeholder="+10" style="width:90px"><button class="sm danger edl">✕</button></div>`).join('')}
-    <button class="sm ghost eadd">+ 효과</button>
-    <div class="mut" style="margin-top:8px">특수 능력 (선택) ${hb('itemRule')}</div>
-    ${(it.rules||[]).map((r,j)=>`<div class="list-row" data-ru="${j}">${vsel(r.target,'rt')}<select class="rop"><option${(r.op||'+')==='+'?' selected':''}>+</option><option${r.op==='='?' selected':''}>=</option></select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rdl">✕</button></div>`).join('')}
-    <button class="sm ghost radd">+ 특수 능력</button>
-    <label class="row mut" style="gap:4px;margin-top:6px"><input type="checkbox" class="icd"${it.cond?' checked':''}>조건이 있어야 켜지는 능력 (최적화에서 켬/끔으로 계산)</label>
-  </div>`}).join('')}`
-  const upd=f=>{mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(T){T.slots=T.slots||[];T.items=T.items||[];f(T)}});render()}
-  $('#addSl').onclick=()=>upd(T=>T.slots.push({id:uid(),name:'',mode:'count',max:''}))
-  v.querySelectorAll('[data-sl]').forEach(el=>{const k=+el.dataset.sl
-    el.querySelector('.sn').onchange=e=>upd(T=>T.slots[k].name=e.target.value.trim())
-    el.querySelector('.sm2').onchange=e=>upd(T=>T.slots[k].mode=e.target.value)
-    el.querySelector('.sx').onchange=e=>upd(T=>T.slots[k].max=e.target.value)
-    el.querySelector('.sdl').onclick=()=>{if(confirm('이 칸을 지울까요? (이 칸의 아이템은 남아요)'))upd(T=>T.slots.splice(k,1))}})
-  const ai=$('#addIt');if(ai)ai.onclick=()=>upd(T=>T.items.push({id:uid(),name:'',slotId:(slots[0]||{}).id,owned:'1',dupMax:'1',dupEffect:'all',effects:[{vid:(tv[0]||{}).id,val:''}],rules:[]}))
-  v.querySelectorAll('[data-it]').forEach(el=>{const k=+el.dataset.it,I=T=>T.items[k]
-    const on=(cls,f,ev='onchange')=>{const x=el.querySelector('.'+cls);if(x)x[ev]=e=>upd(T=>f(I(T),e.target))}
-    on('in',(it,x)=>it.name=x.value.trim());on('ids',(it,x)=>it.desc=x.value);on('isl',(it,x)=>it.slotId=x.value);on('ico',(it,x)=>it.cost=x.value)
-    on('iow',(it,x)=>it.owned=x.value);on('idm',(it,x)=>it.dupMax=x.value);on('ide',(it,x)=>it.dupEffect=x.value);on('icd',(it,x)=>it.cond=x.checked)
-    el.querySelector('.idl').onclick=()=>{if(confirm('이 아이템을 지울까요?'))upd(T=>T.items.splice(k,1))}
-    el.querySelector('.eadd').onclick=()=>upd(T=>(I(T).effects=I(T).effects||[]).push({vid:(tv[0]||{}).id,val:''}))
-    el.querySelectorAll('[data-ef]').forEach(r=>{const j=+r.dataset.ef
-      r.querySelector('.ev').onchange=e=>upd(T=>I(T).effects[j].vid=e.target.value)
-      r.querySelector('.eval').onchange=e=>upd(T=>I(T).effects[j].val=e.target.value)
-      r.querySelector('.edl').onclick=()=>upd(T=>I(T).effects.splice(j,1))})
-    el.querySelector('.radd').onclick=()=>upd(T=>(I(T).rules=I(T).rules||[]).push({target:(tv[0]||{}).id,op:'+',expr:''}))
-    el.querySelectorAll('[data-ru]').forEach(r=>{const j=+r.dataset.ru
-      r.querySelector('.rt').onchange=e=>upd(T=>I(T).rules[j].target=e.target.value)
-      r.querySelector('.rop').onchange=e=>upd(T=>I(T).rules[j].op=e.target.value)
-      r.querySelector('.rex').onchange=e=>upd(T=>I(T).rules[j].expr=e.target.value)
-      r.querySelector('.rdl').onclick=()=>upd(T=>I(T).rules.splice(j,1))})})
+  <div class="card"><div class="big">세트 효과</div><div class="mut">같은 세트를 n개 이상 끼면 붙는 효과 (칸이 달라도 같이 셈). 아이템 고치기에서 세트를 고름.</div>
+    ${sets.map(s=>`<div class="list-row"><div style="flex:1"><b>${esc(s.name)}</b>${s.distinct?' <span class="mut">(다른 아이템만 셈)</span>':''}<div class="mut">${esc((s.rows||[]).map(r=>`${r.n}개 → ${varName(t,r.vid)} +${r.val}`).join(' · ')||'효과 없음')}</div></div><button class="sm" data-set="${s.id}">고치기</button></div>`).join('')||'<div class="mut">세트 없음 (세트 없는 게임이면 비워 두기)</div>'}
+    <button class="sm" id="addSet">+ 세트</button></div>
+  <div class="row"><button class="sm" id="gx">이 게임 내보내기</button><button class="sm" id="gi">불러오기</button><span style="flex:1"></span><button class="sm danger" id="gd">게임 지우기</button></div>`
+  const upd=f=>{mutate(d=>{const T=d.templates.find(q=>q.id===t.id);if(T)f(T)});render()}
+  const meta=(T,id)=>{T.vmeta=T.vmeta||{};return T.vmeta[id]=T.vmeta[id]||{}}
+  const clean=T=>{for(const k in T.vmeta||{}){const M=T.vmeta[k];if(!M.stat&&!M.mul&&(M.cap==null||M.cap===''))delete T.vmeta[k]}}
+  $('#etpl').onclick=()=>go({v:'tpl',id:t.id})
+  $('#vall').onchange=e=>{c.all=e.target.checked;render()}
+  v.querySelectorAll('[data-vs]').forEach(e=>e.onchange=()=>upd(T=>{meta(T,e.dataset.vs).stat=e.value||undefined;clean(T)}))
+  v.querySelectorAll('[data-vm]').forEach(e=>e.onchange=()=>upd(T=>{meta(T,e.dataset.vm).mul=e.value||undefined;clean(T)}))
+  v.querySelectorAll('[data-vc]').forEach(e=>e.onchange=()=>upd(T=>{const n=num(e.value);meta(T,e.dataset.vc).cap=isFinite(n)?n:undefined;clean(T)}))
+  const sl=f=>upd(T=>{T.slots=T.slots||[];f(T)})
+  $('#addSl').onclick=()=>sl(T=>T.slots.push({id:uid(),name:'',mode:'count',max:'',optMax:0,allow:[]}))
+  v.querySelectorAll('[data-sl]').forEach(el=>{const k=+el.dataset.sl,q=slots[k]
+    el.querySelector('.sn').onchange=e=>sl(T=>T.slots[k].name=e.target.value.trim())
+    el.querySelector('.sm2').onchange=e=>sl(T=>T.slots[k].mode=e.target.value)
+    el.querySelector('.sx').onchange=e=>sl(T=>T.slots[k].max=e.target.value)
+    el.querySelector('.sdl').onclick=()=>{const n=listsOf(t).reduce((a,l)=>a+l.items.filter(i=>i.slotId===q.id).length,0)
+      if(n)return alert(`'${q.name}' 칸을 쓰는 아이템 ${n}개 — 아이템을 먼저 다른 칸으로 옮기거나 지우세요.`)
+      if(confirm(`'${q.name||'이'}' 칸을 지울까요?`))sl(T=>T.slots.splice(k,1))}
+    el.querySelector('.srule').onclick=()=>{const m=document.createElement('div');m.className='hmask'
+      m.innerHTML=`<div class="hbox"><h3>'${esc(q.name)}' 옵션 규칙</h3><label class="f">아이템 하나에 붙는 옵션 최대 개수 (0 = 없음)<input type="text" id="qm" value="${esc(q.optMax||0)}"></label>
+        <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="qnd"${q.noDup?' checked':''}>같은 아이템에 같은 옵션 중복 불가</label>
+        <div class="mut" style="margin-top:10px">들어갈 수 있는 옵션 · 최대 수치 (바꿀 옵션 찾기에서 노릴 후보)</div>
+        ${tv.map(x=>{const a=(q.allow||[]).find(z=>z.vid===x.id);return`<div class="list-row"><label class="row" style="flex:1;gap:6px"><input type="checkbox" data-qa="${x.id}"${a?' checked':''}>${vn(x)}</label><span class="mut">최대</span><input type="text" data-qv="${x.id}" value="${esc(a?a.max:'')}" style="width:70px"></div>`}).join('')}
+        <div class="mut" style="margin-top:8px">기본 스펙(장비 기본 공격력 등)은 이 규칙과 상관없이 따로 입력.</div>
+        <div class="row" style="margin-top:14px"><button class="pri" id="qok" style="flex:1">저장</button><button id="qcl">닫기</button></div></div>`
+      m.querySelector('#qcl').onclick=()=>m.remove()
+      m.querySelector('#qok').onclick=()=>{const om=Math.max(0,num(m.querySelector('#qm').value)||0),nd=m.querySelector('#qnd').checked
+        const allow=[...m.querySelectorAll('[data-qa]')].filter(x=>x.checked).map(x=>({vid:x.dataset.qa,max:num(m.querySelector(`[data-qv="${x.dataset.qa}"]`).value)||0}))
+        m.remove();sl(T=>Object.assign(T.slots[k],{optMax:om,noDup:nd,allow}))}
+      document.body.append(m)}})
+  const editSet=s0=>{const isNew=!s0,d=s0?JSON.parse(JSON.stringify(s0)):{id:uid(),name:'새 세트',distinct:false,rows:[{n:2,vid:(tv[0]||{}).id,val:''}]}
+    const m=document.createElement('div');m.className='hmask'
+    const rows=()=>d.rows.map((r,k)=>`<div class="list-row"><input type="text" data-tn="${k}" value="${esc(r.n)}" style="width:44px">개 →<select data-tv2="${k}" style="flex:1">${tv.map(x=>`<option value="${x.id}"${x.id===r.vid?' selected':''}>${vn(x)}</option>`).join('')}</select><input type="text" data-tx="${k}" value="${esc(r.val)}" style="width:64px"><button class="sm danger" data-td="${k}">✕</button></div>`).join('')
+    m.innerHTML=`<div class="hbox"><h3>세트 효과</h3><label class="f">세트 이름<input type="text" id="sn2" value="${esc(d.name)}"></label>
+      <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="sdi"${d.distinct?' checked':''}>같은 아이템 여러 개는 1개로 셈</label>
+      <div class="mut" style="margin-top:10px">몇 개 끼면 → 효과 (조건 맞는 줄은 모두 적용)</div><div id="tr"></div><button class="sm ghost" id="tadd">+ 줄</button>
+      <div class="row" style="margin-top:14px"><button class="pri" id="tok" style="flex:1">저장</button><button id="tcl">닫기</button>${isNew?'':'<button class="danger" id="tdl">지우기</button>'}</div></div>`
+    const sync=()=>m.querySelectorAll('[data-tn]').forEach(e=>{const k=+e.dataset.tn;d.rows[k]={n:Math.max(1,num(e.value)||2),vid:m.querySelector(`[data-tv2="${k}"]`).value,val:m.querySelector(`[data-tx="${k}"]`).value}})
+    const redraw=()=>{m.querySelector('#tr').innerHTML=rows();m.querySelectorAll('[data-td]').forEach(b=>b.onclick=()=>{sync();d.rows.splice(+b.dataset.td,1);redraw()})}
+    m.querySelector('#tadd').onclick=()=>{sync();d.rows.push({n:2,vid:(tv[0]||{}).id,val:''});redraw()}
+    m.querySelector('#tcl').onclick=()=>m.remove()
+    m.querySelector('#tok').onclick=()=>{sync();d.name=m.querySelector('#sn2').value.trim()||'세트';d.distinct=m.querySelector('#sdi').checked;m.remove()
+      upd(T=>{T.sets=T.sets||[];const i=T.sets.findIndex(x=>x.id===d.id);if(i>=0)T.sets[i]=d;else T.sets.push(d)})}
+    const dl=m.querySelector('#tdl');if(dl)dl.onclick=()=>{if(!confirm('이 세트를 지울까요?'))return;m.remove()
+      upd(T=>{T.sets=(T.sets||[]).filter(x=>x.id!==d.id);for(const l of [{items:T.items||[]},...(T.lists||[])])for(const it of l.items)if(it.set===d.id)it.set=null})}
+    document.body.append(m);redraw()}
+  v.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>editSet(sets.find(s=>s.id===b.dataset.set)))
+  $('#addSet').onclick=()=>editSet(null)
+  $('#gx').onclick=()=>saveJson('게임_'+fname(t.name)+'.json',{kind:'tmcalc-lab-template',exported:new Date().toISOString(),template:t})
+  $('#gi').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  $('#gd').onclick=()=>{const n=data.sessions.filter(s=>s.templateId===t.id).length
+    if(!confirm(`'${t.name}' 게임을 지울까요?`+(n?`\n이 게임의 실험 ${n}개는 이름표를 잃어요 (기록 숫자는 남음).`:'')))return
+    mutate(d=>d.templates=d.templates.filter(q=>q.id!==t.id));nav=[{v:'home'}];render()}
 }
 
 // ---------------------------------------------------------------- 시작 상태: 세션을 시작할 때 이미 붙어 있던 양
@@ -1062,7 +1250,7 @@ function vStart(c,v){
   const eqShow=c.reset?equipNow(s):(s.equip0||{})
   $('#title').textContent=s.name+(c.reset?' · 상태 다시 적기':' · 시작 상태')
   const sl=startSlots(t)
-  v.innerHTML=`<div class="card"><div class="big">${c.reset?'지금 상태 다시 적기':'세션을 시작할 때 이미 붙어 있던 양'} ${hb(c.reset?'resetState':'startState')}</div>
+  v.innerHTML=`<div class="card"><div class="big">${c.reset?'지금 상태 다시 적기':'실험을 시작할 때 이미 붙어 있던 양'} ${hb(c.reset?'resetState':'startState')}</div>
     ${c.reset?'<div class="mut">예전 셋팅을 똑같이 맞추기 어려울 때 써요. 지금 상태창 값과 낀 아이템을 그대로 적으면, 이 시점부터 기준이 다시 잡혀요. (지금 칸에는 기록으로 계산한 값이 들어 있어요. 다른 칸만 고치세요)</div>':''}
     <div class="mut">상태창 등에서 보이는 지금 값을 적어요. 모르는 칸은 비워 두면 그 항목은 바꾼 양(변화량)만으로 계산해요.<br>
     적어 두면 공식 찾기가 실제 총량으로 계산해서 계수가 깔끔해지고, 합연산/곱연산도 더 정확히 가려요.</div>
@@ -1374,7 +1562,9 @@ function showSaved(c){
     <div class="formula">${esc(f.formula)}</div>
     <div class="row"><span class="mut" style="flex:1">최대 오차 ${fmt(f.maxAbs)}${f.testAbs!=null?` · 검증 ${fmt(f.testAbs)}`:''}</span>
       ${f.calc?`<button class="sm" data-go-opt="${f.id}">최적화</button>`:''}<button class="sm" data-cp="${esc(f.formula)}">복사</button><button class="sm danger" data-sdel="${f.id}">✕</button></div></div>`).join(''):''
-  el.querySelectorAll('[data-go-opt]').forEach(b=>b.onclick=()=>{mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x){x.opt=x.opt||{};x.opt.formula=b.dataset.goOpt}});go({v:'opt',id:c.id})})
+  el.querySelectorAll('[data-go-opt]').forEach(b=>b.onclick=()=>{const s0=ses(c.id),f=(s0.saved||[]).find(q=>q.id===b.dataset.goOpt)
+    mutate(d=>{const T=d.templates.find(q=>q.id===s0.templateId);if(T&&f){T.opt=T.opt||{};T.opt.formula=f.id;T.opt.fsel=T.opt.fsel||{};T.opt.fsel[normT(f.target)]=f.id}})
+    LS.set('tmcalcLabGame',s0.templateId);LS.set('tmcalcLabTab','opt');nav=[{v:'home'}];render()})
   el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp))
   el.querySelectorAll('[data-sdel]').forEach(b=>b.onclick=()=>{if(!confirm('저장한 공식을 지울까요?'))return
     mutate(d=>{const x=d.sessions.find(q=>q.id===c.id);if(x)x.saved=(x.saved||[]).filter(q=>q.id!==b.dataset.sdel)});showSaved(c)})
@@ -1569,13 +1759,22 @@ function applyRules(st,rules,names){
   }
   return st
 }
+/** 게임의 공식들: 그 게임 실험들의 [저장] 공식 (+ 지난 탐색 추천) */
+function gameFL(t){const L=[]
+  for(const x of data.sessions.filter(q=>q.templateId===t.id).sort((a,b)=>b.created-a.created)){
+    for(const f of x.saved||[])if(f.calc)L.push({key:f.id,label:(f.label?f.label+' · ':'')+`[${x.name}] `+f.formula,saved:true,f:{...f.calc,target:f.target,targetName:f.targetName,formula:f.formula,exact:f.exact}})
+    for(const f of x.findings||[]){const m=f.candidates[0];if(m&&m.calc)L.push({key:'find:'+x.id+':'+f.kind+':'+f.target,label:`[${x.name}] 지난 ${f.kind==='deep'?'심도':'빠른'} 탐색 추천: `+m.formula,f:{...m.calc,target:f.target,targetName:f.targetName,formula:m.formula,exact:m.exact}})}}
+  return L}
+const optOpen=(tid,k,def)=>{try{const o=JSON.parse(localStorage.getItem('tmcalcLabOpen:'+tid)||'{}');return k in o?o[k]:def}catch(e){return def}}
+const optOpenSet=(tid,k,v)=>{try{const o=JSON.parse(localStorage.getItem('tmcalcLabOpen:'+tid)||'{}');o[k]=v;localStorage.setItem('tmcalcLabOpen:'+tid,JSON.stringify(o))}catch(e){}}
 function vOpt(c,v){
-  const s=ses(c.id);if(!s)return back()
-  const D=sessionData(s),t=D.t
-  $('#title').textContent=s.name+' · 최적화'
-  const FL=optFormulas(s)
-  if(!FL.length){v.innerHTML='<div class="card empty">먼저 [공식 찾기]로 공식을 찾아 주세요.<br>찾은 추천 공식이나 [저장]한 공식으로 계산해요.</div>';return}
-  const o=s.opt||{}
+  const t=tpl(c.id);if(!t)return back()
+  const SS=data.sessions.filter(x=>x.templateId===t.id).sort((a,b)=>b.created-a.created),srcS=SS.find(x=>x.records.length)||SS[0]
+  const D=srcS?sessionData(srcS):{t,gvars:[],mvars:measVars(t),rows:[]}
+  const FL=gameFL(t)
+  if(!FL.length){v.innerHTML='<div class="card empty">먼저 ① 실험 › [공식 찾기]로 공식을 찾아 [저장]하세요.<br>저장한 공식으로 계산해요.</div>';return}
+  const o=t.opt||{}
+  const sec=(k,title,body,def=true,sum='')=>{const op=optOpen(t.id,k,def);return`<details class="card osec" data-sec="${k}"${op?' open':''}><summary style="font-size:16px;font-weight:600;color:var(--fg)">${title}${sum?` <span class="mut" style="font-weight:400">${sum}</span>`:''}</summary><div style="margin-top:8px">${body}</div></details>`}
   const pick=FL.find(x=>x.key===o.formula)||FL[0],F=pick.f,fn=makeF(F.spec)
   // 변수: 세션 변수 (분류별 누적) + 잰 값
   const tv=tplVars(t),allVars=[...D.gvars,...tv.filter(x=>!D.gvars.some(q=>q.id===x.id)),...D.mvars],byId=Object.fromEntries(allVars.map(x=>[x.id,x]))
@@ -1585,7 +1784,7 @@ function vOpt(c,v){
   // 사이클: 공격(잴 것) 여러 개 × 사이클당 횟수. 치명은 잴 것의 치명 모드 + 내 정보의 치명 확률·피해로 평균
   const cyc=o.cyc2||{list:[]}
   const TV=measVars(t)
-  const bestF=target=>{const L=FL.filter(x=>normT(x.f.target)===target);const x=L.find(q=>q.key.indexOf('find:')!==0)||L[0];return x?{...x.f,fn:makeF(x.f.spec),label:x.label}:null}
+  const bestF=target=>{const L=FL.filter(x=>normT(x.f.target)===target);const x=L.find(q=>q.key===(o.fsel||{})[target])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];return x?{...x.f,fn:makeF(x.f.spec),label:x.label,key:x.key}:null}
   const single={...F,fn}
   // 사이클의 공격 하나 = 이름·그룹(공식)·배율%·횟수·치명(불가/가능/항상)·추가 치명 확률
   const val1=(f,z)=>f.fn(f.p,f.vars.map(id=>z[id]??z[baseId(id)]??0))
@@ -1605,12 +1804,15 @@ function vOpt(c,v){
   const objName=!cyc.on?F.targetName:(byTime?'초당 데미지':'사이클당 평균 데미지')
   let parts=null
   const lastRow=[...D.rows].reverse().find(r=>!r.r.skip)||D.rows[D.rows.length-1]
-  const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}return st}
+  const VM=t.vmeta||{},capOf=id=>{const M=VM[id];return M&&isFinite(num(M.cap))?num(M.cap):null}
+  const state0=()=>{const st={...(lastRow?lastRow.v:{})};for(const [k,val] of Object.entries(o.state||{}))if(isFinite(val)){st[k]=val;st[k+'*']=val}
+    for(const [k,val] of Object.entries(o.real||{})){const cp=capOf(k);if(cp!=null&&isFinite(val)&&(st[k]||0)>=cp){st[k]=val;st[k+'*']=val}}return st}
   const isPct=id=>(byId[baseId(id)]||{}).unit==='pct'
   const critOf=z=>{if(t.useCrit===false)return{p:0,m:1,ok:true}
     const p=Math.min(1,Math.max(0,((num(cyc.rate)||0)+(+z['g:crit:rate:pct']||0))/100)),d=+z['g:crit:dmg:pct']||0
     const m=d?(t.critStyle==='add'?1+d/100:d/100):1;return{p,m,ok:!!d}}
   const evalSt=(st,keep,extra)=>{const z=applyRules({...st},[...(o.rules||[]),...(extra||[])],names)
+    for(const id in VM){const cp=capOf(id);if(cp!=null){if(z[id]>cp)z[id]=cp;if(z[id+'*']>cp)z[id+'*']=cp}}
     if(!cyc.on){const r=val1(single,z);return isFinite(r)?r:NaN}
     const {p:p0,m,ok}=critOf(z);const p=p0;let cycle=0;const det=[]
     // 횟수: 시간당 모드면 종류별로 (스킬 = 시간 ÷ 쿨타임 × 타수, 평타 = 남는 시간 ÷ 간격 × 타수, 직접 = 적은 값)
@@ -1639,11 +1841,29 @@ function vOpt(c,v){
     if(keep)parts={det,cycle,r,per,crit:{p,m,ok},usedT,leftT,T}
     return isFinite(r)?r:NaN}
   // 아이템: 지금 낀 것, 특수 능력(조건부는 켬/끔)
-  const items=t.items||[],slots=t.slots||[],eqNow=equipNow(s),condOn=o.condOn||{}
+  const LID=listOf(t,o.list)?o.list:'main',LST=listOf(t,LID),items=LST.items,slots=t.slots||[],eqNow=o.eq||{},condOn=o.condOn||{},EX=o.ex||{},SMX=o.smax||{}
+  const slotMax=q=>isFinite(num(SMX[q.id]))?num(SMX[q.id]):num(q.max)
   const effN=(it,cnt)=>it.dupEffect==='one'?Math.min(cnt,1):cnt
   const rulesOf=cfg=>items.flatMap(it=>{const n=effN(it,cfg[it.id]||0);if(!n||(it.cond&&!condOn[it.id]))return[]
     const rs=(it.rules||[]).map(r=>({...r,pct:isPct(r.target)}));return Array.from({length:n},()=>rs).flat()})
-  const now=evalSt(state0(),true,rulesOf(eqNow))
+  // 상태 만들기: 상태창 값(지금 낀 것 포함) → 지금 낀 것 빼고 → cfg 끼기. 상태창 규칙(안 보임·포함·곱해져 보임) 반영
+  const applyItem=(st,it,n,sign)=>{for(let k=0;k<n;k++)for(const e of it.effects||[]){const val=num(e.val);if(isFinite(val)&&e.vid)applyChange(st,e.vid,sign>0?'+':'-',val,isPct(e.vid))}}
+  const setFx=cfg=>{const out=[];for(const S2 of t.sets||[]){const cnt=items.reduce((a,it)=>a+(it.set===S2.id?(S2.distinct?((cfg[it.id]||0)>0?1:0):(cfg[it.id]||0)):0),0);if(!cnt)continue
+    for(const r of S2.rows||[])if(cnt>=num(r.n)&&isFinite(num(r.val)))out.push({vid:r.vid,val:num(r.val),name:S2.name,cnt,n:num(r.n)})}return out}
+  const statOf=id=>(VM[id]||{}).stat||'',zeroed=id=>{const q=statOf(id);return q==='0'||q.startsWith('in:')}
+  const eqShare=id=>{let a=0;for(const it of items){const n=effN(it,eqNow[it.id]||0);if(n)for(const e of it.effects||[])if(e.vid===id&&isFinite(num(e.val)))a+=num(e.val)*n}for(const x of setFx(eqNow))if(x.vid===id)a+=x.val;return a}
+  const baseSt=()=>{const st=state0(),s0={...st}
+    for(const id in VM){const M=VM[id];if(M.mul&&isFinite(st[id])){const m=1+(s0[M.mul]||0)/100;if(m)st[id]=st[id]/m}}
+    for(const id in VM)if(zeroed(id)){st[id]=0;if(st[id+'*']!=null)st[id+'*']=0}
+    for(const it of items){const n=effN(it,eqNow[it.id]||0);if(!n)continue
+      for(let k=0;k<n;k++)for(const e of it.effects||[]){const val=num(e.val);if(!isFinite(val)||!e.vid)continue
+        if(!zeroed(e.vid))applyChange(st,e.vid,'-',val,isPct(e.vid))
+        const q=statOf(e.vid);if(q.startsWith('in:'))applyChange(st,q.slice(3),'-',val,isPct(q.slice(3)))}}
+    for(const x of setFx(eqNow)){if(!zeroed(x.vid))applyChange(st,x.vid,'-',x.val,isPct(x.vid));const q=statOf(x.vid);if(q.startsWith('in:'))applyChange(st,q.slice(3),'-',x.val,isPct(q.slice(3)))}
+    return st}
+  const stFor=cfg=>{const st=baseSt();for(const it of items){const n=effN(it,cfg[it.id]||0);if(n)applyItem(st,it,n,1)}for(const x of setFx(cfg))applyChange(st,x.vid,'+',x.val,isPct(x.vid));return st}
+  const score=cfg=>evalSt(stFor(cfg),false,rulesOf(cfg))
+  const now=evalSt(stFor(eqNow),true,rulesOf(eqNow))
   const pctTxt=x=>`<span class="${x>0?'good':x<0?'bad':''}">${x>=0?'+':''}${fmt(x*100,2)}%</span>`
   const varSel=(sel,cls)=>`<select class="${cls}">${allVars.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
   const rowsUI=(rows,key)=>(rows||[]).map((r,k)=>`<div class="list-row" data-row="${key}:${k}">${varSel(r.vid,'rv')}
@@ -1652,11 +1872,8 @@ function vOpt(c,v){
   const applyRows=(st,rows,sign=1)=>{for(const r of rows||[]){const val=num(r.val);if(!isFinite(val)||!r.vid)continue
     const op=sign<0&&r.op!=='='?(r.op==='+'?'-':'+'):r.op;applyChange(st,r.vid,op,val,isPct(r.vid))}return st}
   // 바꿔 보기 결과
-  const whatIf=(o.whatif||[]).map(w=>{const r=evalSt(applyRows(state0(),w.rows));return{w,r,g:(r-now)/now}})
+  const whatIf=(o.whatif||[]).map(w=>{const r=evalSt(applyRows(stFor(eqNow),w.rows),false,rulesOf(eqNow));return{w,r,g:(r-now)/now}})
   // 최적 셋팅: 틀의 칸·아이템으로 제한 안에서 가장 센 조합 (1~3등)
-  const applyItem=(st,it,n,sign)=>{for(let k=0;k<n;k++)for(const e of it.effects||[]){const val=num(e.val);if(isFinite(val)&&e.vid)applyChange(st,e.vid,sign>0?'+':'-',val,isPct(e.vid))}}
-  const base=()=>{const st=state0();for(const it of items){const n=effN(it,eqNow[it.id]||0);if(n)applyItem(st,it,n,-1)}return st}   // 지금 낀 것 효과 빼기
-  const score=cfg=>{const st=base();for(const it of items){const n=effN(it,cfg[it.id]||0);if(n)applyItem(st,it,n,1)}return evalSt(st,false,rulesOf(cfg))}
   // 확인 상태: ✓ 기록에서 껴 보거나 빼 봄 / △ 계산만 / ✗ 공식에 없는 값이 있음
   const usedSet=new Set(used),tested=new Set()
   for(const x of data.sessions)if(x.templateId===t.id)for(const r of x.records)for(const a of r.items||[])tested.add(a.itemId)
@@ -1664,10 +1881,10 @@ function vOpt(c,v){
     return miss.length?{k:'x',miss}:tested.has(it.id)?{k:'ok'}:{k:'calc'}}
   let top=[],note=''
   if(c.solve&&items.length){
-    const maxOf=it=>Math.max(0,Math.min(num(it.owned)||1,num(it.dupMax)||1))
+    const maxOf=it=>EX[it.id]?0:Math.max(0,Math.min(isFinite(num(it.owned))?num(it.owned):1,num(it.dupMax)||1))
     const slotIds=[...new Set(items.map(it=>it.slotId))]
     const perSlot=slotIds.map(sid=>{const sl=slots.find(q=>q.id===sid)||{mode:'count',max:''},its=items.filter(it=>it.slotId===sid)
-      const lim=num(sl.max),out=[],cur={}
+      const lim=slotMax(sl),out=[],cur={}
       const rec=(k,used2)=>{if(out.length>200000)return
         if(k===its.length){out.push({...cur});return}
         const it=its[k],w=sl.mode==='cost'?(num(it.cost)||1):1
@@ -1680,20 +1897,44 @@ function vOpt(c,v){
       const rec=(k,acc)=>{if(k===perSlot.length)return push(acc,score(acc));for(const o2 of perSlot[k])rec(k+1,{...acc,...o2})}
       rec(0,{});note=`조합 ${total.toLocaleString()}가지를 모두 계산했어요.`
     }else{
-      // 너무 많으면: 칸마다 하나씩 바꿔 보며 좋아질 때까지 (지금 셋팅에서 시작)
-      let cfg={...eqNow},r=score(cfg),improved=true,steps=0
-      while(improved&&steps++<100){improved=false
-        perSlot.forEach(opts=>{for(const o2 of opts){const c2={...cfg,...o2},r2=score(c2);if(r2>r+1e-9){cfg=c2;r=r2;improved=true}}})}
-      push(cfg,r);note=`조합이 너무 많아서(${total.toLocaleString()}가지) 칸마다 바꿔 보며 좋아질 때까지 찾았어요. 가장 좋은 조합이 아닐 수도 있어요.`
+      // 너무 많으면: 칸마다 통째로 바꿔 보며 좋아질 때까지. 출발점 = 지금 셋팅(칸 제한에 맞춘 것) · 빈 상태 · 무작위 몇 개
+      const fit=(opts,src)=>opts.find(o2=>Object.keys(o2).every(id=>(o2[id]||0)===(src[id]||0))&&Object.keys(src).filter(id=>id in opts[0]).every(id=>(o2[id]||0)===(src[id]||0)))||opts[0]
+      let sd=7;const rnd=()=>(sd=(sd*16807)%2147483647)/2147483647
+      const starts=[perSlot.reduce((a,opts)=>({...a,...fit(opts,eqNow)}),{}),perSlot.reduce((a,opts)=>({...a,...opts[0]}),{}),...Array.from({length:4},()=>perSlot.reduce((a,opts)=>({...a,...opts[Math.floor(rnd()*opts.length)]}),{}))]
+      for(const st of starts){let cfg={...st},r=score(cfg),improved=true,steps=0
+        while(improved&&steps++<100){improved=false
+          perSlot.forEach(opts=>{for(const o2 of opts){const c2={...cfg,...o2},r2=score(c2);if(r2>r+1e-9){cfg=c2;r=r2;improved=true}}})}
+        push(cfg,r)}
+      note=`⚠ 근사값 — 조합이 너무 많아서(${total.toLocaleString()}가지) 출발점 ${starts.length}곳에서 칸마다 바꿔 보며 찾았어요. 가장 좋은 조합이 아닐 수도 있어요.`
     }
   }
+  let craftH=''
+  if(c.craft){const st0=stFor(eqNow),rows=[]
+    for(const it of items){const n=eqNow[it.id]||0;if(!n)continue
+      for(const e of it.effects||[]){if(!e.r||!e.vid||!isFinite(num(e.val)))continue;const z={...st0};applyChange(z,e.vid,'-',num(e.val),isPct(e.vid));const r=evalSt(z,false,rulesOf(eqNow));rows.push({it,e,n,loss:(r-now)/now})}}
+    rows.sort((a,b)=>b.loss-a.loss);const w=rows[0],q=w&&slots.find(x=>x.id===w.it.slotId)
+    const tg=w&&q?(q.allow||[]).filter(a=>!q.noDup||a.vid===w.e.vid||!(w.it.effects||[]).some(e=>e.r&&e.vid===a.vid)).map(a=>{const z={...st0};applyChange(z,w.e.vid,'-',num(w.e.val),isPct(w.e.vid));applyChange(z,a.vid,'+',num(a.max)||0,isPct(a.vid));return{a,g:(evalSt(z,false,rulesOf(eqNow))-now)/now}}).sort((x,y)=>y.g-x.g):[]
+    const nm=id=>(byId[id]||tplVars(t).find(x=>x.id===id)||{name:id}).name
+    craftH=`<div class="card model best"><div class="big">옵션 가치표</div><div class="mut">지금 낀 아이템의 옵션(기본 스펙 제외)을 하나씩 빼면 얼마나 줄어드나. 작을수록 약한 옵션.${rows.some(x=>x.n>1)?' 같은 아이템 여러 개면 1개 기준.':''}</div>
+      <div class="scroll"><table><tr><th class="l">아이템 · 옵션</th><th>빼면</th></tr>${rows.map((x,i)=>`<tr${i===0?' class="worst"':''}><td class="l">${i===0?'⚠ ':''}${esc(x.it.name)} · ${esc(nm(x.e.vid))} +${esc(x.e.val)}</td><td>${pctTxt(x.loss)}</td></tr>`).join('')||'<tr><td class="l mut" colspan="2">낀 아이템에 옵션이 없어요 (아이템 고치기에서 효과를 "옵션"으로)</td></tr>'}</table></div>
+      ${w?`<div class="big" style="margin-top:12px">'${esc(w.it.name)} · ${esc(nm(w.e.vid))}' 자리에 노릴 옵션</div><div class="mut">${esc(q?q.name:'')} 칸 옵션 규칙의 최대 수치로 바꿨을 때</div>
+        ${tg.map((x,i)=>`<div class="list-row"><span style="flex:1">${i+1}. ${esc(nm(x.a.vid))} +${esc(x.a.max)}</span>${pctTxt(x.g)}</div>`).join('')||'<div class="mut">이 칸 옵션 규칙이 없어요 (⚙ 게임 설정 › 칸 › 옵션 규칙)</div>'}`:''}</div>`}
   const fsel=(cls,sel,none)=>`<select class="${cls}">${none?`<option value="">${none}</option>`:''}${FL.map(x=>`<option value="${x.key}"${x.key===sel?' selected':''}>${esc(x.label)}</option>`).join('')}</select>`
   const tsel=(sel,k)=>`<select class="cyt" data-k="${k}">${TV.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`
-  v.innerHTML=`<div class="card">
+  const eqCnt=items.reduce((a,i)=>a+(eqNow[i.id]||0),0),usedQ=q=>items.reduce((a,i)=>a+(i.slotId===q.id?(eqNow[i.id]||0)*(q.mode==='cost'?(num(i.cost)||1):1):0),0)
+  const shareTxt=id=>{const a=eqShare(id),kids=Object.keys(VM).filter(k=>statOf(k)==='in:'+id).map(k=>[k,eqShare(k)]).filter(x=>x[1])
+    const M=VM[id]||{},st=state0(),m=M.mul?1+(st[M.mul]||0)/100:1,raw=(st[id]||0)/m,rest=raw-a-kids.reduce((x,y)=>x+y[1],0)
+    if(zeroed(id))return`<div class="mut" style="font-size:12px">${statOf(id)==='0'?'상태창에 안 보임':'상태창 '+esc((byId[statOf(id).slice(3)]||{name:''}).name)+'에 포함'} → 낀 것 합 ${fmt(a)}</div>`
+    if(!a&&!kids.length&&!M.mul)return''
+    return`<div class="mut" style="font-size:12px">${M.mul?`원래 ${fmt(raw)} × ${fmt(m,4)} · `:''}낀 것 ${fmt(a)}${kids.map(([k,x])=>` + ${esc((byId[k]||{name:k}).name)} ${fmt(x)}`).join('')} + 나머지 <span class="${rest<-1e-9?'bad':''}">${fmt(rest)}</span>${rest<-1e-9?' ⚠ 상태값·체크 확인':''}</div>`}
+  v.innerHTML=`<div class="row"><span style="flex:1"></span><button class="sm" id="allC">모두 접기/펴기</button></div>
+  ${sec('cmp','1 무엇으로 비교?',`
     <div class="row" style="gap:6px"><label class="row" style="gap:6px;flex:1"><input type="checkbox" id="cyOn"${cyc.on?' checked':''}><b>사이클로 계산</b> <span class="mut">(일반공격·스킬 여러 개를 횟수만큼 묶어서)</span></label>${hb('cycle')}</div>
     ${!cyc.on?`<label class="f" style="margin-top:8px">쓸 공식<select id="of">${FL.map(x=>`<option value="${x.key}"${x===pick?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label>
       <div class="formula">${esc(F.formula)}</div>`:`
-      <div class="mut" style="margin-top:8px">공격마다 사이클당 횟수(타수 포함)를 적어요. 공식은 [공식 찾기]에서 저장한 것이 자동으로 쓰여요.</div>
+      <div class="mut" style="margin-top:8px">공격마다 사이클당 횟수(타수 포함)를 적어요.</div>
+      <div class="card" style="background:var(--card2)"><b>공격 그룹마다 쓸 공식</b> <span class="mut">(최근 저장한 완전 일치 공식이 자동)</span>
+        ${TV.map(m=>{const L=FL.filter(x=>normT(x.f.target)===m.id),cur=bestF(m.id);return L.length?`<label class="f" style="margin-top:6px">${esc(m.name)}<select data-fsel="${m.id}">${L.map(x=>`<option value="${x.key}"${cur&&cur.key===x.key?' selected':''}>${esc(x.label)}${x.f.exact?' ✓':''}</option>`).join('')}</select></label>`:''}).join('')}</div>
       ${(cyc.list||[]).map((e,k)=>{const en=entries[k],d=parts&&parts.det[k]
         return`<div class="card" style="background:var(--card2)" data-cy="${k}">
           <div class="list-row"><input type="text" class="cyname" value="${esc(e.name||'')}" placeholder="공격 이름 (평타, 스킬A …)" style="flex:1"><button class="sm danger cydl">✕</button></div>
@@ -1719,45 +1960,75 @@ function vOpt(c,v){
         <option value="time"${byTime?' selected':''}>② 시간당: 정해진 시간 동안 몇 번씩 (예: 10초에 일반 23회) → 초당 데미지</option></select></label>
       ${byTime?`<label class="f" style="margin-top:6px">몇 초 동안 센 횟수인가요?<input type="text" class="cyti" value="${esc(cyc.time??'')}" placeholder="10"></label>
         <div class="mut">공속 옵션을 바꾸면 그 셋팅에서 횟수를 다시 세어 적어 주세요.</div>`:''}`}
-  </div>
-  <div class="card"><div class="big">내 상태 ${hb('state')}</div><div class="mut">마지막 기록 기준이에요. 지금 상태가 다르면 고치세요 (비우면 마지막 기록 값).</div>
-    <div class="grid" style="margin-top:8px">${used.map(id=>`<label class="f">${esc((byId[id]||{name:id}).name)}<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}"></label>`).join('')}</div>
-    <div class="big" style="margin-top:10px">예상 ${esc(objName)}: ${fmt(now)}</div></div>
+  `,true,cyc.on?(byTime?'시간당':'사이클당'):'공식 하나')}
+  ${sec('eq','2 아이템 목록 · 지금 낀 것',`
+    <select id="olist" style="width:100%">${listsOf(t).map(l=>`<option value="${l.id}"${l.id===LID?' selected':''}>${esc(l.name)} (${l.items.length})</option>`).join('')}</select>
+    <div class="mut" style="margin-top:6px">지금 실제로 낀 것만 체크. 체크한 건 <b>상태창 값에 이미 들어 있는 것</b>으로 봐요 (더하지 않고, 바꿀 때만 빼고 새 걸 넣음).</div>
+    ${slots.map(q=>{const u=usedQ(q),mx=slotMax(q);return`<div class="list-row" style="margin-top:10px"><b style="flex:1">${esc(q.name)} <span class="mut ${isFinite(mx)&&u>mx?'bad':''}" style="font-weight:400">${q.mode==='cost'?'코스트 ':''}${u}/${isFinite(mx)?mx:'∞'}</span></b><span class="mut">${q.mode==='cost'?'지금 코스트':'지금 칸 수'}</span><input type="text" data-smx="${q.id}" value="${isFinite(mx)?mx:''}" style="width:52px;text-align:right">${SMX[q.id]!=null&&String(SMX[q.id])!==String(q.max)?`<button class="sm ghost" data-smr="${q.id}">기본값(${esc(q.max)})</button>`:''}</div>
+      ${items.filter(i=>i.slotId===q.id).map(i=>{const lim=Math.min(isFinite(num(i.owned))?num(i.owned):1,num(i.dupMax)||1);return`<div class="list-row">${lim>1?`<input type="text" data-eqn="${i.id}" value="${eqNow[i.id]||0}" style="width:44px;text-align:right">`:`<input type="checkbox" data-eqc="${i.id}"${eqNow[i.id]?' checked':''}${lim<1&&!eqNow[i.id]?' disabled':''}>`}<div style="flex:1;min-width:0">${esc(i.name)}${EX[i.id]?' <span class="tag bad">최적화에서 제외</span>':''}<div class="mut">${esc(effText(t,i))}</div></div></div>`}).join('')}`}).join('')||'<div class="mut">⚙ 게임 설정에서 칸 종류부터 만들어요.</div>'}
+    <button class="sm" id="goItems" style="margin-top:8px">아이템 고치기</button>`,true,`${esc(LST.name)} · 낀 것 ${eqCnt}개`)}
+  ${sec('state','3 내 상태 (상태창 값)',`<div class="mut">상태창에 <b>지금 보이는 숫자 그대로</b> 적어요. 비우면 마지막 기록 값. 체크한 아이템은 이 숫자에 이미 들어 있는 것으로 보고 나눠서 계산해요.</div>
+    <div class="card" style="background:var(--card2);font-size:13px">예) 상태창 공격력 <b>10,000</b>, 공격력 1,000 반지를 끼고 있음 → 10,000 = 반지 1,000 + 나머지 9,000 → 1,500 반지로 바꾸면 9,000 + 1,500 = <b>10,500</b> (11,000이 아님)</div>
+    <div class="grid" style="margin-top:8px">${used.map(id=>{const cp=capOf(id),sv=state0()[id]||0;return`<label class="f">${esc((byId[id]||{name:id}).name)}${cp!=null?` <span class="mut">(최대 ${fmt(cp)})</span>`:''}${zeroed(id)?'':`<input type="text" data-st="${id}" value="${isFinite((o.state||{})[id])?o.state[id]:''}" placeholder="${fmt((lastRow&&lastRow.v[id])||0)}">`}${shareTxt(id)}
+      ${cp!=null&&sv>=cp?`<span class="bad" style="font-size:12px">최대라 실제 합을 모름 → 실제 합<input type="text" data-real="${id}" value="${isFinite((o.real||{})[id])?o.real[id]:''}" placeholder="예: 110"></span>`:''}</label>`}).join('')}</div>
+    <div class="mut" style="margin-top:6px">상태창 규칙(안 보임·포함·% 곱해져 보임·최대)은 ⚙ 게임 설정에서.</div>
+    <div class="big" style="margin-top:10px">예상 ${esc(objName)}: ${fmt(now)}</div>`,true,'예상 '+fmt(now))}
   <div class="card"><div class="big">무엇을 올리면 이득? ${hb('gain')}</div><div class="mut">지금 상태에서 하나씩 조금 올렸을 때 (아이템 특수 능력·사이클 포함)</div>
-    ${(()=>{const st0=state0(),ex=rulesOf(eqNow),rows=used.map(id=>{const x=byId[id];if(!x)return null
+    ${(()=>{const st0=stFor(eqNow),ex=rulesOf(eqNow),rows=used.map(id=>{const x=byId[id];if(!x)return null
         const def=x.unit==='pct'?1:(()=>{const a=Math.abs(st0[id]||0)*0.01;if(!a)return 1;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
         const own=num((o.steps||{})[id]),stp=isFinite(own)&&own?own:def
-        const z=state0();applyChange(z,id,'+',stp,x.unit==='pct');const r=evalSt(z,false,ex);return{x,stp,g:(r-now)/now}}).filter(q=>q&&isFinite(q.g)).sort((a,b)=>b.g-a.g)
-      return`<div class="scroll"><table><tr><th class="l">항목</th><th>올리는 양</th><th>변화</th></tr>${rows.map(q=>`<tr><td class="l">${esc(q.x.name)}</td>
+        const z=stFor(eqNow);applyChange(z,id,'+',stp,x.unit==='pct');const r=evalSt(z,false,ex);return{x,stp,g:(r-now)/now,cap:capOf(id)!=null&&(st0[id]||0)>=capOf(id)}}).filter(q=>q&&isFinite(q.g)).sort((a,b)=>b.g-a.g)
+      return`<div class="scroll"><table><tr><th class="l">항목</th><th>올리는 양</th><th>변화</th></tr>${rows.map(q=>`<tr><td class="l">${esc(q.x.name)}${q.cap?' <span class="tag bad">상한</span>':''}${(VM[q.x.id]||{}).mul?' <span class="mut">(원래 값 기준)</span>':''}</td>
         <td><input type="text" data-gs="${q.x.id}" value="${fmt(q.stp).replace(/,/g,'')}" style="width:90px;text-align:right">${q.x.unit==='pct'?'%':''}</td><td>${pctTxt(q.g)}</td></tr>`).join('')}</table></div>
         <div class="mut">올리는 양은 고칠 수 있어요 (예: 실제로 바꿀 룬 수치). 비우면 기본값.</div>`})()}</div>
+  <details class="card osec" data-sec="adv"${optOpen(t.id,'adv',false)?' open':''}><summary style="font-size:16px;font-weight:600;color:var(--fg)">고급 — 특수 효과 · 바꿔 보기</summary>
   <div class="card"><div class="big">특수 효과 ${hb('rules')}</div><div class="mut">게임 설명에 적힌 효과를 식으로 적어요. 다른 값은 [이름]으로 불러요. 예: 대상 '스킬 공격력 %' · += · <code>[마력] * 0.1</code></div>
     ${(o.rules||[]).map((r,k)=>`<div class="list-row" data-rule="${k}">${varSel(r.target,'rt')}<select class="rop2">${['+','='].map(q=>`<option${q===(r.op||'+')?' selected':''}>${q}</option>`).join('')}</select><input type="text" class="rex" value="${esc(r.expr||'')}" placeholder="[마력] * 0.1" style="flex:1"><button class="sm danger rrm">✕</button></div>`).join('')}
     <button class="sm" id="addRule">+ 효과</button></div>
   <div class="card"><div class="big">바꿔 보기 ${hb('whatif')}</div><div class="mut">무엇을 바꾸면 얼마나 변하는지. 여러 줄을 한 묶음으로 (예: 룬 A 빼고 B 끼기).</div>
     ${(o.whatif||[]).map((w,k)=>{const q=whatIf[k];return`<div class="card" style="background:var(--card2)" data-wi="${k}"><div class="list-row"><input type="text" class="wn" value="${esc(w.name||'')}" placeholder="이름 (예: 룬 B로 교체)" style="flex:1"><b>${isFinite(q.r)?pctTxt(q.g):'-'}</b><button class="sm danger wdel">✕</button></div>
       ${rowsUI(w.rows,'w'+k)}<button class="sm ghost wadd">+ 바뀌는 값</button><div class="mut">→ ${fmt(q.r)}</div></div>`}).join('')}
-    <button class="sm" id="addWi">+ 바꿔 보기</button></div>
+    <button class="sm" id="addWi">+ 바꿔 보기</button></div></details>
+  <div class="card"><div class="big">바꿀 옵션 찾기 ${hb('craft')}</div><div class="mut">지금 낀 옵션 중 가장 약한 것과, 그 자리에 노릴 옵션 순위 (룬을 직접 만들며 바꾸는 게임용).</div>
+    <button class="pri" id="craft" style="margin-top:8px">옵션 가치 계산</button>${craftH}</div>
   <div class="card"><div class="big">최적 셋팅 ${hb('optimize')}</div>
     ${!items.length?`<div class="mut">틀에 칸과 아이템(스킬, 룬, 장비 …)을 등록하면, 제한 안에서 가장 센 조합을 찾아요.</div><button class="sm pri" id="goItems" style="margin-top:8px">아이템 등록하러 가기</button>`:(()=>{
       const st=items.map(it=>({it,s:status(it)})),need=st.filter(q=>q.s.k!=='ok')
       return`${need.length?`<div class="card" style="background:var(--card2)"><div class="big">실험이 필요한 것</div><ul class="hints">${need.map(q=>q.s.k==='x'
           ?`<li><b>${esc(q.it.name)}</b> ✗ 공식에 없는 값: ${esc(q.s.miss.map(id=>(byId[id]||{name:id}).name).join(', '))} → 이 값을 바꿔 가며 기록하고 공식을 다시 찾아야 정확해요 (지금은 이 부분 빼고 계산)</li>`
           :`<li><b>${esc(q.it.name)}</b> △ 아직 껴 본 기록 없음 → 적어 둔 수치로만 계산했어요. 한 번 껴 보고 기록하면 확인돼요.</li>`).join('')}</ul></div>`:''}
-      <div class="scroll"><table><tr><th class="l">아이템</th><th class="l">칸</th><th>낌</th><th>확인</th><th class="l">조건</th></tr>
+      <details><summary>아이템 확인 상태 · 조건</summary><div class="scroll"><table><tr><th class="l">아이템</th><th class="l">칸</th><th>낌</th><th>확인</th><th class="l">조건</th></tr>
       ${st.map(({it,s:q})=>`<tr><td class="l">${esc(it.name)}</td><td class="l">${esc((slots.find(x=>x.id===it.slotId)||{name:'-'}).name)}</td><td>${eqNow[it.id]||''}</td>
         <td>${q.k==='ok'?'<span class="good">✓</span>':q.k==='calc'?'△':'<span class="bad">✗</span>'}</td>
-        <td class="l">${it.cond?`<label class="row" style="gap:4px"><input type="checkbox" data-cond="${it.id}"${condOn[it.id]?' checked':''}>켬</label>`:''}</td></tr>`).join('')}</table></div>
-      <div class="row" style="margin-top:10px"><button class="pri" id="solve">최적 조합 찾기</button><button class="sm" id="goItems">아이템 고치기</button></div>
+        <td class="l">${it.cond?`<label class="row" style="gap:4px"><input type="checkbox" data-cond="${it.id}"${condOn[it.id]?' checked':''}>켬</label>`:''}</td></tr>`).join('')}</table></div></details>
+      <div class="row" style="margin-top:10px"><button class="pri" id="solve">최적 조합 찾기</button></div>
       ${top.map((b,i)=>{const nm=id=>(items.find(x=>x.id===id)||{name:'?'}).name,cnt=(cfg,id)=>cfg[id]||0
         const lst=cfg=>items.filter(it=>cnt(cfg,it.id)).map(it=>esc(it.name)+(cnt(cfg,it.id)>1?' ×'+cnt(cfg,it.id):'')).join(', ')||'-'
         const add=items.filter(it=>cnt(b.cfg,it.id)>cnt(eqNow,it.id)).map(it=>esc(it.name)+(cnt(b.cfg,it.id)-cnt(eqNow,it.id)>1?' ×'+(cnt(b.cfg,it.id)-cnt(eqNow,it.id)):''))
         const rm=items.filter(it=>cnt(b.cfg,it.id)<cnt(eqNow,it.id)).map(it=>esc(it.name)+(cnt(eqNow,it.id)-cnt(b.cfg,it.id)>1?' ×'+(cnt(eqNow,it.id)-cnt(b.cfg,it.id)):''))
         return`<div class="card model${i===0?' best':''}" style="margin-top:10px"><div class="big">${i+1}등: ${esc(objName)} ${fmt(b.r)} ${pctTxt((b.r-now)/now)}${!add.length&&!rm.length?' <span class="tag">지금 그대로</span>':''}</div>
-          <div>끼기: ${lst(b.cfg)}</div><div class="good">넣기: ${add.join(', ')||'없음'}</div><div class="bad">빼기: ${rm.join(', ')||'없음'}</div></div>`}).join('')}
+          <div class="good">넣기: ${add.join(', ')||'없음'}</div><div class="bad">빼기: ${rm.join(', ')||'없음'}</div>
+          ${(()=>{const sx=setFx(b.cfg);return sx.length?`<div>세트: ${esc([...new Set(sx.map(x=>x.name+' '+x.cnt+'개'))].join(', '))}</div>`:''})()}
+          ${i===0?`<div class="mut" style="margin-top:6px">끼기 전체 — ✕ 누르면 빼고 다시 찾기</div><div class="chips">${items.filter(it=>cnt(b.cfg,it.id)).map(it=>`<span class="tag" style="font-size:13px">${esc(it.name)}${cnt(b.cfg,it.id)>1?' ×'+cnt(b.cfg,it.id):''} <button class="sm ghost" data-x="${it.id}" style="padding:0 4px">✕</button></span>`).join('')||'<span class="mut">아무것도 안 끼는 게 최고</span>'}</div>`:`<div class="mut">끼기: ${lst(b.cfg)}</div>`}
+          ${i===0&&b.r<now-1e-9?'<div class="bad">지금보다 낮음 — 제외한 아이템을 지금 끼고 있어서 그래요</div>':''}</div>`}).join('')}
+      ${Object.keys(EX).length?`<div class="mut" style="margin-top:8px">제외한 것: ${items.filter(it=>EX[it.id]).map(it=>`<span class="tag bad">${esc(it.name)} <button class="sm ghost" data-ux="${it.id}" style="padding:0 4px">되돌리기</button></span>`).join('')} <button class="sm ghost" data-ux="*">모두 되돌리기</button></div>`:''}
       ${top.length?`<div class="mut">${esc(note)}</div>`:''}`})()}
   </div>`
-  const save=f=>{mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=false;render()}
+  const save=f=>{mutate(d=>{const x=d.templates.find(q=>q.id===t.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=false;c.craft=false;render()}
+  const keepSolve=f=>{mutate(d=>{const x=d.templates.find(q=>q.id===t.id);if(!x)return;x.opt=x.opt||{};f(x.opt)});c.solve=true;render()}
+  v.querySelectorAll('.osec').forEach(d=>d.ontoggle=()=>optOpenSet(t.id,d.dataset.sec,d.open))
+  $('#allC').onclick=()=>{const ds=[...v.querySelectorAll('.osec')],any=ds.some(d=>d.open);ds.forEach(d=>{d.open=!any;optOpenSet(t.id,d.dataset.sec,!any)})}
+  v.querySelectorAll('[data-fsel]').forEach(e=>e.onchange=()=>save(op=>{op.fsel=op.fsel||{};op.fsel[e.dataset.fsel]=e.value}))
+  const ol=$('#olist');if(ol)ol.onchange=()=>save(op=>{op.list=ol.value;op.eq={};op.ex={}})
+  v.querySelectorAll('[data-eqc]').forEach(e=>e.onchange=()=>save(op=>{op.eq=op.eq||{};if(e.checked)op.eq[e.dataset.eqc]=1;else delete op.eq[e.dataset.eqc]}))
+  v.querySelectorAll('[data-eqn]').forEach(e=>e.onchange=()=>{const it=items.find(i=>i.id===e.dataset.eqn),lim=Math.min(isFinite(num(it.owned))?num(it.owned):1,num(it.dupMax)||1),n=Math.max(0,Math.min(lim,Math.round(num(e.value)||0)))
+    save(op=>{op.eq=op.eq||{};if(n)op.eq[it.id]=n;else delete op.eq[it.id]})})
+  v.querySelectorAll('[data-smx]').forEach(e=>e.onchange=()=>save(op=>{op.smax=op.smax||{};const n=num(e.value);if(isFinite(n))op.smax[e.dataset.smx]=Math.max(0,n);else delete op.smax[e.dataset.smx]}))
+  v.querySelectorAll('[data-smr]').forEach(b=>b.onclick=()=>save(op=>{if(op.smax)delete op.smax[b.dataset.smr]}))
+  v.querySelectorAll('[data-real]').forEach(e=>e.onchange=()=>save(op=>{op.real=op.real||{};const n=num(e.value);if(isFinite(n))op.real[e.dataset.real]=n;else delete op.real[e.dataset.real]}))
+  v.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>keepSolve(op=>{op.ex=op.ex||{};op.ex[b.dataset.x]=1}))
+  v.querySelectorAll('[data-ux]').forEach(b=>b.onclick=()=>keepSolve(op=>{if(b.dataset.ux==='*')op.ex={};else if(op.ex)delete op.ex[b.dataset.ux]}))
+  const cr=$('#craft');if(cr)cr.onclick=()=>{c.craft=true;render()}
   const of=$('#of');if(of)of.onchange=e=>save(op=>op.formula=e.target.value)
   $('#cyOn').onchange=e=>save(op=>{op.cyc2=op.cyc2||{list:[]};op.cyc2.on=e.target.checked
     if(!op.cyc2.list.length&&t.measures[0])op.cyc2.list.push({name:t.measures[0].name,group:t.measures[0].id,count:'1',crit:t.useCrit===false?'none':'can'})})
@@ -1781,19 +2052,19 @@ function vOpt(c,v){
     el.querySelector('.rt').onchange=upd;el.querySelector('.rop2').onchange=upd;el.querySelector('.rex').onchange=upd
     el.querySelector('.rrm').onclick=()=>save(op=>op.rules.splice(k,1))})
   // 줄 편집 (바꿔 보기 / 옵션 공통)
-  const listOf=(op,key)=>op.whatif[+key.slice(1)]
+  const wlistOf=(op,key)=>op.whatif[+key.slice(1)]
   v.querySelectorAll('[data-row]').forEach(el=>{const [key,k]=el.dataset.row.split(':')
-    const upd=()=>save(op=>{const r=listOf(op,key).rows[+k];r.vid=el.querySelector('.rv').value;r.op=el.querySelector('.rop').value;r.val=el.querySelector('.rval').value})
+    const upd=()=>save(op=>{const r=wlistOf(op,key).rows[+k];r.vid=el.querySelector('.rv').value;r.op=el.querySelector('.rop').value;r.val=el.querySelector('.rval').value})
     el.querySelector('.rv').onchange=upd;el.querySelector('.rop').onchange=upd;el.querySelector('.rval').onchange=upd
-    el.querySelector('.rdel').onclick=()=>save(op=>listOf(op,key).rows.splice(+k,1))
-    el.querySelector('.rdh').onclick=()=>deltaHelper(d=>save(op=>{const r=listOf(op,key).rows[+k];r.op='+';r.val=d}))})
+    el.querySelector('.rdel').onclick=()=>save(op=>wlistOf(op,key).rows.splice(+k,1))
+    el.querySelector('.rdh').onclick=()=>deltaHelper(d=>save(op=>{const r=wlistOf(op,key).rows[+k];r.op='+';r.val=d}))})
   const firstVar=used[0]||(allVars[0]&&allVars[0].id)
   $('#addWi').onclick=()=>save(op=>(op.whatif=op.whatif||[]).push({name:'',rows:[{vid:firstVar,op:'+',val:''}]}))
   v.querySelectorAll('[data-wi]').forEach(el=>{const k=+el.dataset.wi
     el.querySelector('.wn').onchange=e=>save(op=>op.whatif[k].name=e.target.value)
     el.querySelector('.wdel').onclick=()=>save(op=>op.whatif.splice(k,1))
     el.querySelector('.wadd').onclick=()=>save(op=>op.whatif[k].rows.push({vid:firstVar,op:'+',val:''}))})
-  v.querySelectorAll('#goItems').forEach(b=>b.onclick=()=>go({v:'items',id:t.id}))
+  v.querySelectorAll('#goItems').forEach(b=>b.onclick=()=>go({v:'items',id:t.id,lid:LID}))
   v.querySelectorAll('[data-cond]').forEach(e=>e.onchange=()=>save(op=>{op.condOn=op.condOn||{};op.condOn[e.dataset.cond]=e.target.checked}))
   const sv=$('#solve');if(sv)sv.onclick=()=>{c.solve=true;render()}
 }
