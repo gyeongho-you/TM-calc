@@ -901,9 +901,14 @@ function petCycle(S,p,g){const k=p.skill||{},mana=num(k.mana)||0,per=num(k.per)|
   return{mode:'cycle',list:L,nb}}
 function deckGroups(S,sp){const ms=S.measures,find=re=>(ms.find(m=>re.test(m.name))||{}).id
   return{basic:(sp.grp||{}).basic||find(/평타|일반|기본/)||(ms[0]||{}).id,skill:(sp.grp||{}).skill||find(/스킬/)||(ms[1]||ms[0]||{}).id}}
-function deckEval(S,st,deck,g){let r=0,miss=0;const per=[]
-  for(const p of deck.pets){const e=setEval(S,petState(S,st,p),petCycle(S,p,g));r+=e.r;miss+=e.miss;per.push(e.r)}
-  return{r,miss,per}}
+/** 10초 동안 공격 횟수(배속 끄고 직접 센 값, 소환수 종류마다 고정) → 초당 공격 */
+const petAps=p=>{const n=num((p.skill||{}).aps);return n>0?n/10:null}
+function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],speed=deck.pets.length>0&&deck.pets.every(p=>petAps(p))
+  for(const p of deck.pets){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy)
+    // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
+    const v=speed?e.r/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/petAps(p)):e.r
+    r+=v;miss+=e.miss;per.push(v)}
+  return{r,miss,per,speed}}
 function vSpec(v){
   const S=activeSet(),sets=data.formulaSets||[],SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
@@ -940,11 +945,13 @@ function vSpec(v){
       ${inPet.length?`<div class="grid">${inPet.map(i=>`<label class="f">${esc(i.name)}<input type="text" class="pst" data-k="${esc(i.id)}" value="${esc((p.st||{})[i.id]??'')}"></label>`).join('')}</div>`:''}
       <div class="grid" style="margin-top:4px"><label class="f">최대 마나<input type="text" class="sk" data-k="mana" value="${esc(sk.mana??'')}" placeholder="5"></label><label class="f">평타당 마나<input type="text" class="sk" data-k="per" value="${esc(sk.per??'')}" placeholder="1"></label>
         <label class="f">스킬 배율 %<input type="text" class="sk" data-k="pct" value="${esc(sk.pct??'')}" placeholder="300"></label><label class="f">스킬 타수<input type="text" class="sk" data-k="hits" value="${esc(sk.hits??'')}" placeholder="1"></label>
-        <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label></div>
+        <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label>
+        <label class="f">10초 공격 횟수 (배속 끄고 직접 세기)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label></div>
       <div class="mut">한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${BR&&TMCalc.savedPets?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
-      <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬 값은 이름별로 기억해요.</div>`
+      <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬·공격 횟수는 소환수 이름별로 기억해요 (종류마다 고정이라 한 번만 세면 돼요).</div>
+      ${pets.length>1&&!base.speed?'<div class="bad" style="margin-top:4px">공격 횟수가 빈 소환수가 있어서 모두 같은 속도로 계산 중 — 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>':''}`
     :'<div class="mut" style="margin-top:6px">덱이 없으면 아래 공격 구성으로 계산해요. [+ 새 덱]으로 소환수 3마리를 넣으면 속성·타입 강화까지 덱 기준으로 계산해요.</div>'}</details>
   ${useDeck?'':`<details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">공격 구성 <span class="mut" style="font-weight:400">(덱 없이 직접)</span></summary>
     <div class="seg" style="margin-top:8px"><button data-cm="cycle" class="${!byTime?'on':''}">한 바퀴당 (횟수)</button><button data-cm="time" class="${byTime?'on':''}">초당</button></div>
@@ -960,7 +967,7 @@ function vSpec(v){
         ${S.useCrit?`<label class="f">치명<select class="ckr">${[['none','안 터짐'],['can','확률대로'],['always','항상']].map(([q,l])=>`<option value="${q}"${(e.crit||'can')===q?' selected':''}>${l}</option>`).join('')}</select></label>`:''}</div></div>`).join('')||'<div class="mut" style="margin-top:6px">공격이 없으면 첫 공격 그룹 한 방으로 계산해요.</div>'}
     <button class="sm" id="cAdd" style="margin-top:6px">+ 공격</button></details>`}
   <div class="card"><div class="big">무엇을 올리면 이득?</div>
-    <div class="mut">지금 상태에서 하나씩 '올릴 양'만큼 올렸을 때 ${useDeck?'덱 전체':byTime?'초당':'한 바퀴'} 데미지가 몇 % 오르나 (올릴 양은 고칠 수 있어요)</div>
+    <div class="mut">지금 상태에서 하나씩 '올릴 양'만큼 올렸을 때 ${useDeck?(base.speed?'덱 전체 초당':'덱 전체'):byTime?'초당':'한 바퀴'} 데미지가 몇 % 오르나 (올릴 양은 고칠 수 있어요)</div>
     ${S.useCrit&&isFinite(num(st['g:crit:dmg:pct']))&&num(st['g:crit:dmg:pct'])<100?'<div class="bad" style="margin-top:6px">치명 피해는 배율 %로 적어요 (1.5배 = 150).</div>':''}
     ${base.miss?`<div class="bad">공식이 없는 공격 그룹이 있어요 — 그 공격은 빼고 계산</div>`:''}
     ${ok?`<div class="scroll"><table style="margin-top:6px"><tr><th class="l">스펙</th><th>올릴 양</th><th>데미지</th></tr>${rows.map((r,n)=>`<tr><td class="l"><b>${n+1}</b> ${esc(r.name)}${useDeck&&r.n!=null?` <span class="mut">(${r.n}마리)</span>`:''}${r.cap?' <span class="tag bad">최대</span>':''}<div style="height:6px;border-radius:3px;background:var(--acc);margin-top:3px;width:${Math.max(3,Math.max(0,r.g)/mx*100)}%"></div></td>
