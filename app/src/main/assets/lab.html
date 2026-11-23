@@ -851,7 +851,7 @@ function vHome(c,v){
 function homeExp(t,v){
   const ss=data.sessions.filter(s=>s.templateId===t.id).sort((a,b)=>(b.id===active)-(a.id===active)||b.created-a.created)
   v.innerHTML=`<h2>실험 ${hb('session')}<span class="sp"></span><button class="pri sm" id="nS">+ 새 실험</button></h2>
-  <details class="card"><summary><b>? 재기 전에 꼭</b></summary><div style="font-size:13px;margin-top:8px;line-height:1.7">
+  <details class="card"><summary><b>필수 확인 사항</b></summary><div style="font-size:13px;margin-top:8px;line-height:1.7">
     · <b>같은 대상</b>에서 재요. 허수아비나 같은 몬스터요. 대상이 바뀌면 방어력이 달라져서 공식이 틀려져요.<br>
     · 데미지가 <b>1.2만, 1.2K</b>처럼 줄여서 보이면 정확한 숫자가 보이게 설정을 바꾸고 재요.<br>
     · <b>조건부 효과</b>(체력 50% 이하일 때, 보스에게만, 스택)는 켠 상태나 끈 상태 하나로 고정하고 재요.<br>
