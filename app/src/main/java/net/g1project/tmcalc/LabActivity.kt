@@ -65,6 +65,19 @@ class LabActivity : Activity() {
             runCatching { LabData.save(this@LabActivity, JSONObject(json)) }.onFailure { toast("저장하지 못했습니다: ${it.message}") }
         }
 
+        /** 저장한 소환수 목록 (최적화 › 덱에 불러오기): 이름·속성·타입·능력치(공·방·순·체) */
+        @JavascriptInterface fun savedPets(): String {
+            val db = PetStore.load(this@LabActivity)
+            val arr = org.json.JSONArray()
+            for (p in AppPrefs.presets(this@LabActivity)) {
+                val pet = db.find(p.name)
+                arr.put(JSONObject().put("label", p.label).put("name", p.name).put("level", p.level)
+                    .put("element", pet?.element ?: "").put("type", pet?.type ?: "").put("grade", pet?.grade ?: "")
+                    .put("stats", org.json.JSONArray(p.stats.toList())))
+            }
+            return arr.toString()
+        }
+
         @JavascriptInterface fun getActive(): String = AppPrefs.labActive(this@LabActivity).orEmpty()
 
         @JavascriptInterface fun setActive(id: String) = AppPrefs.setLabActive(this@LabActivity, id.ifBlank { null })
