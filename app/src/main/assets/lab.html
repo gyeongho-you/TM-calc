@@ -1050,6 +1050,50 @@ function vSpec(v){
       r.querySelector('.wrx').onclick=()=>wv(W=>W[k].rows.splice(j,1))})})
 }
 
+// ---------------------------------------------------------------- 룬 비교 (게임 위 [계산]에서 부름): 옛 룬 → 새 룬, 저장한 내 스펙·덱·공식 세트로 % 변화
+/** 룬 옵션 이름 → 공식 세트의 받을 값 키 (속성·타입별은 @속성 / @타입 붙임). 못 찾으면 null */
+function runeKey(S,label){const L=String(label).replace(/\s/g,'')
+  const ins=S.inputs,nm=i=>i.name.replace(/\s/g,'').replace(/%$/,'')
+  // 공식 세트를 만들 때 연구실에서 연결해 둔 것 먼저
+  const rm=(S.runeMap||{})[label];if(rm==='skip')return null
+  const byId=rm&&ins.find(i=>i.id===rm)
+  const elem=ELEMS.find(e=>L.startsWith(e)||(e==='불'&&L.startsWith('화염'))),type=TYPES.find(t=>L.startsWith(t))
+  if(byId){const sc=scopeOf(S,byId);return sc==='elem'&&elem?byId.id+'@'+elem:sc==='type'&&type?byId.id+'@'+type:sc==='user'?byId.id:null}
+  if(/^모든속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='user'&&/모든/.test(i.name));return i?i.id:null}
+  if(elem&&/속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='elem');return i?i.id+'@'+elem:null}
+  if(type&&/타입/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='type');return i?i.id+'@'+type:null}
+  if(L==='공격력'){const i=ins.find(i=>scopeOf(S,i)==='user'&&i.unit==='flat'&&/공격/.test(i.name)&&!/장비/.test(i.name))||ins.find(i=>scopeOf(S,i)==='user'&&/공격/.test(i.name));return i?i.id:null}
+  const i=ins.find(i=>scopeOf(S,i)==='user'&&(nm(i).includes(L)||L.includes(nm(i))));return i?i.id:null}
+/** 만 단위 표시값 (lo~hi) → 수치 표(등급|옵션 → 레벨 → 값)로 추정, 없으면 범위 가운데 */
+function runeNum(S,grade,label,level,n){if(!n)return{v:0,est:false};if(n.lo===n.hi)return{v:n.lo,est:false}
+  const T=((S.runeTable||{})[grade+'|'+label])||{},pts=Object.entries(T).map(([k,v])=>[+k,+v]).filter(p=>isFinite(p[0])&&isFinite(p[1]))
+  if(level!=null&&new Set(pts.map(p=>p[0])).size>=2){const mx=pts.reduce((a,p)=>a+p[0],0)/pts.length,my=pts.reduce((a,p)=>a+p[1],0)/pts.length
+    const sxx=pts.reduce((a,p)=>a+(p[0]-mx)**2,0);if(sxx>0){const b=pts.reduce((a,p)=>a+(p[0]-mx)*(p[1]-my),0)/sxx;return{v:Math.min(n.hi,Math.max(n.lo,Math.round(my+b*(level-mx)))),est:true}}}
+  return{v:Math.floor((n.lo+n.hi)/2),est:true}}
+/** 게임 위에서 부르는 입구. a,b = {grade,name,level,atk:{lo,hi,pct},subs:[[label,{lo,hi,pct}]]} → 결과 JSON */
+window.runeCompare=function(aJ,bJ){loadData()
+  const a=typeof aJ==='string'?JSON.parse(aJ):aJ,b=typeof bJ==='string'?JSON.parse(bJ):bJ
+  const S=activeSet();if(!S)return JSON.stringify({err:'공식 세트가 없어요. 앱 > 최적화에서 공식 세트를 불러오거나 만들어 주세요.'})
+  const sp=data.spec||{},st=(sp.st)||{};if(!Object.keys(st).length)return JSON.stringify({err:'내 스펙이 비어 있어요. 앱 > 최적화 > 스펙 효율에서 내 스펙을 먼저 저장해 주세요.'})
+  const deck=curDeck(sp),useDeck=deck&&deck.pets.length>0,g=deckGroups(S,sp),cyc=sp.cyc||{mode:'cycle',list:[]}
+  const evalAll=s=>useDeck?deckEval(S,s,deck,g):setEval(S,s,cyc)
+  const base=evalAll(st);if(!(base.r>0))return JSON.stringify({err:'지금 내 스펙으로 계산이 안 돼요. 앱 > 최적화에서 내 스펙을 확인해 주세요.'})
+  const labels=[...new Set(['공격력',...(a.subs||[]).map(x=>x[0]),...(b.subs||[]).map(x=>x[0])])]
+  const rows=[],s2={...st}
+  for(const lab of labels){const na=lab==='공격력'?a.atk:((a.subs||[]).find(x=>x[0]===lab)||[])[1],nb=lab==='공격력'?b.atk:((b.subs||[]).find(x=>x[0]===lab)||[])[1]
+    const va=runeNum(S,a.grade,lab,a.level,na),vb=runeNum(S,b.grade,lab,b.level,nb),k=runeKey(S,lab),pct=!!((na||nb||{}).pct)
+    let why=''
+    if(!k)why='계산 안 함'
+    else if(useDeck&&k.includes('@')){const tag=k.split('@')[1];if(!deck.pets.some(p=>normElem(p.elem)===tag||p.type===tag))why=`덱에 ${tag} 없음`}
+    else if(!useDeck&&k.includes('@'))why='덱이 없어서 계산 안 함'
+    if(k&&!why)s2[k]=(num(s2[k])||0)+vb.v-va.v
+    rows.push({label:lab,old:va.v,new:vb.v,d:vb.v-va.v,pct,est:va.est||vb.est,why})}
+  const g2=(evalAll(s2).r/base.r-1)*100
+  return JSON.stringify({set:S.name,deck:useDeck?deck.name:null,decks:(sp.decks||[]).map(d=>({id:d.id,name:d.name,n:d.pets.length})),deckId:deck&&deck.id,
+    a:{name:a.name,grade:a.grade,level:a.level},b:{name:b.name,grade:b.grade,level:b.level},g:g2,rows})}
+/** 게임 위 결과 창에서 덱 바꾸기 */
+window.runeSetDeck=function(id){mutate(d=>{d.spec=d.spec||{};d.spec.deckId=id});return 'ok'}
+
 // ---------------------------------------------------------------- 처음 화면: 게임(=틀) → ① 실험 ② 공식 ③ 아이템 ④ 최적화
 const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}}
 function curGame(){let id=LS.get('tmcalcLabGame');if(!tpl(id)){const a=data.sessions.find(s=>s.id===active);id=a&&tpl(a.templateId)?a.templateId:(data.templates[0]||{}).id;if(id)LS.set('tmcalcLabGame',id)}return tpl(id)}

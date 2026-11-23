@@ -129,6 +129,7 @@ class OverlayService : Service() {
         runCatching { wm.removeView(panel) }
         runCatching { wm.removeView(trash) }
         recognizer.close()
+        runCatching { engine?.destroy() }
         super.onDestroy()
     }
 
@@ -211,6 +212,28 @@ class OverlayService : Service() {
                     Log.d("tmcalc-ocr", "--end--")
                 }
                 val parsed = OcrParser.parse(lines, db)
+                // 소환수를 하나도 못 읽었을 때만 룬 비교 화면인지 본다 (소환수 계산은 지금과 똑같이)
+                if (parsed.pet == null && parsed.stats.all { it == null }) {
+                    if (RuneParser.isRuneCompare(lines)) {
+                        val rs = RuneParser.parse(lines)
+                        showRuneCompare(rs[0], rs[1])
+                        return@addOnSuccessListener
+                    }
+                    if (looksLikeRune(lines)) {
+                        val rs = RuneParser.parse(lines)
+                        val miss = when {
+                            rs.size < 2 -> "위(장착중)·아래(새 룬) 상자 ${rs.size}개만 찾음"
+                            rs.take(2).any { it.atk == null } -> "공격력 값을 못 읽음"
+                            else -> "주 옵션 / 부 옵션 글자를 못 찾음"
+                        }
+                        val nl = "\n"
+                        val txt = lines.sortedBy { it.top }.joinToString(nl) { it.text }
+                        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면 같은데 못 읽었어요")
+                            .setMessage(miss + nl + "위 장착중 / 아래 새 룬이 다 보이게 띄우고 다시 눌러 주세요." + nl + nl + "읽힌 글자:" + nl + txt.take(2500))
+                            .setPositiveButton("닫기", null))
+                        return@addOnSuccessListener
+                    }
+                }
                 lastParsed = parsed
                 worstOn = false; lowerOn = false
                 // 괄호 숫자의 +/- 는 OCR이 놓치기 쉬우므로 글자색(빨강/초록)으로 한 번 더 확인
@@ -1708,6 +1731,97 @@ class OverlayService : Service() {
                 .setNegativeButton("취소", null)
                 )
         }
+    }
+
+    // ---------------------------------------------------------------- 룬 비교: [계산]이 룬 비교 화면을 찍었을 때 (최적화 화면과 같은 계산 코드를 화면 없이 돌림)
+    private var engine: android.webkit.WebView? = null
+    private var engineReady = false
+    private val engineQueue = ArrayList<() -> Unit>()
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private fun withEngine(job: () -> Unit) {
+        if (engineReady) return job()
+        engineQueue += job
+        if (engine != null) return
+        engine = android.webkit.WebView(applicationContext).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = true
+            addJavascriptInterface(object {
+                @android.webkit.JavascriptInterface fun load(): String = LabData.load(this@OverlayService).toString()
+                @android.webkit.JavascriptInterface fun save(json: String) { runCatching { LabData.save(this@OverlayService, JSONObject(json)) } }
+                @android.webkit.JavascriptInterface fun getActive(): String = AppPrefs.labActive(this@OverlayService).orEmpty()
+                @android.webkit.JavascriptInterface fun setActive(id: String) {}
+                @android.webkit.JavascriptInterface fun toast(m: String) {}
+                @android.webkit.JavascriptInterface fun copy(t: String) {}
+                @android.webkit.JavascriptInterface fun saveFile(n: String, t: String) {}
+                @android.webkit.JavascriptInterface fun pickFile() {}
+                @android.webkit.JavascriptInterface fun petDb(): String {
+                    val arr = org.json.JSONArray()
+                    for (pt in db.pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+                    return arr.toString()
+                }
+            }, "TMCalc")
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                    engineReady = true
+                    val q = engineQueue.toList(); engineQueue.clear(); q.forEach { it() }
+                }
+            }
+            loadUrl("file:///android_asset/lab.html")
+        }
+    }
+
+    private fun runeJson(r: RuneInfo): JSONObject {
+        fun n(x: RuneNum) = JSONObject().put("lo", x.lo).put("hi", x.hi).put("pct", x.pct)
+        return JSONObject().put("grade", r.grade ?: JSONObject.NULL).put("name", r.name ?: JSONObject.NULL).put("level", r.level ?: JSONObject.NULL)
+            .put("atk", r.atk?.let { n(it) } ?: JSONObject.NULL)
+            .put("subs", org.json.JSONArray(r.subs.map { (l, x) -> org.json.JSONArray().put(l).put(n(x)) }))
+    }
+
+    private fun showRuneCompare(a: RuneInfo, b: RuneInfo) {
+        withEngine {
+            val js = "runeCompare(${JSONObject.quote(runeJson(a).toString())},${JSONObject.quote(runeJson(b).toString())})"
+            engine?.evaluateJavascript(js) { raw ->
+                val res = runCatching { JSONObject(org.json.JSONTokener(raw).nextValue() as String) }.getOrNull()
+                if (res == null) { toast("룬 비교 계산을 못 했습니다."); return@evaluateJavascript }
+                if (res.has("err")) {
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교").setMessage(res.optString("err")).setPositiveButton("닫기", null))
+                    return@evaluateJavascript
+                }
+                val g = res.optDouble("g")
+                val fmtV = { v: Double, p: Boolean -> LabData.fmt(Math.round(v * 100) / 100.0) + if (p) "%" else "" }
+                val sb = StringBuilder()
+                val ra = res.optJSONObject("a"); val rb = res.optJSONObject("b")
+                sb.append("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}\n")
+                sb.append("공식: ${res.optString("set")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}\n\n")
+                val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
+                for (i in 0 until rows.length()) {
+                    val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
+                    sb.append("${r.optString("label")}: ${fmtV(r.optDouble("old"), p)} → ${fmtV(r.optDouble("new"), p)} (${if (d >= 0) "+" else ""}${fmtV(d, p)})")
+                    if (r.optBoolean("est")) sb.append(" ≈추정")
+                    r.optString("why").takeIf { it.isNotEmpty() }?.let { sb.append(" · $it") }
+                    sb.append("\n")
+                }
+                val verdict = when { g > 0.05 -> "✅ 바꾸기 추천"; g < -0.05 -> "❌ 바꾸지 마세요"; else -> "≈ 비슷함" }
+                val title = "데미지 ${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict"
+                val decks = res.optJSONArray("decks") ?: org.json.JSONArray()
+                val b2 = android.app.AlertDialog.Builder(ui).setTitle(title).setMessage(sb.toString()).setPositiveButton("닫기", null)
+                if (decks.length() > 1) b2.setNeutralButton("덱 바꾸기") { _, _ ->
+                    val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
+                        engine?.evaluateJavascript("runeSetDeck(${JSONObject.quote(decks.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
+                    })
+                }
+                overlayDialog(b2)
+            }
+        }
+    }
+
+    /** 소환수도 확실한 룬 비교 화면도 아닌데 룬 글자가 보이면: 무엇을 읽었는지 보여 줌 (조용히 실패하지 않게) */
+    private fun looksLikeRune(lines: List<OcrLine>): Boolean {
+        val t = lines.map { it.text.replace(" ", "") }
+        return t.any { (it.startsWith("주") || it.startsWith("부")) && it.contains("옵") && it.length <= 5 } || t.any { it.contains("의룬") || it.contains("룬[") }
     }
 
     private fun labAskName(title: String, onOk: (String) -> Unit) {
