@@ -1184,8 +1184,7 @@ class OverlayService : Service() {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
                 addView(labChip(giName(r) + " ▾", r.gid != null) {
                     // 분류·항목 고르기 (+ 새로 만들기)
-                    val names = gis.map { it.third } + listOf("+ 새 분류", "+ 새 항목")
-                    overlayDialog(android.app.AlertDialog.Builder(ui).setItems(names.toTypedArray()) { _, w ->
+                    labItemPicker(groups, gis, listOf("+ 새 분류", "+ 새 항목")) { w ->
                         when {
                             w < gis.size -> { r.gid = gis[w].first; r.iid = gis[w].second; renderLab() }
                             w == gis.size -> labAskName("분류 추가 (예: 스킬, 장비)") { name -> labAskUnit { unit ->
@@ -1210,7 +1209,7 @@ class OverlayService : Service() {
                                     } }
                                 })
                         }
-                    })
+                    }
                 })
                 addView(View(ui), LinearLayout.LayoutParams(0, 1, 1f))
                 addView(headerButton("✕") { labRows.removeAt(i); renderLab() })
@@ -1274,7 +1273,8 @@ class OverlayService : Service() {
         labBody.addView(LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(TextView(ui).apply {
-                text = "소환수: " + (petShow?.let { p -> listOf(p.optString("name"), listOf(p.optString("elem"), p.optString("type")).filter { it.isNotEmpty() }.joinToString("·")).filter { it.isNotEmpty() }.joinToString(" · ") } ?: "안 정함") +
+                text = "소환수: " + (petShow?.let { p -> listOf(p.optString("name"), listOf(p.optString("elem"), p.optString("type")).filter { it.isNotEmpty() }.joinToString("·"),
+                        p.optJSONObject("sk")?.let { k -> "스킬 " + LabData.fmt(k.optDouble("pct")) + "% (직접)" } ?: "").filter { it.isNotEmpty() }.joinToString(" · ") } ?: "안 정함") +
                     if (labPetDraft != null) " (이 기록에서 바꿈)" else ""
                 textSize = 12f; setTextColor(if (labPetDraft != null) LAB_ACC else Color.parseColor("#C9CBD0"))
             }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -1448,13 +1448,29 @@ class OverlayService : Service() {
         if (labStartOpen) {
             labBody.addView(note("처음에 이미 붙어 있던 값을 적어요 (상태창 등). 모르면 비워 두세요. 적어 두면 공식이 더 정확해져요."))
             val edits = LinkedHashMap<String, EditText>()
+            // 검색: 줄을 숨기기만 함 (다시 그리지 않아 입력 중 칸이 유지됨)
+            val stRows = ArrayList<Triple<View, String, View>>()   // (줄, 검색 글자, 분류 제목)
+            labBody.addView(labInput("항목 검색 (예: 화염, 피해)").apply {
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun afterTextChanged(x: Editable?) {
+                        val q = x?.toString().orEmpty().replace(" ", "")
+                        val shown = HashSet<View>()
+                        for ((row, key, head) in stRows) { val on = q.isEmpty() || key.contains(q); row.visibility = if (on) View.VISIBLE else View.GONE; if (on) shown += head }
+                        stRows.map { it.third }.distinct().forEach { h -> h.visibility = if (h in shown) View.VISIBLE else View.GONE }
+                    }
+                })
+            }, LinearLayout.LayoutParams(-1, -2))
             for (g in groups) {
                 val its = labArr(g, "items").ifEmpty { listOf(null) }
+                val head = TextView(ui).apply { text = g.optString("name"); textSize = 12f; setTextColor(LAB_ACC); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(2)) }
+                labBody.addView(head)
                 for (it in its) {
                     if (g.optString("id") == "crit" && it?.optString("id") == "rate") continue   // 치명 확률은 최적화에서
                     val key = g.optString("id") + ":" + (it?.optString("id") ?: "")
                     val label = if (g.optString("id") == "crit" && it?.optString("id") == "dmg") "치명 피해 (1.5배=150)"
-                        else g.optString("name") + (it?.let { " " + it.optString("name") } ?: "")
+                        else it?.optString("name") ?: g.optString("name")
                     fun cur(u: String) = startDraftGet(s.optString("id"), "$key:$u")
                         ?: if (start.has("$key:$u")) LabData.fmt(start.optDouble("$key:$u")).replace(",", "") else ""
                     val unit = labUnit(g, it)
@@ -1475,7 +1491,7 @@ class OverlayService : Service() {
                         })
                         addView(ef, LinearLayout.LayoutParams(0, -2, 1f))
                         addView(ep, LinearLayout.LayoutParams(0, -2, 0.7f))
-                    })
+                    }.also { row -> stRows += Triple(row, (g.optString("name") + label).replace(" ", ""), head) })
                 }
             }
             labBody.addView(LinearLayout(ui).apply {
@@ -1898,6 +1914,19 @@ class OverlayService : Service() {
         return pet to amp
     }
 
+    /** 도감에 스킬이 없는 소환수: 스킬 배율 %·타수를 이 실험에서만 쓰게 직접 (건너뛰면 그 기록의 스킬은 공식에서 빠짐) */
+    private fun labAskSkill(name: String, onDone: (Double?, Double?) -> Unit) {
+        val pe = labInput("스킬 배율 % (예: 300)"); val he = labInput("스킬 타수 (기본 1)")
+        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("'$name' 스킬 배율")
+            .setView(LinearLayout(ui).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(4), dp(20), 0)
+                addView(TextView(ui).apply { text = "도감에 스킬이 없어서 이 실험에서만 써요 (도감에는 저장 안 함). 모르면 건너뛰기 — 그 기록의 스킬은 공식에서 빠져요."; textSize = 12f; setTextColor(Color.parseColor("#9A9DA3")) })
+                addView(pe, LinearLayout.LayoutParams(-1, -2)); addView(he, LinearLayout.LayoutParams(-1, -2))
+            })
+            .setPositiveButton("확인") { _, _ -> onDone(LabData.number(pe.text.toString().trim())?.takeIf { it > 0 }, LabData.number(he.text.toString().trim())?.takeIf { it > 0 }) }
+            .setNegativeButton("건너뛰기") { _, _ -> onDone(null, null) })
+    }
+
     /** 저장한 소환수에서 고르기 → 이름·속성·타입·원래 능력치 */
     private fun labPickPet() {
         val list = AppPrefs.presets(this)
@@ -1906,10 +1935,15 @@ class OverlayService : Service() {
         val names = list.map { p -> "${p.label}  (${p.name} · ${p.stats.joinToString("/")})" }
         overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("이 기록의 소환수").setItems(names.toTypedArray()) { _, w ->
             val p = list[w]; val pet = db.find(p.name)
-            labPetDraft = JSONObject().put("name", p.name)
+            val draft = JSONObject().put("name", p.name)
                 .put("elem", (pet?.element ?: "").let { if (it == "화염") "불" else it }).put("type", pet?.type ?: "")
                 .put("st", org.json.JSONArray(p.stats.toList()))
-            renderLab()
+            labPetDraft = draft
+            // 도감에 스킬 배율이 없으면 이 실험에서만 쓸 값을 직접 (도감에는 저장 안 함)
+            if ((pet?.skill?.get("pct") ?: 0.0) > 0) renderLab() else labAskSkill(p.name) { pct, hits ->
+                if (pct != null) draft.put("sk", JSONObject().put("pct", pct).put("hits", hits ?: 1.0))
+                renderLab()
+            }
         }.setNegativeButton("닫기", null))
     }
 
@@ -1923,10 +1957,47 @@ class OverlayService : Service() {
     }
 
     /** 게임 위(레이어)에서는 보통 대화상자를 못 띄우므로 레이어 종류로 띄운다 */
-    private fun overlayDialog(b: android.app.AlertDialog.Builder) {
+    private fun overlayDialog(b: android.app.AlertDialog.Builder): android.app.AlertDialog {
         val d = b.create()
         d.window?.setType(overlayType())
         d.show()
+        return d
+    }
+
+    /** 바뀐 항목 고르기: 분류(룬 옵션·무기·속성 강화…)별로 나눠 보이고 검색. [onPick] 은 gis 번호, gis.size 부터는 [extra] 번호 */
+    private fun labItemPicker(groups: List<JSONObject>, gis: List<Triple<String, String?, String>>, extra: List<String>, onPick: (Int) -> Unit) {
+        val search = labInput("검색 (예: 화염, 피해)")
+        val list = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+        var dlg: android.app.AlertDialog? = null
+        fun row(text: String, color: Int, onClick: () -> Unit) = TextView(ui).apply {
+            this.text = text; textSize = 14f; setTextColor(color); setPadding(dp(12), dp(8), dp(4), dp(8))
+            setOnClickListener { dlg?.dismiss(); onClick() }
+        }
+        fun draw(q: String) {
+            list.removeAllViews()
+            val key = q.replace(" ", "")
+            for (g in groups) {
+                val gid = g.optString("id"); val gname = g.optString("name")
+                val idx = gis.indices.filter { gis[it].first == gid && (key.isEmpty() || gis[it].third.replace(" ", "").contains(key)) }
+                if (idx.isEmpty()) continue
+                list.addView(TextView(ui).apply { text = gname; textSize = 12f; setTextColor(LAB_ACC); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, dp(10), 0, dp(2)) })
+                for (i in idx) list.addView(row(gis[i].third.removePrefix(gname).trim().ifEmpty { gname }, Color.parseColor("#E6E7EA")) { onPick(i) })
+            }
+            if (list.childCount == 0) list.addView(TextView(ui).apply { text = "찾는 항목이 없어요."; setTextColor(Color.parseColor("#9A9DA3")) })
+            if (key.isEmpty()) extra.forEachIndexed { k, t -> list.addView(row(t, Color.parseColor("#9A9DA3")) { onPick(gis.size + k) }) }
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+            override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+            override fun afterTextChanged(x: Editable?) { draw(x?.toString() ?: "") }
+        })
+        draw("")
+        val box = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(4), dp(16), 0)
+            addView(search, LinearLayout.LayoutParams(-1, -2))
+            addView(android.widget.ScrollView(ui).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp(360)))
+        }
+        dlg = overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("바뀐 항목").setView(box).setNegativeButton("닫기", null))
     }
 
     @SuppressLint("ClickableViewAccessibility")

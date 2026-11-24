@@ -997,8 +997,20 @@ function petText(p){if(!p)return'안 정함'
   const st=(p.st||[]).some(isNum)?PSTAT.map(([k,l],i)=>l+' '+(isNum((p.st||[])[i])?fmt(p.st[i]):'?')).join(' '):''
   return[p.name||'(이름 없음)',[p.elem,p.type].filter(Boolean).join('·'),st].filter(Boolean).join(' · ')}
 function petClean(p){if(!p||(!String(p.name||'').trim()&&!(p.st||[]).some(isNum)))return null
-  return{name:String(p.name||'').trim(),elem:p.elem||'',type:p.type||'',st:[0,1,2,3].map(i=>isNum((p.st||[])[i])?p.st[i]:null)}}
+  const o={name:String(p.name||'').trim(),elem:p.elem||'',type:p.type||'',st:[0,1,2,3].map(i=>isNum((p.st||[])[i])?p.st[i]:null)}
+  if(p.sk&&num(p.sk.pct)>0)o.sk={pct:num(p.sk.pct),hits:num(p.sk.hits)||1}
+  return o}
 const petSame=(a,b)=>JSON.stringify(petClean(a))===JSON.stringify(petClean(b))
+/** 이 소환수로 잰 평타·스킬을 어떻게 맞추는지 (테마: 평타 그대로, 스킬은 도감 스킬 배율로 나눔) */
+/** 그 소환수의 스킬 배율: 도감에 있으면 도감, 없으면 이 실험에서 직접 적은 값 */
+function petSkillOf(p){if(!p)return null;const k=p.name?skOf({name:p.name}):{}
+  if(num(k.pct)>0)return{pct:num(k.pct),hits:num(k.hits)||1,src:'도감'}
+  if(p.sk&&num(p.sk.pct)>0)return{pct:num(p.sk.pct),hits:num(p.sk.hits)||1,src:'직접'}
+  return null}
+function petAdjText(p){if(!p||!p.name)return'소환수를 정하면 스킬 데미지를 그 소환수 스킬 배율로 맞춰요.'
+  const k=petSkillOf(p)
+  return k?`평타: 잰 값 그대로 · 스킬: ${k.src==='도감'?'도감':'직접 적은'} 스킬 ${fmt(k.pct)}%${k.hits>1?' ('+k.hits+'타)':''} → 잰 값 ÷ ${fmt(k.pct/100,4)} 로 100% 기준에 맞춰 계산 (1타 기준)`
+    :`<span class="bad">'${esc(p.name)}' 스킬 배율이 없어요</span> → 아래에 직접 적거나 도감에 적어 주세요. 없으면 스킬 기록은 스킬 공식에서 빠져요. (평타는 그대로 계산)`}
 function petFields(p){p=p||{};const has=savedPetsList().length
   return`<div class="row" style="flex-wrap:wrap;gap:6px"><input type="text" class="ppn" list="dexNames" value="${esc(p.name||'')}" placeholder="소환수 이름 (도감에서 고르기)" style="flex:1;min-width:140px">${has?'<button class="sm ppi">저장한 소환수에서</button>':''}</div>
   <div class="grid" style="margin-top:6px"><label class="f">속성<select class="ppe"><option value="">-</option>${ELEMS.map(e=>`<option${p.elem===e?' selected':''}>${e}</option>`).join('')}</select></label>
@@ -1006,10 +1018,15 @@ function petFields(p){p=p||{};const has=savedPetsList().length
     ${PSTAT.map(([k,l],i)=>`<label class="f">${l} (원래 능력치)<input type="text" inputmode="decimal" class="pps" pix="${i}" value="${isNum((p.st||[])[i])?p.st[i]:''}" placeholder="모름"></label>`).join('')}
 </div>
   <div class="mut" style="margin-top:4px">능력치는 실전투가 아니라 소환수 원래 능력치(성장치)예요. 실전투는 공식이 능력치·성장증폭으로 찾아요.</div>
+  ${p.name&&!(num(skOf({name:p.name}).pct)>0)?`<div class="grid" style="margin-top:6px"><label class="f">스킬 배율 % (이 실험에서만)<input type="text" inputmode="decimal" class="ppk" value="${esc((p.sk||{}).pct??'')}" placeholder="예: 300"></label>
+    <label class="f">스킬 타수<input type="text" inputmode="decimal" class="ppkh" value="${esc((p.sk||{}).hits??'')}" placeholder="1"></label></div>
+    <div class="mut">도감에 스킬이 없어서 여기 적은 값은 이 실험에만 써요 (도감에는 저장 안 함).</div>`:''}
+  <div class="mut" style="margin-top:4px">📏 ${petAdjText(p)}</div>
   <datalist id="dexNames">${petDb().map(x=>`<option value="${esc(x.n)}">`).join('')}</datalist>`}
 function bindPet(root,p,redraw){const q=k=>root.querySelector(k)
   q('.ppn').onchange=e=>{p.name=e.target.value.trim();const d=dexOf(p.name);if(d){p.elem=normElem(d.e)||p.elem;p.type=d.t||p.type}redraw()}
   q('.ppe').onchange=e=>p.elem=e.target.value
+  const pk=q('.ppk'),pkh=q('.ppkh');if(pk){const up=()=>{p.sk={pct:pk.value.trim(),hits:pkh.value.trim()}};pk.oninput=up;pkh.oninput=up;pk.onchange=()=>{up();redraw()}}
   q('.ppt').onchange=e=>p.type=e.target.value
   root.querySelectorAll('.pps').forEach(i=>i.oninput=()=>{p.st=p.st||[null,null,null,null];const n=num(i.value);p.st[+i.getAttribute('pix')]=isFinite(n)?n:null})
   const pi=q('.ppi');if(pi)pi.onclick=()=>pickSaved(x=>{Object.assign(p,{name:x.name,elem:normElem(x.element)||'',type:x.type||'',st:(x.stats||[]).slice(0,4).map(Number)});redraw()})}
@@ -1422,14 +1439,15 @@ function vTpl(c,v){
   <div class="card"><div class="big">공격 그룹 (잴 것) ${hb('measure')}</div>
     <div class="mut">스킬 하나하나가 아니라 <b>큰 묶음</b>을 적어요. 예: <b>일반공격</b>, <b>스킬</b>. 같은 옵션이 붙는 공격끼리 한 그룹이에요.<br>
     기록할 때는 그 그룹의 공격 하나를 정해서 한 방 데미지를 적어요${t.useCrit===false?'':' (비치명 / 치명 칸)'}.</div>
-    ${t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="그룹 이름 (일반공격, 스킬 …)" style="flex:1">
-      <label class="row mut" style="gap:4px">잰 공격<input type="text" data-mb="${i}" value="${esc(m.basePct??m.pct??'')}" placeholder="100" title="이 그룹에서 실제로 재는 공격의 배율 % (1배 = 100)" style="width:64px">%</label>
+    ${t.tm2?`<div class="list-row"><b>평타</b> · <b>스킬</b> <span class="mut">(테마 고정 · 수정 불가)</span></div>`:t.measures.map((m,i)=>`<div class="list-row"><input type="text" data-m="${i}" value="${esc(m.name)}" placeholder="그룹 이름 (일반공격, 스킬 …)" style="flex:1">
+      ${t.tm2?'':`<label class="row mut" style="gap:4px">잰 공격<input type="text" data-mb="${i}" value="${esc(m.basePct??m.pct??'')}" placeholder="100" title="이 그룹에서 실제로 재는 공격의 배율 % (1배 = 100)" style="width:64px">%</label>`}
       <button class="sm danger" data-md="${i}">✕</button></div>`).join('')}
-    <div class="mut" style="margin-top:4px"><b>잰 공격 %</b>: 이 그룹에서 실제로 데미지를 재는 공격이 <b>1배(100%) 기준으로 몇 %인지</b> 적어요. 평타처럼 배율이 없으면 비워 두세요 (= 100).<br>
+    ${t.tm2?'<div class="mut" style="margin-top:4px"><b>테마</b>: 잴 것은 평타·스킬로 고정이에요. 스킬 배율은 실험을 만들 때 고르는 소환수로 정해져요 (도감에 스킬이 있으면 자동, 없으면 그 실험에서 직접). 평타는 잰 값 그대로, 스킬은 그 배율로 나눠 100% 기준으로 맞춰요.</div>':''}
+    <div class="mut" style="margin-top:4px;${t.tm2?'display:none':''}"><b>잰 공격 %</b>: 이 그룹에서 실제로 데미지를 재는 공격이 <b>1배(100%) 기준으로 몇 %인지</b> 적어요. 평타처럼 배율이 없으면 비워 두세요 (= 100).<br>
     예: 스킬 그룹을 "공격력의 300%" 스킬로 잰다면 300 → 앱이 공식을 1배(100%) 기준으로 바꿔 두고, 최적화에서 500% 스킬은 1배의 5배로 계산해요.</div>
     <label class="row" style="gap:6px;margin-top:10px"><input type="checkbox" id="tuc"${t.useCrit!==false?' checked':''}>치명타가 있는 게임 <span class="mut">(끄면 치명 관련 칸이 모두 사라져요)</span></label>
     ${t.useCrit===false?'':`<div class="mut" style="margin-top:6px">치명 피해는 <b>배율 %</b>로 적어요: 치명이 1.5배면 <b>150</b>, 2배면 <b>200</b>. (게임이 "+50%"처럼 보여 주면 100을 더해서 150)</div>`}
-    <button class="sm" id="ma">+ 공격 그룹</button></div>
+    ${t.tm2?'':'<button class="sm" id="ma">+ 공격 그룹</button>'}</div>
   <p class="mut">틀을 고치면 이 틀을 쓰는 세션에도 바로 반영돼요.</p>
   <div class="row"><button class="pri" id="ts">저장</button><button id="tc">닫기</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요.</div>`
   const sync=()=>{t.name=$('#tn').value
@@ -1449,7 +1467,7 @@ function vTpl(c,v){
   $('#ga').onclick=()=>{sync();t.groups.push({id:uid(),name:'',items:[],unit:'flat'});draftSet(dk,t);render()}
   v.querySelectorAll('[data-ia]').forEach(b=>b.onclick=()=>{sync();const g=t.groups[+b.dataset.ia];(g.items=g.items||[]).push({id:uid(),name:'',unit:'flat'});render()})
   v.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{sync();const [i,j]=b.dataset.id.split(':').map(Number);t.groups[i].items.splice(j,1);render()})
-  $('#ma').onclick=()=>{sync();t.measures.push({id:uid(),name:''});render()}
+  if($('#ma'))$('#ma').onclick=()=>{sync();t.measures.push({id:uid(),name:''});render()}
   v.querySelectorAll('[data-gd]').forEach(b=>b.onclick=()=>{sync();t.groups.splice(+b.dataset.gd,1);render()})
   v.querySelectorAll('[data-md]').forEach(b=>b.onclick=()=>{sync();t.measures.splice(+b.dataset.md,1);render()})
   if(c.restored)draftBanner(v,()=>{draftDel(dk);c.draft=null;c.restored=false;render()})
@@ -1472,10 +1490,15 @@ function vNewSes(c,v){
     <label class="f">실험 이름 (나중에 바꿀 수 있어요)<input type="text" id="sn" value="실험 ${data.sessions.filter(x=>x.templateId===c.tid).length+1}"></label>
     <label class="f" style="margin-top:12px">게임<select id="st">${data.templates.map(t=>`<option value="${t.id}"${t.id===c.tid?' selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
     <div class="mut" id="sti" style="margin-top:6px"></div>
+    <div id="npet" style="margin-top:12px"></div>
     <div class="row" style="margin-top:14px"><button class="pri" id="sgo">만들고 시작</button><button id="smk">만들기만</button></div></div>`
-  const info=()=>{const t=tpl($('#st').value);$('#sti').textContent=t?`분류: ${t.groups.map(g=>g.name).join(', ')||'-'} · 잴 것: ${t.measures.map(m=>m.name).join(', ')}`:''}
+  c.pet=c.pet||{}
+  const info=()=>{const t=tpl($('#st').value);$('#sti').textContent=t?(t.tm2?'잴 것: 평타 · 스킬 (테마 고정 · 수정 불가)':`분류: ${t.groups.map(g=>g.name).join(', ')||'-'} · 잴 것: ${t.measures.map(m=>m.name).join(', ')}`):''
+    const box=$('#npet');if(!t||!t.tm2){box.innerHTML='';return}
+    const draw=()=>{box.innerHTML=`<div class="big">쓰는 소환수 (필수)</div><div class="mut">데미지를 잴 소환수예요. 스킬 배율은 도감에 있으면 자동으로, 없으면 여기서 직접 적어요. 실험 중에 바꾸려면 기록에서 [소환수 바꾸기].</div><div style="margin-top:6px">${petFields(c.pet)}</div>`;bindPet(box,c.pet,draw)};draw()}
   $('#st').onchange=info;info()
   const make=start=>{const name=$('#sn').value.trim()||'세션';const s={id:uid(),name,templateId:$('#st').value,created:Date.now(),records:[]}
+    if((tpl(s.templateId)||{}).tm2){const p=petClean(c.pet);if(!p||!p.name)return alert('쓰는 소환수를 정해 주세요 (필수).');s.pet0=p}
     mutate(d=>d.sessions.push(s))
     if(start){setActive(s.id);toast(`'${name}' 진행 중. 게임 위 버튼이 [연구]로 바뀌었어요.`)}
     nav=[{v:'home'},{v:'start',id:s.id,fresh:true}];render()}
@@ -1681,7 +1704,7 @@ function startSlots(t){
   for(const g of t.groups){
     const its=(g.items||[]).length?g.items:[null]
     for(const it of its){if(g.id==='crit'&&it&&it.id==='rate')continue   // 치명 확률은 최적화에서 적는다
-      out.push({label:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':g.name+(it?' '+it.name:''),key:g.id+':'+(it?it.id:'')})}
+      out.push({label:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':g.name+(it?' '+it.name:''),short:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':(it?it.name:g.name),group:g.name,key:g.id+':'+(it?it.id:'')})}
   }
   return out
 }
@@ -1699,8 +1722,9 @@ function vStart(c,v){
     <div class="mut">상태창 등에서 보이는 지금 값을 적어요. 모르는 칸은 비워 두면 그 항목은 바꾼 양(변화량)만으로 계산해요.<br>
     적어 두면 공식 찾기가 실제 총량으로 계산해서 계수가 깔끔해지고, 합연산/곱연산도 더 정확히 가려요.</div>
     ${c.fresh?'<div class="mut good" style="margin-top:6px">세션을 만들었어요. 시작 상태를 적고 저장하세요 (나중에 해도 돼요).</div>':''}
-    ${sl.length?`<div class="scroll" style="margin-top:10px"><table><tr><th class="l">분류 · 항목</th><th>값 (+공격력 등)</th><th>%</th></tr>
-      ${sl.map(x=>`<tr><td class="l">${esc(x.label)}</td>
+    ${sl.length?`<input type="search" id="stq" placeholder="항목 검색 (예: 화염, 피해)" style="width:100%;margin-top:10px">
+      <div class="scroll" style="margin-top:6px"><table id="stt"><tr><th class="l">항목</th><th>값 (+공격력 등)</th><th>%</th></tr>
+      ${sl.map((x,i)=>`${i===0||sl[i-1].group!==x.group?`<tr class="stg" data-g="${esc(x.group)}"><td class="l" colspan="3" style="padding-top:10px"><b>${esc(x.group)}</b></td></tr>`:''}<tr data-sr="${esc(x.group+' '+x.short)}" data-g="${esc(x.group)}"><td class="l" style="padding-left:14px">${esc(x.short)}</td>
         ${['flat','pct'].map(u=>unitsOf(unitOfGI(t,...x.key.split(':'))).includes(u)?`<td><input type="text" inputmode="decimal" data-sk="${x.key}:${u}" value="${isFinite(st[x.key+':'+u])?st[x.key+':'+u]:''}" style="width:${u==='flat'?110:80}px;text-align:right" placeholder="모름"></td>`:'<td class="mut">-</td>').join('')}</tr>`).join('')}</table></div>`
       :'<div class="empty">틀에 분류가 없어요.</div>'}
     ${(t.items||[]).length?`<div class="big" style="margin-top:16px">시작할 때 낀 아이템</div><div class="mut">개수를 적어요 (안 꼈으면 비움). 기록에서 [빼기]를 하려면 여기 낀 걸로 되어 있어야 해요.</div>
@@ -1710,6 +1734,9 @@ function vStart(c,v){
     <div class="mut">앱에 적어 둔 값과 다를 수 있으니 게임에서 보이는 값을 적어요. 바뀌면 기록에서 고쳐요.</div>
     ${c.reset?`<div class="big" style="margin-top:16px">지금 잰 값 (선택)</div><div class="grid" style="margin-top:8px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-rmv="${m.id}"></label>`).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="pri" id="ss">저장</button><button id="sc">${c.fresh?'나중에':'닫기'}</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요. [저장]을 눌러야 반영돼요.</div></div>`
+  const stq=$('#stq');if(stq)stq.oninput=()=>{const Q=stq.value.replace(/\s/g,''),vis=new Set()
+    v.querySelectorAll('[data-sr]').forEach(r=>{const on=!Q||r.dataset.sr.replace(/\s/g,'').includes(Q);r.style.display=on?'':'none';if(on)vis.add(r.dataset.g)})
+    v.querySelectorAll('.stg').forEach(r=>r.style.display=vis.has(r.dataset.g)?'':'none')}
   if(!c.pet)c.pet=JSON.parse(JSON.stringify((c.reset?petAt(s):s.pet0)||{}))
   const pbox=$('#petBox'),drawPet=()=>{pbox.innerHTML=petFields(c.pet);bindPet(pbox,c.pet,drawPet)};drawPet()
   const amp0=c.reset?ampAt(s):(isNum(s.amp0)?s.amp0:ampAt(s,(s.records[0]||{}).id));if(isNum(amp0))$('#ampIn').value=amp0
@@ -1823,6 +1850,18 @@ function measureStatus(s,t){
     k:tested.has(it.id)?'ok':'none',need:tested.has(it.id)?'충분해요':'한 번 껴 보거나 빼 보고 기록 (적어 둔 효과가 맞는지 확인)'})
   return out
 }
+/** 바뀐 값 줄의 항목 고르기: 분류(룬 옵션·무기·속성 강화…)별로 나눠 보이고 이름 검색 */
+function pickItem(t,curGi,cb){const m=document.createElement('div');m.className='hmask'
+  const groups=t.groups.map(g=>({g,its:((g.items||[]).length?g.items:[null]).map(it=>({v:g.id+':'+(it?it.id:''),name:it?it.name:g.name}))}))
+  m.innerHTML=`<div class="hbox" style="max-height:85vh;display:flex;flex-direction:column"><h3>바뀐 항목</h3><input type="search" id="piq" placeholder="검색 (예: 화염, 피해)" style="width:100%">
+    <div id="pil" style="overflow:auto;margin-top:8px;flex:1"></div><div class="row" style="margin-top:8px"><button id="pic">닫기</button></div></div>`
+  const draw=q=>{const Q=String(q||'').replace(/\s/g,'')
+    m.querySelector('#pil').innerHTML=groups.map(({g,its})=>{const L=its.filter(x=>!Q||(g.name+x.name).replace(/\s/g,'').includes(Q));if(!L.length)return''
+      return`<div class="mut" style="margin:8px 0 4px;font-weight:600">${esc(g.name)}</div><div class="chips">${L.map(x=>`<button class="chip${x.v===curGi?' on':''}" data-pv="${esc(x.v)}">${esc(x.name)}</button>`).join('')}</div>`}).join('')||'<div class="mut">찾는 항목이 없어요.</div>'
+    m.querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>{m.remove();cb(b.dataset.pv)})}
+  draw('');m.querySelector('#piq').oninput=e=>draw(e.target.value);m.querySelector('#pic').onclick=()=>m.remove()
+  document.body.append(m);setTimeout(()=>m.querySelector('#piq').focus(),50)}
+const giName=(t,gi)=>{const[g,i]=gi.split(':'),G=t.groups.find(x=>x.id===g),IT=G&&i?(G.items||[]).find(x=>x.id===i):null;return G?(IT?`${G.name} · ${IT.name}`:G.name):'(항목 고르기)'}
 function vRecs(c,v){
   const s=ses(c.id);if(!s)return back()
   const t=tpl(s.templateId)||{groups:[],measures:[]}
@@ -1850,12 +1889,12 @@ function vRecs(c,v){
     ${items.length?`<div class="mut" style="margin-top:8px">아이템 (누를 때마다 끼기 → 빼기 → 안 함)</div>
       ${[...new Set(items.map(it=>it.slotId))].map(sid=>`<div class="mut" style="margin-top:4px">${esc(slotName(sid))}</div><div class="chips">${items.filter(it=>it.slotId===sid).map(it=>{const a=c.acts[it.id]||0
         return`<button class="chip${a?' on':''}" data-act-it="${it.id}">${a>0?'+ ':a<0?'− ':''}${esc(it.name)}${eq[it.id]?` <span class="mut">(낌 ${eq[it.id]})</span>`:''}</button>`}).join('')}</div>`).join('')}`:''}
-    <div class="row" style="margin-top:10px"><span class="mut" style="flex:1">소환수: ${esc(petText(curPet))}</span><button class="sm" id="petTg">${c.petOn?'소환수 안 바꿈':curPet?'소환수 바꾸기':'소환수 정하기'}</button></div>
+    <div class="row" style="margin-top:10px"><span class="mut" style="flex:1">소환수: ${esc(petText(curPet))}${!c.petOn&&curPet?`<br>📏 ${petAdjText(curPet)}`:''}</span><button class="sm" id="petTg">${c.petOn?'소환수 안 바꿈':curPet?'소환수 바꾸기':'소환수 정하기'}</button></div>
     ${c.petOn?'<div id="petBox" class="card" style="background:var(--card2);margin-top:6px"></div>':''}
     <label class="row mut" style="gap:6px;margin-top:6px">성장증폭 %<input type="text" inputmode="decimal" id="ampIn" value="${esc(c.amp??(ed&&isNum(ed.amp)?ed.amp:isNum(curAmp)?curAmp:''))}" placeholder="모름" style="width:80px"><span>${isNum(curAmp)?'(지금 '+fmt(curAmp)+'%, 바뀌었으면 고쳐요)':'(게임 상태창 값)'}</span></label>
     <div class="mut" style="margin-top:10px">바뀐 값 ${items.length?'(아이템 말고 직접)':''}</div>
     ${c.rows.map((r,k)=>`<div class="list-row" data-cr="${k}" style="flex-wrap:wrap">
-      <select class="cgi">${gis.map(x=>`<option value="${x.v}"${x.v===r.gi?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <button class="sm cgi" style="text-align:left;max-width:60%">${esc(giName(t,r.gi))} ▾</button>
       <input type="text" class="cval" value="${esc(r.val)}" placeholder="+5, -100, 1.2만" style="width:100px"><button class="sm cdh" title="지금 값 → 바꿀 값으로 계산">±</button>
       ${(()=>{const U=unitOfGI(t,...r.gi.split(':'));if(U!=='both'){r.unit=U;return`<span class="mut">${U==='pct'?'%':'값'}</span>`}
         return`<span class="seg"><button data-u="flat" class="${r.unit!=='pct'?'on':''}">값</button><button data-u="pct" class="${r.unit==='pct'?'on':''}">%</button></span>`})()}
@@ -1903,13 +1942,13 @@ function vRecs(c,v){
   const pbox=$('#petBox');if(pbox){const drawPet=()=>{pbox.innerHTML=petFields(c.pet);bindPet(pbox,c.pet,()=>{drawPet();snapRec()})};drawPet()}
   v.querySelectorAll('[data-act-it]').forEach(b=>b.onclick=()=>{const id=b.dataset.actIt,a=c.acts[id]||0;c.acts[id]=a===0?1:a>0?-1:0;keep(()=>render())})
   v.querySelectorAll('[data-cr]').forEach(el=>{const r=c.rows[+el.dataset.cr]
-    el.querySelector('.cgi').onchange=e=>r.gi=e.target.value
+    el.querySelector('.cgi').onclick=()=>pickItem(t,r.gi,gi=>{r.gi=gi;keep(()=>render())})
     el.querySelector('.cval').oninput=e=>r.val=e.target.value
     el.querySelector('.cdh').onclick=()=>deltaHelper(d=>{r.val=d;keep(()=>render())})
     el.querySelector('.conce').onchange=e=>r.once=e.target.checked
     el.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{r.unit=b.dataset.u;keep(()=>render())})
     el.querySelector('.cdel').onclick=()=>{c.rows.splice(+el.dataset.cr,1);keep(()=>render())}})
-  const ac=$('#addCh');if(ac)ac.onclick=()=>{c.rows.push({gi:(c.rows[c.rows.length-1]||{}).gi||gis[0].v,unit:'flat',val:'',once:false});keep(()=>render())}
+  const ac=$('#addCh');if(ac)ac.onclick=()=>pickItem(t,null,gi=>{c.rows.push({gi,unit:'flat',val:'',once:false});keep(()=>render())})
   const rc=$('#rc');if(rc)rc.onclick=()=>{draftDel(dk);c.edit=null;c.rows=null;loadData();render()}
   $('#gost').onclick=()=>go({v:'start',id:s.id})
   $('#goreset').onclick=()=>go({v:'start',id:s.id,reset:true})
@@ -1996,7 +2035,7 @@ function sessionData(s){
         if(a&&a.length){v[pre+m.id]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)tol[pre+m.id]=(Math.max(...a)-Math.min(...a))/2}
         else if(isFinite(vv[m.id]))v[pre+m.id]=vv[m.id]
         // 소환수를 정한 실험의 스킬 측정: 소환수마다 스킬 배율이 달라서 도감 스킬 배율로 나눠 같은 기준(잰 공격 배율 %)으로 맞춤
-        if(hasPet&&/스킬/.test(m.name)&&isFinite(v[pre+m.id])){const pct=curP?num(skOf({name:curP.name}).pct):NaN
+        if(hasPet&&/스킬/.test(m.name)&&isFinite(v[pre+m.id])){const pk=petSkillOf(curP),pct=pk?pk.pct:NaN
           const f=pct>0?(num(m.basePct??m.pct)||100)/pct:NaN;v[pre+m.id]*=f;if(tol[pre+m.id]!=null)tol[pre+m.id]*=f
           if(!(pct>0))skillMiss.add(curP?curP.name||'(이름 없음)':'(소환수 안 정함)')}})
     return{no:i+1,r,v,tol}})
@@ -2032,7 +2071,7 @@ function vFind(c,v){
     return`<div class="card"><div class="big">사이클에 필요한 공식</div><div class="row" style="margin-top:6px">${groups.map(mid=>{const m=t.measures.find(q=>q.id===mid),ok=have('m:'+mid)||have('c:'+mid)
       return`<span class="tag${ok?'':' bad'}">${esc(m?m.name:'?')} ${ok?'✓':'✗ 아직'}</span>`}).join('')}</div>
       <div class="mut" style="margin-top:4px">그룹마다 비치명이나 치명 공식 중 하나만 있으면 돼요. ✗인 그룹을 위에서 골라 찾고 [저장]하세요.</div></div>`})()}
-  ${D.hasPet&&t.measures.some(m=>/스킬/.test(m.name))?`<div class="card mut">스킬 값은 그 기록 소환수의 도감 스킬 배율로 나눠 ${esc(String(num((t.measures.find(m=>/스킬/.test(m.name))||{}).basePct)||100))}% 기준으로 맞춰서 계산해요 (1타 기준).${D.skillMiss.length?`<br><span class="bad">도감에 스킬 배율이 없어서 스킬 공식에서 빠지는 소환수: ${esc(D.skillMiss.join(', '))}</span> → 앱·PC 도감 › 수정에서 스킬 배율을 적어 주세요.`:''}</div>`:''}
+  ${D.hasPet&&t.measures.some(m=>/스킬/.test(m.name))?`<div class="card mut">스킬 값은 그 기록 소환수의 스킬 배율(도감, 없으면 실험에서 직접 적은 값)로 나눠 ${esc(String(num((t.measures.find(m=>/스킬/.test(m.name))||{}).basePct)||100))}% 기준으로 맞춰서 계산해요 (1타 기준).${D.skillMiss.length?`<br><span class="bad">스킬 배율이 없어서 스킬 공식에서 빠지는 소환수: ${esc(D.skillMiss.join(', '))}</span> → 시작 상태(또는 소환수를 바꾼 기록)에서 직접 적거나 도감에 적어 주세요.`:''}</div>`:''}
   <div id="saved"></div><div id="out"></div>`
   showSaved(c)
   $('#ft').onchange=e=>{c.target=e.target.value;c.res=null;render()}
