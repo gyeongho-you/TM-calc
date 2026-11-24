@@ -1525,20 +1525,43 @@ class OverlayService : Service() {
         labPanel?.visibility = View.INVISIBLE
         bubble.visibility = View.INVISIBLE
         val out = ArrayList<Bitmap>()
-        fun done() {
+        // 여러 장 찍는 동안: 위쪽에 "찍는 중 k/n · 눌러서 취소" (찍는 순간에는 숨겨서 사진에 안 나오게)
+        var cancelled = false
+        val ind: TextView? = if (n > 1) TextView(ui).apply {
+            textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#17181B"))
+            setPadding(dp(14), dp(8), dp(14), dp(8)); background = round(0xFF80CBC4.toInt(), 18)
+            setOnClickListener { cancelled = true; text = "취소하는 중…" }
+        } else null
+        ind?.let { v ->
+            runCatching { wm.addView(v, WindowManager.LayoutParams(-2, -2, overlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT)
+                .apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(24) }) }
+            v.visibility = View.INVISIBLE
+        }
+        fun done(ok: Boolean = true) {
+            ind?.let { v -> runCatching { wm.removeView(v) } }
             bubble.visibility = View.VISIBLE
             if (labWas) labPanel?.visibility = View.VISIBLE
             busy = false
-            cb(out)
+            if (ok) cb(out) else { out.forEach { it.recycle() }; toast("찍기를 취소했습니다.") }
         }
         fun shot(k: Int) {
-            shooter.capture { bmp, err ->
-                if (bmp != null) out += bmp
-                else if (err == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW) { toast("게임이 화면 캡처를 막고 있습니다."); done(); return@capture }
-                if (k + 1 < n) main.postDelayed({ shot(k + 1) }, gapMs) else done()
-            }
+            if (cancelled) return done(false)
+            ind?.visibility = View.INVISIBLE
+            main.postDelayed({
+                if (cancelled) return@postDelayed done(false)
+                shooter.capture { bmp, err ->
+                    if (bmp != null) out += bmp
+                    else if (err == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW) { toast("게임이 화면 캡처를 막고 있습니다."); done(); return@capture }
+                    if (cancelled) return@capture done(false)
+                    if (k + 1 < n) {
+                        ind?.apply { text = "📸 찍는 중 ${k + 1}/$n · 눌러서 취소"; visibility = View.VISIBLE }
+                        main.postDelayed({ shot(k + 1) }, gapMs - HIDE_DELAY_MS)
+                    } else done()
+                }
+            }, HIDE_DELAY_MS)
         }
-        main.postDelayed({ shot(0) }, HIDE_DELAY_MS)
+        main.post { shot(0) }
     }
 
     private fun ocrLines(bmp: Bitmap, ok: (List<OcrLine>) -> Unit) {
