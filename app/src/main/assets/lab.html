@@ -488,6 +488,9 @@ function gpSeeds(vars){
     for(const b of [base,wbase,...cbases]){
       S.push({o:'*',a:b,b:{o:'pct',a:sum(P)}})
       S.push(P.reduce((t,i)=>({o:'*',a:t,b:{o:'pct',a:V(i)}}),b))
+      // % 마다 계수 (그 묶음에 기록에 없는 %가 이미 있으면 1 + 계수×변화 로 보임)
+      S.push(P.reduce((t,i)=>({o:'*',a:t,b:{o:'pct',a:{o:'*',a:{o:'c',v:0.5},b:V(i)}}}),b))
+      S.push({o:'*',a:b,b:{o:'pct',a:wsum(P)}})
     }
   }
   for(const d of D){
@@ -499,7 +502,9 @@ function gpSeeds(vars){
 }
 /** 조금씩 나눠 돌리는 탐색기: step(ms) 를 여러 번 부르면 된다 (화면이 멈추지 않게) */
 function gpEngine(vars,X,y,opt={}){
-  const nv=vars.length,cache=new Map(),N=opt.pop||160,MAX=opt.maxSize||25
+  const nv=vars.length,cache=new Map(),N=opt.pop||160
+  // 변수가 많으면 빠른 탐색 모양(시작점)부터 크기 제한을 넘으니, 시작점 크기만큼은 허용
+  const MAX=Math.max(opt.maxSize||25,...gpSeeds(vars).map(t=>gpSize(t)+4))
   const n=y.length,mean=y.reduce((s,v)=>s+v,0)/n,sd=Math.sqrt(y.reduce((s,v)=>s+(v-mean)**2,0)/n)||1
   const unit=roundUnit(y),floor=(unit/Math.sqrt(12))/sd*0.5
   const front=new Map()
