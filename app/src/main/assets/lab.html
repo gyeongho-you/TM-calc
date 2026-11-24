@@ -175,7 +175,7 @@ function makeF(sp){
     case'pow':return(p,x)=>Math.exp(p[0]+x.reduce((s,v,i)=>s+p[i+1]*Math.log(v),0))
     case'red':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.O,p,1,x))*K/(K+x[sp.d])}
     case'red6':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.Fo,p,1,x))*(1+sum(sp.P,p,1+sp.Fo.length,x,100))*K/(K+x[sp.d])}
-    case'gp':{const fn=new Function('c','x',`return c[${sp.k}]+c[${sp.k+1}]*${sp.body}`);return fn}
+    case'gp':{const fn=sp.noA?new Function('c','x',`return c[${sp.k}]*${sp.body}`):new Function('c','x',`return c[${sp.k}]+c[${sp.k+1}]*${sp.body}`);return fn}
   }
   return null
 }
@@ -381,7 +381,9 @@ function parseChanges(s){
 
 // ---------------------------------------------------------------- 심도 탐색 (기호 회귀)
 // 공식 모양을 나무(트리)로 만들고, 섞고 바꿔 가며(유전 프로그래밍) 기록에 가장 잘 맞고 단순한 것을 찾는다.
-// 상수는 후보마다 기록에 맞게 다시 계산한다. 결과 = α + β × (나무) 로 감싸서 크기·단위는 따로 맞춘다.
+// 상수는 후보마다 기록에 맞게 다시 계산한다. 결과 = β × (나무) 로 크기만 맞춘다.
+// (예전엔 α + β × 나무 — 기록에 없는 다른 스펙을 맨 앞 '+ 상수'로 흡수해서 % 옵션 효율이 틀어졌음.
+//  안 바꾼 스펙은 (상수 + 공격력) 처럼 나무 안에서 그 값과 같은 자리에 들어가야 맞다)
 const GP_BIN=['+','-','*','/','+','*','max']
 const gpPick=a=>a[Math.floor(Math.random()*a.length)]
 function gpLeaf(nv){return Math.random()<0.75?{o:'v',i:Math.floor(Math.random()*nv)}:{o:'c',v:gpPick([1,2,0.5,10,100,1000])}}
@@ -421,18 +423,23 @@ function gpStr(n,names,cs,prec=0){
 }
 function gpCompile(tree){
   const cs=[],body=gpJs(tree,cs),k=cs.length
-  let fn;try{fn=new Function('c','x',`return c[${k}]+c[${k+1}]*${body}`)}catch(e){return null}
+  let fn;try{fn=new Function('c','x',`return c[${k}]*${body}`)}catch(e){return null}
   return{fn,cs,k,body}
 }
+const gpHasV=n=>n.o==='v'||(n.a&&gpHasV(n.a))||(n.b&&gpHasV(n.b))
+const gpHasPct=(n,vars)=>(n.o==='v'&&vars[n.i]&&vars[n.i].unit==='pct')||n.o==='pct'||(n.a&&gpHasPct(n.a,vars))||(n.b&&gpHasPct(n.b,vars))
+/** 맨 바깥이 '상수 ± (% 가 든 식)' 이면 버림: 안 바꾼 스펙을 % 곱셈 밖에서 더해 버리는 모양 */
+function gpBadTop(t,vars){if(t.o!=='+'&&t.o!=='-')return false
+  return(!gpHasV(t.a)&&gpHasPct(t.b,vars))||(!gpHasV(t.b)&&gpHasPct(t.a,vars))}
 /** 나무 하나의 상수를 맞추고 오차 계산. 같은 모양은 한 번만 */
 function gpEval(tree,X,y,cache,sd){
   const C=gpCompile(tree);if(!C)return null
   if(cache.has(C.body))return cache.get(C.body)
   const {fn,cs,k}=C
-  const t=X.map(x=>fn([...cs,0,1],x))
+  const t=X.map(x=>fn([...cs,1],x))
   if(t.some(v=>!isFinite(v))||Math.max(...t)-Math.min(...t)<1e-12){cache.set(C.body,null);return null}
-  const l=ols(t.map(v=>[v]),y)
-  const r=lm(fn,[...cs,l?l[0]:0,l?l[1]:1],X,y,k?25:4)
+  const tt=t.reduce((s,v)=>s+v*v,0),b0=tt>0?t.reduce((s,v,i)=>s+v*y[i],0)/tt:1   // 크기 β 만 (원점 지나는 직선)
+  const r=lm(fn,[...cs,b0],X,y,k?25:4)
   if(!isFinite(r.sse)){cache.set(C.body,null);return null}
   const e={tree:gpSetConsts(gpClone(tree),r.p),p:r.p,fn,k,size:gpSize(tree),sse:r.sse,errN:Math.sqrt(r.sse/y.length)/sd}
   cache.set(C.body,e)
@@ -474,9 +481,11 @@ function gpSeeds(vars){
   const base=F.length?sum(F):{o:'c',v:1},wbase=F.length?wsum(F):{o:'c',v:1}
   // 기본값 + 변화량 (세션 기록은 변화량만 적으므로 시작값이 상수로 붙는 경우가 많다)
   const cbase=F.length?{o:'+',a:{o:'c',v:100},b:sum(F)}:{o:'c',v:1}
-  if(F.length)S.push(cbase)
+  // 안 바꾼 스펙이 큰 상수로 붙는 경우가 많아서, 상수 시작값을 여러 크기로 (작은 값에서 시작하면 못 찾아감)
+  const cbases=F.length?[100,1e4,1e6,1e8].map(v=>({o:'+',a:{o:'c',v},b:sum(F)})):[cbase]
+  if(F.length)S.push(...cbases)
   if(P.length){
-    for(const b of [base,wbase,cbase]){
+    for(const b of [base,wbase,...cbases]){
       S.push({o:'*',a:b,b:{o:'pct',a:sum(P)}})
       S.push(P.reduce((t,i)=>({o:'*',a:t,b:{o:'pct',a:V(i)}}),b))
     }
@@ -496,7 +505,7 @@ function gpEngine(vars,X,y,opt={}){
   const front=new Map()
   const score=e=>Math.log10(Math.max(e.errN,floor))+0.035*e.size
   const ev=t=>{
-    if(gpSize(t)>MAX)return null
+    if(gpSize(t)>MAX||gpBadTop(t,vars))return null
     const e=gpEval(t,X,y,cache,sd);if(!e)return null
     const f=front.get(e.size);if(!f||e.errN<f.errN)front.set(e.size,e)
     e.score=score(e);return e
@@ -532,9 +541,9 @@ function gpEngine(vars,X,y,opt={}){
 /** 심도 탐색 결과 하나를 빠른 탐색 결과와 같은 모양의 모델로 (정리·예측·표시에 같이 씀) */
 function gpModel(e,vars,X,y,Xt,yt,quick,tol,tolT){
   const names=vars.map(v=>v.name),k=e.k
-  const form=p=>{const cs=p.slice(0,k);return pretty('결과 = '+coef(p[k])+' + '+coef(p[k+1])+'×('+gpStr(e.tree,names,cs)+')')}
-  const m={name:'크기 '+e.size,desc:'',k:e.k+2,size:e.size,f:e.fn,p:e.p.slice(),form,snap:true,predict:x=>e.fn(m.p,x),
-    spec:{type:'gp',body:gpCompile(e.tree).body,k:e.k}}
+  const form=p=>{const cs=p.slice(0,k);return pretty('결과 = '+coef(p[k])+'×('+gpStr(e.tree,names,cs)+')')}
+  const m={name:'크기 '+e.size,desc:'',k:e.k+1,size:e.size,f:e.fn,p:e.p.slice(),form,snap:true,predict:x=>e.fn(m.p,x),
+    spec:{type:'gp',body:gpCompile(e.tree).body,k:e.k,noA:true}}
   m.formula=form(m.p)
   const unit=roundUnit(y)
   m.pr=X.map(x=>m.f(m.p,x));m.res=m.pr.map((v,i)=>v-y[i]);m.sse=m.res.reduce((s,v)=>s+v*v,0)
