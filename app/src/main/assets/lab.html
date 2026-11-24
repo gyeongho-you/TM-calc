@@ -874,7 +874,7 @@ let deepRun=null
 function render(){
   if(deepRun){deepRun.stop=true;deepRun=null}
   const c=cur();$('#back').style.display=nav.length>1?'':'none';$('#hdr').innerHTML=''
-  ;({front:vFront,home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems,gset:vGset})[c.v](c,$('#view'))
+  ;({front:vFront,home:vHome,tpl:vTpl,newSes:vNewSes,recs:vRecs,find:vFind,start:vStart,opt:vOpt,items:vItems,gset:vGset,mapTm2:vMapTm2})[c.v](c,$('#view'))
 }
 
 // ---------------------------------------------------------------- 최적화 (앞화면, 일반 사용자용): 공식 세트 + 내 스펙 + 공격 구성 → 무엇을 올리면 이득?
@@ -1216,6 +1216,59 @@ function vHome(c,v){
   if(tab==='exp')homeExp(t,tv);else if(tab==='form')homeForm(t,tv);else if(tab==='items')homeItems(t,tv);else{c.id=t.id;vOpt(c,tv)}
   $('#title').textContent='연구실'
 }
+/** 예전 게임(직접 만든 틀)의 실험 → 테마 (기본) 복사본. 항목은 이름으로 맞춤, 못 맞춘 항목·아이템은 빠짐. 원본은 그대로 */
+function tm2KeyFor(t,gid,iid,unit){const G=t.groups.find(g=>g.id===gid);if(!G)return null
+  if(gid==='crit')return iid==='rate'||iid==='dmg'?'crit:'+iid+':pct':null
+  const IT=iid?(G.items||[]).find(x=>x.id===iid):null,raw=IT?IT.name:G.name,rm=tm2Template().runeMap
+  const N=x=>String(x).replace(/\s/g,'').replace(/^모두/,'모든')
+  let k=rm[raw]||rm[N(raw)]||Object.entries(rm).find(([l])=>N(l)===N(raw))?.[1]||null
+  if(!k||k==='skip'){const L=N(raw),gn=N(G.name)
+    const e=TM2_ELEM.find(([,n])=>L===n||L===n+'속성'),ty=TM2_TYPE.find(([,n])=>L===n+'타입')
+    k=/속성강화/.test(gn)&&e?'g:elv:'+e[0]+':flat':/모든능력치/.test(L)?'g:elv:all:flat':/파티피해증가/.test(L)?'g:buff:party:flat':/^무기/.test(gn)&&/^공격/.test(L)?'g:wpn:atkp:pct':/^기본/.test(gn)&&/^공격/.test(L)?'g:base:atk:flat':(k==='skip'?null:null)}
+  if(!k)return null;k=k.replace(/^g:/,'');return k.endsWith(':'+unit)?k:null}
+/** 옛 실험에서 쓰인 항목 키(분류:항목:단위) 목록 */
+function usedKeys(s){const K=new Set(Object.keys(s.start||{}))
+  for(const r of s.records){for(const ch of changesOf(r))if(!ch.from)K.add(ch.groupId+':'+(ch.itemId||'')+':'+(ch.unit||'flat'));for(const k in r.reset||{})K.add(k)}
+  return[...K]}
+function copyToTm2(s,M,MM){const t=tpl(s.templateId);if(!t)return null
+  const miss=new Set(),mm={};for(const m of t.measures)mm[m.id]=MM&&m.id in MM?MM[m.id]:/스킬/.test(m.name)?'skill':'basic'
+  const mapKey=(gid,iid,unit,label)=>{const ok=gid+':'+(iid||'')+':'+unit,k=M&&ok in M?M[ok]||null:tm2KeyFor(t,gid,iid,unit);if(!k)miss.add(label);return k}
+  const nameOf=(gid,iid)=>{const G=t.groups.find(g=>g.id===gid),IT=G&&iid?(G.items||[]).find(x=>x.id===iid):null;return(G?G.name:'?')+(IT?' '+IT.name:'')}
+  const remapM=o=>{if(!o)return o;const r={};for(const[k,v]of Object.entries(o))if(mm[k]&&!(mm[k]in r))r[mm[k]]=v;return r}
+  const start={};for(const[k,v]of Object.entries(s.start||{})){const[g,i,u]=k.split(':');const nk=mapKey(g,i||null,u,nameOf(g,i));if(nk)start[nk]=v}
+  const records=s.records.map(r=>{const changes=[]
+    for(const ch of changesOf(r)){if(ch.from)continue;const nk=mapKey(ch.groupId,ch.itemId,ch.unit||'flat',nameOf(ch.groupId,ch.itemId));if(!nk)continue
+      const[g,i,u]=nk.split(':');changes.push({groupId:g,itemId:i,unit:u,change:ch.change,once:!!ch.once})}
+    if((r.items||[]).length)miss.add('아이템 끼기/빼기')
+    const reset=r.reset?Object.fromEntries(Object.entries(r.reset).map(([k,v])=>{const[g,i,u]=k.split(':');return[mapKey(g,i||null,u,nameOf(g,i)),v]}).filter(([k])=>k)):undefined
+    const f0=changes.find(q=>!q.once)||changes[0]
+    const o={id:uid(),time:r.time,changes,items:[],values:remapM(r.values)||{},samples:remapM(r.samples)||{},critValues:remapM(r.critValues)||{},critSamples:remapM(r.critSamples)||{},
+      skip:!!r.skip,note:r.note||'',groupId:f0?f0.groupId:null,itemId:f0?f0.itemId:null,change:f0?f0.change:0,unit:f0?f0.unit:'flat'}
+    if(reset)o.reset=reset;if(r.pet)o.pet=r.pet;if(isNum(r.amp))o.amp=r.amp;return o})
+  return{ses:{id:uid(),name:s.name+' (테마)',templateId:'tm2',created:Date.now(),records,start,pet0:s.pet0||null,amp0:isNum(s.amp0)?s.amp0:null},miss:[...miss]}}
+function vMapTm2(c,v){const s=ses(c.id);if(!s)return back();const t=tpl(s.templateId);if(!t)return back()
+  $('#title').textContent='테마 (기본)으로 옮기기'
+  const T2=tm2Template(),targets=tplVars(T2).map(x=>({id:x.id.slice(2),name:x.name.replace(/ 변화$/,''),unit:x.unit}))
+  const nameOf=k=>{const[g,i]=k.split(':'),G=t.groups.find(q=>q.id===g),IT=G&&i?(G.items||[]).find(x=>x.id===i):null;return(G?G.name:'(지운 분류)')+(IT?' '+IT.name:(i?' (지운 항목)':''))}
+  const keys=usedKeys(s)
+  c.M=c.M||Object.fromEntries(keys.map(k=>{const[g,i,u]=k.split(':');return[k,tm2KeyFor(t,g,i||null,u)||'']}))
+  c.MM=c.MM||Object.fromEntries(t.measures.map(m=>[m.id,/스킬/.test(m.name)?'skill':'basic']))
+  const cnt=k=>s.records.filter(r=>changesOf(r).some(ch=>ch.groupId+':'+(ch.itemId||'')+':'+(ch.unit||'flat')===k)).length
+  v.innerHTML=`<div class="card"><div class="big">${esc(s.name)} <span class="mut">(${esc(t.name)} · 기록 ${s.records.length}개)</span></div>
+    <div class="mut" style="margin-top:4px">예전 항목을 테마 (기본) 항목에 맞춰요. 이름으로 미리 골라 뒀으니 틀린 것만 고치세요. '빼기'로 둔 항목은 복사본에 안 들어가요. 원본은 그대로 남아요.</div></div>
+    <div class="card"><div class="big">항목</div><div class="scroll" style="margin-top:6px"><table><tr><th class="l">예전 항목</th><th>단위</th><th>바꾼 기록</th><th class="l">→ 테마 (기본)</th></tr>
+    ${keys.map((k,i)=>{const u=k.split(':')[2];return`<tr><td class="l">${esc(nameOf(k))}</td><td>${u==='pct'?'%':'값'}</td><td>${cnt(k)||''}</td>
+      <td class="l"><select data-mk="${i}"><option value="">빼기</option>${targets.filter(x=>x.unit===u).map(x=>`<option value="${x.id}"${c.M[k]===x.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>${c.M[k]?'':' <span class="bad">빠짐</span>'}</td></tr>`}).join('')||'<tr><td class="l mut" colspan="4">바꾼 항목이 없어요.</td></tr>'}</table></div></div>
+    <div class="card"><div class="big">잰 값</div><div class="grid" style="margin-top:6px">${t.measures.map((m,i)=>`<label class="f">${esc(m.name)}<select data-mm="${i}"><option value="">빼기</option><option value="basic"${c.MM[m.id]==='basic'?' selected':''}>평타</option><option value="skill"${c.MM[m.id]==='skill'?' selected':''}>스킬</option></select></label>`).join('')}</div>
+      ${s.records.some(r=>(r.items||[]).length)?'<div class="mut bad" style="margin-top:6px">아이템 끼기/빼기는 테마 (기본)에 없어서 빠져요 (아이템이 바꾼 값도 빠짐).</div>':''}</div>
+    <div class="row"><button class="pri" id="mgo">복사본 만들기</button><button id="mcx">취소</button></div>`
+  v.querySelectorAll('[data-mk]').forEach(e=>e.onchange=()=>{c.M[keys[+e.dataset.mk]]=e.value;render()})
+  v.querySelectorAll('[data-mm]').forEach(e=>e.onchange=()=>{c.MM[t.measures[+e.dataset.mm].id]=e.value})
+  $('#mcx').onclick=()=>back()
+  $('#mgo').onclick=()=>{const vals=Object.values(c.MM).filter(Boolean);if(new Set(vals).size<vals.length)return alert('평타·스킬에 같은 잰 값이 두 개 연결돼 있어요. 하나는 빼기로 해 주세요.')
+    const R=copyToTm2(s,c.M,c.MM);mutate(d=>d.sessions.push(R.ses));LS.set('tmcalcLabGame','tm2');LS.set('tmcalcLabTab','exp')
+    toast('복사했어요. 시작 상태에서 쓰는 소환수·성장증폭을 정해 주세요.');nav=[{v:'front'},{v:'home'},{v:'start',id:R.ses.id}];render()}
+}
 function homeExp(t,v){
   const ss=data.sessions.filter(s=>s.templateId===t.id).sort((a,b)=>(b.id===active)-(a.id===active)||b.created-a.created)
   v.innerHTML=`<h2>실험 ${hb('session')}<span class="sp"></span><button class="pri sm" id="nS">+ 새 실험</button></h2>
@@ -1237,6 +1290,7 @@ function homeExp(t,v){
         <button data-find="${s.id}">공식 찾기</button>
         <span style="flex:1"></span>
         <button class="sm" data-ren="${s.id}">이름</button>
+        ${t.tm2?'':`<button class="sm" data-tm2="${s.id}" title="원본은 그대로 두고 복사본을 만들어요">테마 (기본)으로 옮기기</button>`}
         <button class="sm" data-exp="${s.id}">내보내기</button>
         <button class="sm danger" data-del="${s.id}">삭제</button>
       </div></div>`}).join(''):`<div class="card empty">실험이 없어요. [+ 새 실험]으로 시작하세요.</div>`}
@@ -1258,6 +1312,7 @@ function homeExp(t,v){
   v.querySelectorAll('[data-exp]').forEach(b=>b.onclick=()=>{const s=ses(b.dataset.exp)
     saveJson(fname(s.name)+'.json',{kind:'tmcalc-lab-session',exported:new Date().toISOString(),template:tpl(s.templateId)||null,
       formulas:{saved:(s.saved||[]).map(f=>({target:f.targetName,formula:f.formula,maxError:f.maxAbs,exact:f.exact}))},session:s})})
+  v.querySelectorAll('[data-tm2]').forEach(b=>b.onclick=()=>go({v:'mapTm2',id:b.dataset.tm2}))
   $('#imp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
   $('#sample').onclick=()=>{addSample();render()}
 }
@@ -1308,13 +1363,15 @@ function importText(text){
         else (T.lists=T.lists||[]).push({id:uid(),name:o.list.name+(ex?' (불러옴)':''),items:o.list.items.map(it=>({...it,id:uid()}))})})
       toast('목록을 불러왔어요.');render();return}
     if(o.kind!=='tmcalc-lab-session'||!o.session)throw 0
+    let nid=null,tid=o.template&&o.template.id
     mutate(d=>{
-      let tid=o.template&&o.template.id
       if(o.template&&!d.templates.some(t=>t.id===tid))d.templates.push(o.template)
       const s={...o.session,id:uid(),templateId:tid||o.session.templateId}
       if(d.sessions.some(q=>q.name===s.name))s.name+=' (불러옴)'
-      d.sessions.push(s)
+      d.sessions.push(s);nid=s.id;tid=s.templateId
     })
+    const T=tpl(tid)
+    if(T&&!T.tm2){toast('실험을 불러왔어요. 테마 (기본) 항목에 맞춰 옮겨 주세요.');LS.set('tmcalcLabGame',T.id);nav=[{v:'front'},{v:'home'},{v:'mapTm2',id:nid}];render();return}
     toast('세션을 불러왔어요.');nav=[{v:'front'},{v:'home'}];render()
   }catch(_){alert('연구실 파일(실험·게임·목록)이 아니에요.')}
 }
