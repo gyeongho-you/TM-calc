@@ -1543,7 +1543,8 @@ class OverlayService : Service() {
             bubble.visibility = View.VISIBLE
             if (labWas) labPanel?.visibility = View.VISIBLE
             busy = false
-            if (ok) cb(out) else { out.forEach { it.recycle() }; toast("찍기를 취소했습니다.") }
+            // 중간에 멈춰도 그때까지 찍은 사진으로 창을 띄움 (한 장도 없으면 그냥 끝)
+            if (ok) cb(out) else if (out.isNotEmpty()) { toast("${out.size}장까지 찍고 멈췄습니다."); cb(out) } else toast("찍기를 취소했습니다.")
         }
         fun shot(k: Int) {
             if (cancelled) return done(false)
