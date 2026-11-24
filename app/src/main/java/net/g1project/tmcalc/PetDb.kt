@@ -14,6 +14,8 @@ class Pet(
     val sGrowth: DoubleArray,
     /** 만렙S 능력치 (게임의 "도감" 기준값) */
     val maxS: IntArray,
+    /** 스킬 정보 (최적화 덱·연구실): 키는 [PetDb.SKILL_KEYS]. 안 적었으면 비어 있음 */
+    val skill: Map<String, Double> = emptyMap(),
 )
 
 /** 도감 목록 정렬: 도감 만렙S(S 100%, 150레벨) 값 기준. [label] 은 고르기 목록에 보일 글자 */
@@ -118,6 +120,7 @@ class PetDb(val pets: List<Pet>) {
                     init = IntArray(4) { ini.getInt(it) },
                     sGrowth = DoubleArray(4) { s.getDouble(it) },
                     maxS = IntArray(4) { m.getInt(it) },
+                    skill = parseSkill(o.optJSONObject("k") ?: o.optJSONObject("스킬")),
                 )
                 check(list.last())?.let { throw IllegalArgumentException("${i + 1}번째 소환수: $it") }
             }
@@ -128,6 +131,32 @@ class PetDb(val pets: List<Pet>) {
          * 계산이 깨지지 않는 값인지 검사한다 (JSON 올리기로 들어온 파일은 믿을 수 없으므로).
          * 0/음수/NaN/엄청 큰 값이 들어가면 나눗셈이 무한대가 되어 앱이 죽을 수 있다. 문제가 없으면 null.
          */
+        /** 스킬 칸: 키, 화면 이름. 마나: 평타마다 평타당 마나만큼 차고 다 차면 스킬을 바로 씀 */
+        val SKILL_KEYS = listOf("mana" to "최대 마나", "per" to "평타당 마나", "pct" to "스킬 배율 %", "hits" to "스킬 타수",
+            "refund" to "스킬이 채우는 마나", "basicPct" to "평타 배율 %", "aps" to "10초 공격 횟수")
+
+        /** JSON 의 스킬 객체 (영어 키 또는 한글 이름) → 맵. 모르는 키·숫자 아닌 값은 버림 */
+        fun parseSkill(o: org.json.JSONObject?): Map<String, Double> {
+            if (o == null) return emptyMap()
+            val out = LinkedHashMap<String, Double>()
+            for ((k, label) in SKILL_KEYS) {
+                val v = when {
+                    o.has(k) -> o.optDouble(k)
+                    o.has(label) -> o.optDouble(label)
+                    else -> Double.NaN
+                }
+                if (v.isFinite()) out[k] = v
+            }
+            return out
+        }
+
+        /** 내보내기 JSON 한 줄 끝에 붙일 스킬 부분 (없으면 빈 글자): ,"스킬":{"mana":5,...} */
+        fun skillJson(p: Pet): String = if (p.skill.isEmpty()) "" else
+            ",\"스킬\":{" + p.skill.entries.joinToString(",") { (k, v) -> "\"$k\":" + (if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()) } + "}"
+
+        /** 앱 연구실(최적화)에 넘길 스킬 객체 */
+        fun skillObj(p: Pet): org.json.JSONObject = org.json.JSONObject().apply { for ((k, v) in p.skill) put(k, v) }
+
         fun check(p: Pet): String? = when {
             PetDb.key(p.name).isEmpty() -> "이름이 비어 있습니다"
             p.name.length > MAX_TEXT -> "이름이 너무 깁니다"
@@ -137,6 +166,7 @@ class PetDb(val pets: List<Pet>) {
             p.init.any { it !in 0..MAX_STAT } -> "초기치는 0 ~ $MAX_STAT 사이여야 합니다"
             p.maxS.any { it !in 1..MAX_STAT } -> "만렙S는 1 ~ $MAX_STAT 사이여야 합니다"
             p.sGrowth.any { !it.isFinite() || it <= 0 || it > MAX_GROWTH } -> "S성장률은 0 ~ $MAX_GROWTH 사이여야 합니다"
+            p.skill.values.any { !it.isFinite() || it < 0 || it > 1_000_000 } -> "스킬 값은 0 ~ 1000000 사이여야 합니다"
             else -> null
         }
 
@@ -161,7 +191,7 @@ class PetDb(val pets: List<Pet>) {
             return user.filterNot { u ->
                 val b = byKey[key(u.name)] ?: return@filterNot false
                 u.init.contentEquals(b.init) && u.sGrowth.contentEquals(b.sGrowth) && u.maxS.contentEquals(b.maxS) &&
-                    tag(u.grade, b.grade) && tag(u.element, b.element) && tag(u.type, b.type)
+                    tag(u.grade, b.grade) && tag(u.element, b.element) && tag(u.type, b.type) && u.skill == b.skill
             }
         }
 

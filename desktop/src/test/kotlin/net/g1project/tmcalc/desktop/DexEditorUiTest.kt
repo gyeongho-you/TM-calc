@@ -59,7 +59,8 @@ class DexEditorUiTest {
         File("build/ui").mkdirs(); ImageIO.write(img, "png", File("build/ui/dex-editor.png"))
         // 이름, 등급, 속성, 타입, 초기치 4, 성장률 4, 만렙S 4
         assertEquals(listOf("1세대의 전설", "전설", "어둠", "비행", "12", "7", "15", "103", "3.18", "1.93", "3.75", "25.14",
-            "486", "295", "574", "3849"), f)
+            "486", "295", "574", "3849"), f.take(16))
+        assertEquals(List(7) { "" }, f.drop(16))   // 스킬 칸 (안 적음)
         SwingUtilities.invokeAndWait { Window.getWindows().forEach { it.dispose() } }
         prefs.removeNode()
     }

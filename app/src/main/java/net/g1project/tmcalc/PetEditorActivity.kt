@@ -201,7 +201,8 @@ class PetEditorActivity : Activity() {
             val tags = listOf(p.grade, p.element, p.type).filter { it.isNotBlank() }.joinToString("/")
             if (editMode) {
                 list.addView(TextView(this).apply {
-                    text = "${p.name}$tag\n" + (if (tags.isEmpty()) "" else "$tags · ") + "만렙S ${p.maxS.joinToString(" / ")}"
+                    text = "${p.name}$tag\n" + (if (tags.isEmpty()) "" else "$tags · ") + "만렙S ${p.maxS.joinToString(" / ")}" +
+                        (if (p.skill.isNotEmpty()) " · 스킬" else "")
                     textSize = 14f
                     setTextColor(if (tag.isEmpty()) Color.parseColor("#C9CBD0") else Color.parseColor("#F2B84B"))
                     setPadding(0, px(8), 0, px(8))
@@ -288,6 +289,15 @@ class PetEditorActivity : Activity() {
             form.addView(TextView(this).apply { text = label; textSize = 12f; setPadding(0, px(8), 0, 0) })
             form.addView(LinearLayout(this).apply { row.forEach { addView(it, weight()) } })
         }
+        // 스킬 (최적화 덱·연구실이 씀). 몰라도 저장 가능
+        form.addView(TextView(this).apply { text = "스킬 (최적화·연구실에서 씀, 몰라도 됨)"; textSize = 12f; setPadding(0, px(10), 0, 0) })
+        val skE = PetDb.SKILL_KEYS.map { (k, label) -> k to field(label, pet?.skill?.get(k)?.let { v -> fmt(v) } ?: "", dec) }
+        skE.chunked(2).forEach { row -> form.addView(LinearLayout(this).apply { row.forEach { (_, e) -> addView(e, weight()) } }) }
+        form.addView(TextView(this).apply {
+            text = "· 마나: 평타마다 평타당 마나만큼 차고, 다 차면 스킬을 바로 써요.\n· 10초 공격 횟수 = 배속 끄고 평타+스킬을 센 값."
+            textSize = 11f
+            setTextColor(Color.parseColor("#9A9DA3"))
+        })
         form.addView(TextView(this).apply {
             text = "· 초기치는 꼭 필요합니다.\n· 성장률(S)과 만렙S 중 하나만 적으면 나머지는 자동으로 채웁니다.\n" +
                 "· 150레벨 화면에서 열면 만렙S 칸에 화면의 도감값(현재 − 도감 대비)이 들어갑니다."
@@ -332,7 +342,13 @@ class PetEditorActivity : Activity() {
                     m[i] = mv ?: Calculator.round(iv + sv!! * (Calculator.MAX_LEVEL - 1), 0).toInt()
                     if (m[i] <= 0 || s[i] <= 0) return@setOnClickListener toast("${stats[i]} 값을 확인해 주세요.")
                 }
-                val p = Pet(n, gradeE.text.toString().trim(), elemE.text.toString().trim(), typeE.text.toString().trim(), init, s, m)
+                val skill = LinkedHashMap<String, Double>()
+                for ((k, e) in skE) {
+                    val t = e.text.toString().trim()
+                    if (t.isEmpty()) continue
+                    skill[k] = t.toDoubleOrNull() ?: return@setOnClickListener toast("${e.hint} 값을 확인해 주세요.")
+                }
+                val p = Pet(n, gradeE.text.toString().trim(), elemE.text.toString().trim(), typeE.text.toString().trim(), init, s, m, skill)
                 PetDb.check(p)?.let { return@setOnClickListener toast(it) }
                 PetStore.put(this, p, oldName = pet?.name)
                 val odd = PetDb.oddValues(p)

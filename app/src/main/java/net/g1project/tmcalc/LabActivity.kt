@@ -80,7 +80,8 @@ class LabActivity : Activity() {
                 arr.put(JSONObject().put("label", p.label).put("name", p.name).put("level", p.level)
                     .put("element", pet?.element ?: "").put("type", pet?.type ?: "").put("grade", pet?.grade ?: "")
                     .put("stats", org.json.JSONArray(p.stats.toList()))
-                    .put("combat", combatOf(p.stats, AppPrefs.growthAmp(this@LabActivity))))
+                    .put("combat", combatOf(p.stats, AppPrefs.growthAmp(this@LabActivity)))
+                    .put("amp", Math.round(AppPrefs.growthAmp(this@LabActivity) * 1000) / 10.0))
             }
             return arr.toString()
         }
@@ -88,7 +89,7 @@ class LabActivity : Activity() {
         /** 도감 (이름·속성·타입·도감 S 능력치) — 최적화 › 덱의 공속 비중 */
         @JavascriptInterface fun petDb(): String {
             val arr = org.json.JSONArray()
-            for (pt in PetStore.load(this@LabActivity).pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+            for (pt in PetStore.load(this@LabActivity).pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())).put("k", PetDb.skillObj(pt)))
             return arr.toString()
         }
 

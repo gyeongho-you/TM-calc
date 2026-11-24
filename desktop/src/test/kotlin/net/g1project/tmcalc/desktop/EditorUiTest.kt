@@ -62,7 +62,8 @@ class EditorUiTest {
         val boxes = allFields(edit)
         val fields = boxes.map { it.text }
         assertEquals("새소환수", fields[0])
-        assertEquals(listOf("566", "286", "477", "4071"), fields.takeLast(4))
+        // 이름 1 + 등급·속성·타입 3 + 초기치·성장률·만렙S 12 = 16칸, 그 뒤는 스킬 칸
+        assertEquals(listOf("566", "286", "477", "4071"), fields.subList(12, 16))
         // 초기치만 넣고 저장 → S성장률은 (만렙S - 초기치) / 149 로 자동 계산되어 도감에 들어간다
         SwingUtilities.invokeAndWait {
             listOf("15", "7", "12", "109").forEachIndexed { i, v -> boxes[4 + i].text = v } // 이름, 등급, 속성, 타입 다음이 초기치

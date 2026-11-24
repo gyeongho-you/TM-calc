@@ -853,9 +853,11 @@ function render(){
 function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fsel||{},tv=tplVars(t),vm=t.vmeta||{}
   const forms={}
   for(const m of TV){const L=FL.filter(x=>normT(x.f.target)===m.id);const x=L.find(q=>q.key===fsel[m.id])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];if(x)forms[m.id]={spec:x.f.spec,p:x.f.p,vars:x.f.vars,formula:x.f.formula}}
-  const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')))]
+  const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')||v.startsWith('p:')))]
   if(t.useCrit!==false)for(const k of ['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
-  const inputs=ids.map(id=>{const x=tv.find(q=>q.id===id);const M=vm[id]||{},name=(x?x.name:id).replace(/ 변화$/,'')
+  const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['소환수 성장증폭 %','pet']}
+  const inputs=ids.map(id=>{if(PN[id])return{id,name:PN[id][0],unit:id.endsWith(':pct')||id==='p:amp'?'pct':'flat',cap:null,scope:PN[id][1]}
+    const x=tv.find(q=>q.id===id);const M=vm[id]||{},name=(x?x.name:id).replace(/ 변화$/,'')
     // 어디에 붙는 값인지: 정해 둔 것 → 없으면 이름으로 짐작 (속성 = 소환수 속성별, 타입 = 소환수 타입별)
     const scope=(t.setScope||{})[id]||(/모든/.test(name)?'user':/속성/.test(name)?'elem':/타입/.test(name)?'type':'user')
     return{id,name,unit:id.endsWith(':pct')?'pct':'flat',cap:isFinite(num(M.cap))?num(M.cap):(id==='g:crit:rate:pct'?100:null),scope}})
@@ -909,7 +911,7 @@ function petState(S,st,p){const o={}
     o[i.id]=sc==='elem'?st[i.id+'@'+normElem(p.elem)]:sc==='type'?st[i.id+'@'+p.type]:sc==='pet'?(p.st||{})[i.id]:st[i.id]}
   return o}
 /** 마나 한 바퀴: 평타 ceil((최대 마나 − 스킬이 채우는 마나) / 평타당 마나)번 + 스킬 1번 (타수만큼) */
-function petCycle(S,p,g){const k=p.skill||{},mana=num(k.mana)||0,per=num(k.per)||1,ref=num(k.refund)||0
+function petCycle(S,p,g){const k=skOf(p),mana=num(k.mana)||0,per=num(k.per)||1,ref=num(k.refund)||0
   const nb=mana>0?Math.max(0,Math.ceil((mana-ref)/per)):1
   const L=[{name:'평타',group:g.basic,pct:k.basicPct||'',count:String(nb),crit:'can'}]
   if(mana>0)L.push({name:'스킬',group:g.skill,pct:k.pct||'',count:String(num(k.hits)||1),crit:'can'})
@@ -917,10 +919,15 @@ function petCycle(S,p,g){const k=p.skill||{},mana=num(k.mana)||0,per=num(k.per)|
 function deckGroups(S,sp){const ms=S.measures,find=re=>(ms.find(m=>re.test(m.name))||{}).id
   return{basic:(sp.grp||{}).basic||find(/평타|일반|기본/)||(ms[0]||{}).id,skill:(sp.grp||{}).skill||find(/스킬/)||(ms[1]||ms[0]||{}).id}}
 /** 10초 동안 공격 횟수(배속 끄고 직접 센 값, 소환수 종류마다 고정) → 초당 공격 */
-const petAps=p=>{const n=num((p.skill||{}).aps);return n>0?n/10:null}
+const petAps=p=>{const n=num(skOf(p).aps);return n>0?n/10:null}
 /** 도감: 폰은 앱에서, PC 는 같은 폴더 pets.js 에서 (없으면 빈 목록) */
 let _petdb=null
 function petDb(){if(_petdb)return _petdb;try{if(typeof TMCalc!=='undefined'&&TMCalc.petDb)_petdb=JSON.parse(TMCalc.petDb())}catch(e){}if(!_petdb)_petdb=window.PETDB||[];return _petdb}
+/** 소환수 스킬: 앱(PC) 도감에 적은 값 (도감 › 수정). 예전에 최적화 덱에 적은 값은 도감에 없을 때만 씀 */
+const skillDex=()=>Object.assign({},(data.spec||{}).petSkills||{},data.petSkills||{})
+const skHas=k=>!!k&&Object.values(k).some(x=>String(x??'').trim())
+const skOf=p=>{if(!p)return{};const d=p.name?dexOf(p.name):null;if(d&&skHas(d.k))return{...d.k}
+  const o=p.name?skillDex()[p.name]:null;return skHas(o)?{...(p.skill||{}),...o}:p.skill||{}}
 const dexOf=name=>{const k=String(name||'').replace(/\s/g,'');return k?petDb().find(x=>String(x.n).replace(/\s/g,'')===k):null}
 /** 공속은 태생(도감 S 순발)에 맞춰 설계 → 도감 S 순발을 공격 빈도 비율로 */
 const dexSpeed=p=>{const d=dexOf(p.name);return d&&d.m&&d.m[2]>0?d.m[2]:null}
@@ -934,9 +941,47 @@ function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],P=deck.pets
   for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r
     if(atk)v*=petAtk(p)
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
-    if(speed||dex)v=v/((cy.nb+(num((p.skill||{}).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
+    if(speed||dex)v=v/((cy.nb+(num(skOf(p).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
     r+=v;miss+=e.miss;per.push(v)}
   return{r,miss,per,speed,dex,atk,hasPetIn}}
+/** 저장한 소환수 (앱: 계산 화면에서 저장한 것, PC: pets.js) */
+function savedPetsList(){try{return BR&&TMCalc.savedPets?JSON.parse(TMCalc.savedPets()):(window.SAVEDPETS||[])}catch(e){return[]}}
+function pickSaved(cb){const L=savedPetsList()
+  if(!L.length)return alert('저장한 소환수가 없어요. 계산 화면에서 소환수를 읽고 [저장]해 주세요.')
+  const m=document.createElement('div');m.className='hmask'
+  m.innerHTML=`<div class="hbox"><h3>저장한 소환수</h3>${L.map((x,i)=>`<div class="list-row" style="cursor:pointer;border-bottom:1px solid var(--line);padding:6px 0" data-pk="${i}"><div style="flex:1"><b>${esc(x.label||x.name)}</b> <span class="mut">${esc(x.name)} Lv.${x.level} · ${esc(x.element)} · ${esc(x.type)} · ${esc((x.stats||[]).join('/'))}</span></div></div>`).join('')}<div class="row" style="margin-top:10px"><button id="pkc">닫기</button></div></div>`
+  m.querySelector('#pkc').onclick=()=>m.remove()
+  m.querySelectorAll('[data-pk]').forEach(r=>r.onclick=()=>{m.remove();cb(L[+r.dataset.pk])})
+  document.body.append(m)}
+const skText=k=>[num(k.mana)>0?`최대 마나 ${k.mana}`:'',num(k.per)>0&&num(k.per)!==1?`평타당 ${k.per}`:'',num(k.pct)>0?`스킬 ${k.pct}%${num(k.hits)>1?' × '+k.hits+'타':''}`:'',num(k.refund)>0?`채우는 마나 ${k.refund}`:'',num(k.basicPct)>0?`평타 ${k.basicPct}%`:'',num(k.aps)>0?`10초 ${k.aps}회`:''].filter(Boolean).join(' · ')
+// ---------------------------------------------------------------- 실험에 쓰는 소환수: 이름·속성·타입·원래 능력치(공·방·순·체)·성장증폭
+// 속성·타입 강화는 그 소환수에 맞는 것만 '적용 속성/타입 강화'로 공식에 들어감 (소환수를 바꿔도 이어짐)
+const PSTAT=[['atk','공격'],['def','방어'],['spd','순발'],['hp','체력']]
+const isNum=x=>typeof x==='number'&&isFinite(x)
+function petAt(s,uptoId){let p=s.pet0||null;for(const r of s.records){if(r.id===uptoId)break;if(r.pet)p=r.pet}return p}
+function itemTag(name){const L=String(name||'').replace(/\s/g,''),e=ELEMS.find(x=>L.startsWith(x))||(L.startsWith('화염')?'불':null),ty=TYPES.find(x=>L.startsWith(x))
+  return e&&/속성/.test(L)?{k:'elem',v:e}:ty&&/타입/.test(L)?{k:'type',v:ty}:null}
+function petText(p){if(!p)return'안 정함'
+  const st=(p.st||[]).some(isNum)?PSTAT.map(([k,l],i)=>l+' '+(isNum((p.st||[])[i])?fmt(p.st[i]):'?')).join(' '):''
+  return[p.name||'(이름 없음)',[p.elem,p.type].filter(Boolean).join('·'),st,isNum(p.amp)?'증폭 '+fmt(p.amp)+'%':''].filter(Boolean).join(' · ')}
+function petClean(p){if(!p||(!String(p.name||'').trim()&&!(p.st||[]).some(isNum)))return null
+  return{name:String(p.name||'').trim(),elem:p.elem||'',type:p.type||'',st:[0,1,2,3].map(i=>isNum((p.st||[])[i])?p.st[i]:null),amp:isNum(p.amp)?p.amp:null}}
+const petSame=(a,b)=>JSON.stringify(petClean(a))===JSON.stringify(petClean(b))
+function petFields(p){p=p||{};const has=savedPetsList().length
+  return`<div class="row" style="flex-wrap:wrap;gap:6px"><input type="text" class="ppn" list="dexNames" value="${esc(p.name||'')}" placeholder="소환수 이름 (도감에서 고르기)" style="flex:1;min-width:140px">${has?'<button class="sm ppi">저장한 소환수에서</button>':''}</div>
+  <div class="grid" style="margin-top:6px"><label class="f">속성<select class="ppe"><option value="">-</option>${ELEMS.map(e=>`<option${p.elem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+    <label class="f">타입<select class="ppt"><option value="">-</option>${TYPES.map(e=>`<option${p.type===e?' selected':''}>${e}</option>`).join('')}</select></label>
+    ${PSTAT.map(([k,l],i)=>`<label class="f">${l} (원래 능력치)<input type="text" inputmode="decimal" class="pps" pix="${i}" value="${isNum((p.st||[])[i])?p.st[i]:''}" placeholder="모름"></label>`).join('')}
+    <label class="f">성장증폭 %<input type="text" inputmode="decimal" class="ppa" value="${isNum(p.amp)?p.amp:''}" placeholder="모름"></label></div>
+  <div class="mut" style="margin-top:4px">능력치는 실전투가 아니라 소환수 원래 능력치(성장치)예요. 실전투는 공식이 능력치·성장증폭으로 찾아요.</div>
+  <datalist id="dexNames">${petDb().map(x=>`<option value="${esc(x.n)}">`).join('')}</datalist>`}
+function bindPet(root,p,redraw){const q=k=>root.querySelector(k)
+  q('.ppn').onchange=e=>{p.name=e.target.value.trim();const d=dexOf(p.name);if(d){p.elem=normElem(d.e)||p.elem;p.type=d.t||p.type}redraw()}
+  q('.ppe').onchange=e=>p.elem=e.target.value
+  q('.ppt').onchange=e=>p.type=e.target.value
+  root.querySelectorAll('.pps').forEach(i=>i.oninput=()=>{p.st=p.st||[null,null,null,null];const n=num(i.value);p.st[+i.getAttribute('pix')]=isFinite(n)?n:null})
+  q('.ppa').oninput=e=>{const n=num(e.target.value);p.amp=isFinite(n)?n:null}
+  const pi=q('.ppi');if(pi)pi.onclick=()=>pickSaved(x=>{Object.assign(p,{name:x.name,elem:normElem(x.element)||'',type:x.type||'',st:(x.stats||[]).slice(0,4).map(Number),amp:typeof x.amp==='number'?x.amp:p.amp});redraw()})}
 function vSpec(v){
   const S=activeSet(),sets=data.formulaSets||[],SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
@@ -968,16 +1013,13 @@ function vSpec(v){
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
       <button class="sm" id="dNew">+ 새 덱</button>${deck?'<button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}</div>
-    ${deck?`${pets.map((p,k)=>{const sk=p.skill||{},cy=petCycle(S,p,g);return`<div class="card" style="background:var(--card2)" data-pt="${k}">
+    ${deck?`${pets.map((p,k)=>{const sk=skOf(p),cy=petCycle(S,p,g);return`<div class="card" style="background:var(--card2)" data-pt="${k}">
       <div class="list-row"><input type="text" class="pn" value="${esc(p.name||'')}" placeholder="소환수 이름" style="flex:1"><select class="pe">${['',...ELEMS].map(e=>`<option value="${e}"${normElem(p.elem||'')===e?' selected':''}>${e||'속성'}</option>`).join('')}</select><select class="pty">${['',...TYPES].map(t=>`<option value="${t}"${(p.type||'')===t?' selected':''}>${t||'타입'}</option>`).join('')}</select><button class="sm danger px">✕</button></div>
       ${inPet.length?`<div class="grid">${inPet.map(i=>`<label class="f">${esc(i.name)}<input type="text" class="pst" data-k="${esc(i.id)}" value="${esc((p.st||{})[i.id]??'')}"></label>`).join('')}</div>`:''}
-      <div class="grid" style="margin-top:4px"><label class="f">최대 마나<input type="text" class="sk" data-k="mana" value="${esc(sk.mana??'')}" placeholder="5"></label><label class="f">평타당 마나<input type="text" class="sk" data-k="per" value="${esc(sk.per??'')}" placeholder="1"></label>
-        <label class="f">스킬 배율 %<input type="text" class="sk" data-k="pct" value="${esc(sk.pct??'')}" placeholder="300"></label><label class="f">스킬 타수<input type="text" class="sk" data-k="hits" value="${esc(sk.hits??'')}" placeholder="1"></label>
-        <label class="f">스킬이 채우는 마나<input type="text" class="sk" data-k="refund" value="${esc(sk.refund??'')}" placeholder="0"></label><label class="f">평타 배율 %<input type="text" class="sk" data-k="basicPct" value="${esc(sk.basicPct??'')}" placeholder="100"></label>
-        ${deck.aspdOn?`<label class="f">10초 공격 횟수 (평타+스킬, 배속 끄고)<input type="text" class="sk" data-k="aps" value="${esc(sk.aps??'')}" placeholder="예: 8"></label>`:''}</div>
+      <div class="mut" style="margin-top:4px">스킬: ${skHas(sk)?esc(skText(sk)):'<span class="bad">도감에 스킬 정보가 없어요</span>'} <span class="mut">(앱·PC 도감 › 수정에서 적어요)</span>${deck.aspdOn&&!(num(sk.aps)>0)?' · <span class="bad">10초 공격 횟수 없음</span>':''}</div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p)?`실전투 공격 ${fmt(petAtk(p))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${(BR&&TMCalc.savedPets)||window.SAVEDPETS?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
-      <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="aspdOn"${deck.aspdOn?' checked':''}>공격속도 직접 측정 <span class="mut">(켜면 소환수마다 10초 공격 횟수를 적고, 도감 S 순발 대신 그걸 써요)</span></label>
+      <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="aspdOn"${deck.aspdOn?' checked':''}>공격속도 직접 측정 <span class="mut">(켜면 도감에 적은 10초 공격 횟수를 도감 S 순발 대신 써요)</span></label>
       ${deck.aspdOn&&!base.speed?'<div class="bad">공격 횟수가 빈 소환수가 있어서 도감 S 순발로 계산 중 — 세 마리 다 적어야 적용돼요</div>':''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
       <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 스킬·공격 횟수는 소환수 이름별로 기억해요 (종류마다 고정이라 한 번만 세면 돼요).</div>
@@ -1027,19 +1069,19 @@ function vSpec(v){
     m.innerHTML=`<div class="hbox"><h3>저장한 소환수</h3>${L.map((x,i)=>`<div class="list-row" style="cursor:pointer;border-bottom:1px solid var(--line);padding:6px 0" data-pk="${i}"><div style="flex:1"><b>${esc(x.label||x.name)}</b> <span class="mut">${esc(x.name)} Lv.${x.level} · ${esc(x.element)} · ${esc(x.type)}</span></div></div>`).join('')}<div class="row" style="margin-top:10px"><button id="pkc">닫기</button></div></div>`
     m.querySelector('#pkc').onclick=()=>m.remove()
     m.querySelectorAll('[data-pk]').forEach(r=>r.onclick=()=>{const x=L[+r.dataset.pk];m.remove()
-      dk((p,D)=>{const sk=(p.petSkills||{})[x.name]||{};const pet={name:x.name,label:x.label,elem:normElem(x.element),type:x.type,skill:{...sk},st:{},combat:x.combat||null}
+      dk((p,D)=>{const sk=skillDex()[x.name]||{};const pet={name:x.name,label:x.label,elem:normElem(x.element),type:x.type,skill:{...sk},st:{},combat:x.combat||null}
         // 소환수 자기 스펙 칸: 이름에 공격·방어·순발·체력이 들어간 값이면 저장한 능력치로
-        for(const i of inPet){const n=i.name;const j=/공격/.test(n)?0:/방어/.test(n)?1:/순발|속도/.test(n)?2:/체력|생명/.test(n)?3:-1;if(j>=0)pet.st[i.id]=x.stats[j]}
+        for(const i of inPet){const n=i.name;if(/증폭/.test(n)){if(typeof x.amp==='number')pet.st[i.id]=x.amp;continue};const j=/공격/.test(n)?0:/방어/.test(n)?1:/순발|속도/.test(n)?2:/체력|생명/.test(n)?3:-1;if(j>=0)pet.st[i.id]=x.stats[j]}
         D.pets.push(pet)})})
     document.body.append(m)}
   v.querySelectorAll('[data-pt]').forEach(el=>{const k=+el.dataset.pt
     const P=f=>dk((p,D)=>f(D.pets[k],p))
-    el.querySelector('.pn').onchange=e=>P((x,p)=>{x.name=e.target.value.trim();const sk=(p.petSkills||{})[x.name];if(sk&&!num((x.skill||{}).mana))x.skill={...sk}})
+    el.querySelector('.pn').onchange=e=>P((x,p)=>{x.name=e.target.value.trim();const sk=skillDex()[x.name];if(sk&&!num((x.skill||{}).mana))x.skill={...sk}})
     el.querySelector('.pe').onchange=e=>P(x=>x.elem=e.target.value)
     el.querySelector('.pty').onchange=e=>P(x=>x.type=e.target.value)
     el.querySelector('.px').onclick=()=>dk((p,D)=>D.pets.splice(k,1))
     el.querySelectorAll('.pst').forEach(i=>i.onchange=()=>P(x=>{x.st=x.st||{};const n=num(i.value);if(isFinite(n))x.st[i.dataset.k]=n;else delete x.st[i.dataset.k]}))
-    el.querySelectorAll('.sk').forEach(i=>i.onchange=()=>P((x,p)=>{x.skill=x.skill||{};x.skill[i.dataset.k]=i.value.trim();if(x.name){p.petSkills=p.petSkills||{};p.petSkills[x.name]={...x.skill}}}))})
+  })
   const ao=$('#aspdOn');if(ao)ao.onchange=()=>dk((p,D)=>D.aspdOn=ao.checked)
   const gB=$('#gB');if(gB)gB.onchange=()=>saveSpec(p=>{p.grp=p.grp||{};p.grp.basic=gB.value})
   const gS=$('#gS');if(gS)gS.onchange=()=>saveSpec(p=>{p.grp=p.grp||{};p.grp.skill=gS.value})
@@ -1575,8 +1617,11 @@ function vStart(c,v){
       :'<div class="empty">틀에 분류가 없어요.</div>'}
     ${(t.items||[]).length?`<div class="big" style="margin-top:16px">시작할 때 낀 아이템</div><div class="mut">개수를 적어요 (안 꼈으면 비움). 기록에서 [빼기]를 하려면 여기 낀 걸로 되어 있어야 해요.</div>
       <div class="grid" style="margin-top:8px">${t.items.map(it=>`<label class="f">${esc(it.name)}<input type="text" data-eq="${it.id}" value="${eqShow[it.id]||''}" placeholder="0"></label>`).join('')}</div>`:''}
+    <div class="big" style="margin-top:16px">쓰는 소환수 (선택)</div><div class="mut">데미지를 잰 소환수예요. 정해 두면 원래 능력치·성장증폭을 공식에 넣을 수 있고, 속성·타입 강화는 이 소환수에 맞는 것만 적용돼요. 기록에서 [소환수 바꾸기]로 바꿀 수 있어요.</div><div id="petBox" style="margin-top:8px"></div>
     ${c.reset?`<div class="big" style="margin-top:16px">지금 잰 값 (선택)</div><div class="grid" style="margin-top:8px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-rmv="${m.id}"></label>`).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="pri" id="ss">저장</button><button id="sc">${c.fresh?'나중에':'닫기'}</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요. [저장]을 눌러야 반영돼요.</div></div>`
+  if(!c.pet)c.pet=JSON.parse(JSON.stringify((c.reset?petAt(s):s.pet0)||{}))
+  const pbox=$('#petBox'),drawPet=()=>{pbox.innerHTML=petFields(c.pet);bindPet(pbox,c.pet,drawPet)};drawPet()
   const dk='start:'+s.id+(c.reset?':reset':'')
   if(formRestore(v,dk))draftBanner(v,()=>{draftDel(dk);render()})
   v.addEventListener('input',()=>formSnap(v,dk))
@@ -1586,10 +1631,11 @@ function vStart(c,v){
     const eqv={};v.querySelectorAll('[data-eq]').forEach(e=>{const n=num(e.value);if(isFinite(n)&&n>0)eqv[e.dataset.eq]=n})
     if(c.reset){
       const values={},samples={};v.querySelectorAll('[data-rmv]').forEach(e=>{const a=nums(e.value);if(!a.length)return;values[e.dataset.rmv]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)samples[e.dataset.rmv]=a})
-      mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.records.push({id:uid(),time:Date.now(),changes:[],items:[],reset:o,equipSet:eqv,values,samples,note:'상태 다시 적기'})})
+      const np=petClean(c.pet),pr=petSame(np,petAt(s))?{}:{pet:np}
+      mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x)x.records.push({id:uid(),time:Date.now(),changes:[],items:[],reset:o,equipSet:eqv,values,samples,note:'상태 다시 적기',...pr})})
       toast('상태를 다시 적었어요. 여기서부터 이어서 기록하세요.');return back()
     }
-    mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x){x.start=o;x.equip0=eqv}})
+    mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(x){x.start=o;x.equip0=eqv;x.pet0=petClean(c.pet)}})
     toast('시작 상태를 저장했어요.');c.fresh?(nav=[{v:'front'},{v:'home'}],render()):back()}
 }
 
@@ -1597,6 +1643,7 @@ function vStart(c,v){
 function recText(t,r){
   const parts=[]
   if(r.reset||r.equipSet)parts.push('상태 다시 적기')
+  if(r.pet)parts.push('소환수 → '+(r.pet.name||'?'))
   for(const a of r.items||[]){const it=(t&&t.items||[]).find(x=>x.id===a.itemId);parts.push(`${it?it.name:'(지운 아이템)'} ${a.act>0?'끼기':'빼기'}`)}
   for(const ch of changesOf(r)){if(ch.from)continue
     const G=t&&t.groups.find(x=>x.id===ch.groupId)
@@ -1679,20 +1726,24 @@ function vRecs(c,v){
     c.loaded=c.edit||'';c.restored=false
     c.rows=ed?changesOf(ed).filter(ch=>!ch.from).map(ch=>({gi:ch.groupId+':'+(ch.itemId||''),unit:ch.unit||'flat',val:String(ch.change),once:!!ch.once})):[]
     c.acts=ed?Object.fromEntries((ed.items||[]).map(a=>[a.itemId,a.act])):{}
-    const d0=draftGet(dk);if(d0){c.rows=d0.rows||[];c.acts=d0.acts||{};c.fromDraft=d0;c.restored=true}
+    c.petOn=!!(ed&&ed.pet);c.pet=ed&&ed.pet?JSON.parse(JSON.stringify(ed.pet)):null
+    const d0=draftGet(dk);if(d0){c.rows=d0.rows||[];c.acts=d0.acts||{};if(d0.petOn){c.petOn=true;c.pet=d0.pet||{}}c.fromDraft=d0;c.restored=true}
   }
   const sus=new Set((s.findings||[]).flatMap(f=>f.suspects||[]))
   const last=s.records[s.records.length-1]
   const eq=equipNow(s,ed&&ed.id)
   const gis=t.groups.flatMap(g=>((g.items||[]).length?g.items:[null]).map(it=>({v:g.id+':'+(it?it.id:''),name:g.name+(it?' '+it.name:'')})))
   const items=t.items||[],slots=t.slots||[]
+  const curPet=petAt(s,ed?ed.id:undefined)
   const stTxt=startSlots(t).flatMap(x=>['flat','pct'].filter(u=>isFinite((s.start||{})[x.key+':'+u])).map(u=>`${x.label} ${fmt(s.start[x.key+':'+u])}${u==='pct'?'%':''}`))
   const slotName=id=>(slots.find(q=>q.id===id)||{name:'기타'}).name
-  v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}</span><button class="sm" id="gost">시작 상태</button><button class="sm" id="goreset">상태 다시 적기</button></div></div>
+  v.innerHTML=`<div class="card"><div class="row"><span class="mut" style="flex:1">시작 상태: ${stTxt.length?esc(stTxt.join(', ')):'안 적음'}${s.pet0?' · 소환수 '+esc(s.pet0.name||'?'):''}</span><button class="sm" id="gost">시작 상태</button><button class="sm" id="goreset">상태 다시 적기</button></div></div>
   <div class="card"><div class="big">${ed?'기록 수정':'기록 추가'} ${hb('record')}</div>
     ${items.length?`<div class="mut" style="margin-top:8px">아이템 (누를 때마다 끼기 → 빼기 → 안 함)</div>
       ${[...new Set(items.map(it=>it.slotId))].map(sid=>`<div class="mut" style="margin-top:4px">${esc(slotName(sid))}</div><div class="chips">${items.filter(it=>it.slotId===sid).map(it=>{const a=c.acts[it.id]||0
         return`<button class="chip${a?' on':''}" data-act-it="${it.id}">${a>0?'+ ':a<0?'− ':''}${esc(it.name)}${eq[it.id]?` <span class="mut">(낌 ${eq[it.id]})</span>`:''}</button>`}).join('')}</div>`).join('')}`:''}
+    <div class="row" style="margin-top:10px"><span class="mut" style="flex:1">소환수: ${esc(petText(curPet))}</span><button class="sm" id="petTg">${c.petOn?'소환수 안 바꿈':curPet?'소환수 바꾸기':'소환수 정하기'}</button></div>
+    ${c.petOn?'<div id="petBox" class="card" style="background:var(--card2);margin-top:6px"></div>':''}
     <div class="mut" style="margin-top:10px">바뀐 값 ${items.length?'(아이템 말고 직접)':''}</div>
     ${c.rows.map((r,k)=>`<div class="list-row" data-cr="${k}" style="flex-wrap:wrap">
       <select class="cgi">${gis.map(x=>`<option value="${x.v}"${x.v===r.gi?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
@@ -1721,8 +1772,8 @@ function vRecs(c,v){
     ${s.records.map((r,i)=>`<tr style="${r.skip?'opacity:.45':''}"><td class="l">${sus.has(r.id)?'<span class="bad">⚠</span>':''}${i+1}</td><td class="l" style="white-space:normal;min-width:120px">${esc(recText(t,r))}</td>${measVars(t).map(x=>`<td><b>${x.kind==='m'?mtext(r,x.mid):(r.critSamples&&r.critSamples[x.mid]&&r.critSamples[x.mid].length>1?fmt(r.critSamples[x.mid].reduce((a,b)=>a+b,0)/r.critSamples[x.mid].length)+' <span class="mut">('+r.critSamples[x.mid].length+'회)</span>':fmt((r.critValues||{})[x.mid]))}</b></td>`).join('')}<td class="l">${r.skip?'<span class="mut">[뺌]</span> ':''}${esc(r.note)}</td>
       <td><button class="sm" data-rk="${r.id}">${r.skip?'넣기':'빼기'}</button> <button class="sm" data-re="${r.id}">수정</button> <button class="sm danger" data-rd="${r.id}">✕</button></td></tr>`).join('')}</table></div>`:'<div class="card empty">아직 기록이 없어요.</div>'}`
   // 임시 저장
-  const snapRec=()=>{const o={rows:c.rows,acts:c.acts,mv:{},note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>o.mv[e.dataset.mv]=e.value);v.querySelectorAll('[data-cv]').forEach(e=>o.mv['c:'+e.dataset.cv]=e.value)
-    if(o.rows.length||Object.values(o.acts).some(Boolean)||o.note||Object.values(o.mv).some(x=>x))draftSet(dk,o);else draftDel(dk)}
+  const snapRec=()=>{const o={rows:c.rows,acts:c.acts,mv:{},note:$('#note').value,petOn:!!c.petOn,pet:c.petOn?c.pet:null};v.querySelectorAll('[data-mv]').forEach(e=>o.mv[e.dataset.mv]=e.value);v.querySelectorAll('[data-cv]').forEach(e=>o.mv['c:'+e.dataset.cv]=e.value)
+    if(o.rows.length||Object.values(o.acts).some(Boolean)||o.note||o.petOn||Object.values(o.mv).some(x=>x))draftSet(dk,o);else draftDel(dk)}
   if(c.fromDraft){const d0=c.fromDraft;c.fromDraft=null;v.querySelectorAll('[data-mv]').forEach(e=>{if(d0.mv&&d0.mv[e.dataset.mv]!=null)e.value=d0.mv[e.dataset.mv]})
     v.querySelectorAll('[data-cv]').forEach(e=>{if(d0.mv&&d0.mv['c:'+e.dataset.cv]!=null)e.value=d0.mv['c:'+e.dataset.cv]});if(d0.note!=null)$('#note').value=d0.note}
   if(c.restored){const card=$('#rs').closest('.card');const b=document.createElement('div');b.className='row';b.style.marginBottom='6px'
@@ -1733,6 +1784,8 @@ function vRecs(c,v){
   function keep(f){const vals={note:$('#note').value};v.querySelectorAll('[data-mv]').forEach(e=>vals[e.dataset.mv]=e.value);v.querySelectorAll('[data-cv]').forEach(e=>vals['c:'+e.dataset.cv]=e.value)
     snapRec();c.fromDraft={mv:vals,note:vals.note};f()}
   const msd=$('#msd');if(msd)msd.ontoggle=()=>c.msOpen=msd.open
+  $('#petTg').onclick=()=>{c.petOn=!c.petOn;if(c.petOn&&!c.pet)c.pet=JSON.parse(JSON.stringify(curPet||{}));keep(()=>render())}
+  const pbox=$('#petBox');if(pbox){const drawPet=()=>{pbox.innerHTML=petFields(c.pet);bindPet(pbox,c.pet,()=>{drawPet();snapRec()})};drawPet()}
   v.querySelectorAll('[data-act-it]').forEach(b=>b.onclick=()=>{const id=b.dataset.actIt,a=c.acts[id]||0;c.acts[id]=a===0?1:a>0?-1:0;keep(()=>render())})
   v.querySelectorAll('[data-cr]').forEach(el=>{const r=c.rows[+el.dataset.cr]
     el.querySelector('.cgi').onchange=e=>r.gi=e.target.value
@@ -1761,6 +1814,7 @@ function vRecs(c,v){
     const f0=changes.find(q=>!q.once)||changes[0]
     const r={id:ed?ed.id:uid(),time:ed?ed.time:Date.now(),changes,items:acts,samples,values,critValues,critSamples,skip:ed?!!ed.skip:false,note:$('#note').value.trim(),
       groupId:f0?f0.groupId:null,itemId:f0?f0.itemId:null,change:f0?f0.change:0,unit:f0?f0.unit:'flat'}
+    if(c.petOn){const np=petClean(c.pet);if(!np)return alert('소환수 이름이나 능력치를 적어 주세요. 안 바꿨으면 [소환수 안 바꿈]을 눌러요.');if(!petSame(np,curPet))r.pet=np}
     mutate(d=>{const x=d.sessions.find(q=>q.id===s.id);if(!x)return;const i=x.records.findIndex(q=>q.id===r.id);if(i>=0)x.records[i]=r;else x.records.push(r)})
     draftDel(dk);c.edit=null;c.rows=null;render()}
   v.querySelectorAll('[data-re]').forEach(b=>b.onclick=()=>{c.edit=b.dataset.re;c.rows=null;render();scrollTo(0,0)})
@@ -1775,36 +1829,53 @@ function sessionData(s){
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   const gname=id=>(t.groups.find(g=>g.id===id)||{name:'(지운 분류)'}).name
   const iname=(gid,iid)=>{const G=t.groups.find(g=>g.id===gid),it=G&&(G.items||[]).find(x=>x.id===iid);return it?it.name:'(지운 항목)'}
-  const keys=[],stack={}
+  const keys=[],stack={};let gvars
   for(const r of s.records){for(const ch of changesOf(r))if(ch.change){const k=vkey(ch).slice(2);if(!keys.includes(k))keys.push(k);stack[k]=(stack[k]||0)+1}
     for(const k in r.reset||{})if(!keys.includes(k))keys.push(k)}
   // 시작 상태에 적은 값은 기록에서 안 바뀌어도 상태에 넣는다 (치명 피해 등)
   for(const k in s.start||{})if(isFinite(s.start[k])&&!keys.includes(k))keys.push(k)
-  const gvars=keys.map(k=>{const [g,i,u]=k.split(':'),G=t.groups.find(x=>x.id===g),it=i?iname(g,i):null
+  gvars=keys.map(k=>{const [g,i,u]=k.split(':'),G=t.groups.find(x=>x.id===g),it=i?iname(g,i):null
     const IT=i&&G?(G.items||[]).find(x=>x.id===i):null
     const known=isFinite((s.start||{})[k])
-    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known}})
+    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known,tag:itemTag(it||gname(g))}})
+  // 소환수를 정한 실험: 속성·타입 강화는 그 소환수에 맞는 것만 '적용 속성/타입 강화'로 (나머지는 데미지와 무관), 원래 능력치·성장증폭도 변수로
+  const pets=[s.pet0,...s.records.map(r=>r.pet)].filter(Boolean),hasPet=pets.length>0
+  const allG=gvars,tagged=hasPet?allG.filter(x=>x.tag):[]
+  if(hasPet)gvars=allG.filter(x=>!x.tag)
+  const pvars=[]
+  for(const k of ['elem','type'])for(const u of ['flat','pct']){const L=tagged.filter(x=>x.tag.k===k&&x.unit===u);if(!L.length)continue
+    pvars.push({id:'p:'+k+':'+u,name:(k==='elem'?'적용 속성 강화':'적용 타입 강화')+(u==='pct'?' %':''),cat:'소환수',unit:u,stack:Math.max(0,...L.map(x=>x.stack||0)),known:L.every(x=>x.known),pk:k})}
+  PSTAT.forEach(([k,l],i)=>{if(pets.some(p=>isNum((p.st||[])[i])))pvars.push({id:'p:'+k,name:'소환수 '+l,cat:'소환수',unit:'flat',known:true,pi:i})})
+  if(pets.some(p=>isNum(p.amp)))pvars.push({id:'p:amp',name:'소환수 성장증폭 %',cat:'소환수',unit:'pct',known:true,pamp:true})
+  gvars.push(...pvars)
   const mvars=measVars(t)
   // % 는 두 가지로 누적: 더해서(합연산) / 곱해서(곱연산, ×(1+a%)×(1+b%)…)
   // 시작 상태를 적었으면 거기서부터 누적 (실제 총량), 아니면 0 부터 (변화량). '이번만' 변화는 그 기록에만
   const acc={},accC={}
-  for(const x of gvars){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0)){acc[x.id]=s0;accC[x.id]=s0}}
-  const rows=s.records.map((r,i)=>{
+  for(const x of allG){const s0=(s.start||{})[x.id.slice(2)];if(isFinite(s0)){acc[x.id]=s0;accC[x.id]=s0}}
+  let curP=s.pet0||null
+  const rows=s.records.map((r,i)=>{if(r.pet)curP=r.pet
     // 상태 다시 적기: 그 시점의 실제 값으로 덮어쓴다 (예전 셋팅을 똑같이 맞추지 않아도 이어서 기록 가능)
     for(const [k,val] of Object.entries(r.reset||{}))if(isFinite(val)){acc['g:'+k]=val;accC['g:'+k]=val}
     const once=[]
     for(const ch of changesOf(r)){if(!ch.change)continue;const k=vkey(ch)
       if(ch.once){once.push([k,ch.change]);continue}
       acc[k]=(acc[k]||0)+ch.change;accC[k]=((1+(accC[k]||0)/100)*(1+ch.change/100)-1)*100}
-    const v={};gvars.forEach(x=>{v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0})
-    for(const [k,d] of once){v[k]=(v[k]||0)+d;if(v[k+'*']!=null)v[k+'*']=((1+v[k+'*']/100)*(1+d/100)-1)*100}
+    const v={};gvars.forEach(x=>{if(x.id.startsWith('g:')){v[x.id]=acc[x.id]||0;if(x.unit==='pct')v[x.id+'*']=accC[x.id]||0}})
+    const tv={};tagged.forEach(x=>{tv[x.id]=acc[x.id]||0;tv[x.id+'*']=accC[x.id]||0})
+    for(const [k,d] of once){const o=k in tv?tv:v;o[k]=(o[k]||0)+d;if(o[k+'*']!=null)o[k+'*']=((1+o[k+'*']/100)*(1+d/100)-1)*100}
+    for(const x of pvars){
+      if(x.pk){const tg=curP&&(x.pk==='elem'?normElem(curP.elem):curP.type),L=tagged.filter(q=>q.tag.k===x.pk&&q.unit===x.unit&&q.tag.v===tg)
+        v[x.id]=tg?L.reduce((a,q)=>a+tv[q.id],0):NaN;if(x.unit==='pct')v[x.id+'*']=tg?(L.reduce((a,q)=>a*(1+tv[q.id+'*']/100),1)-1)*100:NaN}
+      else if(x.pamp){v[x.id]=curP&&isNum(curP.amp)?curP.amp:NaN;v[x.id+'*']=v[x.id]}
+      else v[x.id]=curP&&isNum((curP.st||[])[x.pi])?curP.st[x.pi]:NaN}
     const tol={}
     for(const [pre,VAL,SAM] of [['m:','values','samples'],['c:','critValues','critSamples']])
       t.measures.forEach(m=>{const a=r[SAM]&&r[SAM][m.id],vv=r[VAL]||{}
         if(a&&a.length){v[pre+m.id]=a.reduce((x,y)=>x+y,0)/a.length;if(a.length>1)tol[pre+m.id]=(Math.max(...a)-Math.min(...a))/2}
         else if(isFinite(vv[m.id]))v[pre+m.id]=vv[m.id]})
     return{no:i+1,r,v,tol}})
-  return{t,gvars,mvars,rows}
+  return{t,gvars,mvars,rows,hasPet}
 }
 function vFind(c,v){
   const s=ses(c.id);if(!s)return back()

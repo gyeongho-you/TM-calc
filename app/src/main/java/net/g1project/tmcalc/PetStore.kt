@@ -80,7 +80,7 @@ object PetStore {
 
     private fun sameValues(a: Pet, b: Pet) =
         a.init.contentEquals(b.init) && a.sGrowth.contentEquals(b.sGrowth) && a.maxS.contentEquals(b.maxS) &&
-            a.grade == b.grade && a.element == b.element && a.type == b.type
+            a.grade == b.grade && a.element == b.element && a.type == b.type && a.skill == b.skill
 
     /**
      * 내보내기 형식: 한 줄에 소환수 하나, 한글 키. PC 메모장/엑셀에서 고치기 쉽게.
@@ -91,7 +91,7 @@ object PetStore {
         "{\"이름\":${JSONObject.quote(p.name)},\"등급\":${JSONObject.quote(p.grade)}," +
             "\"속성\":${JSONObject.quote(p.element)},\"타입\":${JSONObject.quote(p.type)}," +
             "\"초기치\":[${p.init.joinToString(",")}],\"S성장률\":[${p.sGrowth.joinToString(",")}]," +
-            "\"만렙S\":[${p.maxS.joinToString(",")}]}"
+            "\"만렙S\":[${p.maxS.joinToString(",")}]" + PetDb.skillJson(p) + "}"
     }
 
     private fun save(ctx: Context, pets: List<Pet>) {

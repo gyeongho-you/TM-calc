@@ -1785,7 +1785,7 @@ class OverlayService : Service() {
                 @android.webkit.JavascriptInterface fun pickFile() {}
                 @android.webkit.JavascriptInterface fun petDb(): String {
                     val arr = org.json.JSONArray()
-                    for (pt in db.pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+                    for (pt in db.pets) arr.put(JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())).put("k", PetDb.skillObj(pt)))
                     return arr.toString()
                 }
             }, "TMCalc")

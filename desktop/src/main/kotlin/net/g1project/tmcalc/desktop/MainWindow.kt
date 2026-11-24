@@ -762,7 +762,7 @@ class MainWindow(
             // 최적화 › 덱: 도감(이름·속성·타입·도감 S 능력치)을 같은 폴더 pets.js 로 (공속 비중 = 도감 순발)
             runCatching {
                 val arr = org.json.JSONArray()
-                for (pt in pets.db.pets) arr.put(org.json.JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())))
+                for (pt in pets.db.pets) arr.put(org.json.JSONObject().put("n", pt.name).put("e", pt.element).put("t", pt.type).put("m", org.json.JSONArray(pt.maxS.toList())).put("k", net.g1project.tmcalc.PetDb.skillObj(pt)))
                 // 저장한 소환수 (덱에 불러오기): 이름·속성·타입·능력치 + 실전투 능력치(캐릭터 배율 뺀 상대값)
                 val sv = org.json.JSONArray()
                 for (pr in presets()) {
@@ -770,7 +770,8 @@ class MainWindow(
                     val f = runCatching { 1 + growthAmp() * Calculator.scoreFactor(Calculator.abilityScore(pr.stats)) }.getOrDefault(1.0)
                     sv.put(org.json.JSONObject().put("label", pr.label).put("name", pr.name).put("level", pr.level)
                         .put("element", pt?.element ?: "").put("type", pt?.type ?: "").put("stats", org.json.JSONArray(pr.stats.toList()))
-                        .put("combat", org.json.JSONArray(pr.stats.map { Math.round(it * f * 10) / 10.0 })))
+                        .put("combat", org.json.JSONArray(pr.stats.map { Math.round(it * f * 10) / 10.0 }))
+                        .put("amp", Math.round(growthAmp() * 1000) / 10.0))
                 }
                 java.io.File(dir, "pets.js").writeText("window.PETDB=" + arr.toString() + ";window.SAVEDPETS=" + sv.toString() + ";", Charsets.UTF_8)
             }
