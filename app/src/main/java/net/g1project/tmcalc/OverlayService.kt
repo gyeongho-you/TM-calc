@@ -902,6 +902,8 @@ class OverlayService : Service() {
     private val labRows = ArrayList<LabRow>()
     /** 다시 그려도 적던 잰 값·메모가 안 지워지게 */
     private val labDraft = HashMap<String, String>()
+    /** 이 기록에서 바꿀 소환수 (null = 안 바꿈) */
+    private var labPetDraft: JSONObject? = null
     // 시작 상태 입력 중인 값: 창을 닫거나 다시 그려도(앱이 다시 켜져도) [저장] 전까지 남게
     private fun startDraftPrefs() = getSharedPreferences("lab_start_draft", MODE_PRIVATE)
     private fun startDraftGet(sid: String, key: String): String? = startDraftPrefs().getString("$sid|$key", null)
@@ -1116,6 +1118,8 @@ class OverlayService : Service() {
         if (labLoadedEdit != labEditId) {
             labLoadedEdit = labEditId
             labRows.clear(); labActs.clear(); labDraft.clear(); labOnce = false; labGroup = null
+            labPetDraft = editing?.optJSONObject("pet")
+            if (editing != null && editing.has("amp")) labDraft["amp"] = LabData.fmt(editing.optDouble("amp")).replace(",", "")
             if (editing != null) {
                 labChanges(editing).filter { !it.has("from") }.forEach { ch ->
                     labRows += LabRow(ch.optString("groupId"), ch.optString("itemId").takeIf { !ch.isNull("itemId") && it.isNotEmpty() },
@@ -1264,6 +1268,31 @@ class OverlayService : Service() {
             })
         })
 
+        // 소환수 · 성장증폭 (연구실 실험과 같음: 바뀐 기록에만 남고, 그다음 기록들로 이어짐)
+        val (petNow, ampNow) = labPetAmpAt(s, editing?.optString("id"))
+        val petShow = labPetDraft ?: petNow
+        labBody.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(ui).apply {
+                text = "소환수: " + (petShow?.let { p -> listOf(p.optString("name"), listOf(p.optString("elem"), p.optString("type")).filter { it.isNotEmpty() }.joinToString("·")).filter { it.isNotEmpty() }.joinToString(" · ") } ?: "안 정함") +
+                    if (labPetDraft != null) " (이 기록에서 바꿈)" else ""
+                textSize = 12f; setTextColor(if (labPetDraft != null) LAB_ACC else Color.parseColor("#C9CBD0"))
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (labPetDraft != null) addView(headerButton("안 바꿈") { labPetDraft = null; renderLab() })
+            addView(headerButton(if (petNow == null) "정하기" else "바꾸기") { labPickPet() })
+        })
+        labBody.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(labLabel("성장증폭 %"))
+            addView(labInput(ampNow?.let { "지금 " + LabData.fmt(it) } ?: "게임 상태창 값", labDraft["amp"] ?: ampNow?.let { LabData.fmt(it).replace(",", "") } ?: "").apply {
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                    override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                    override fun afterTextChanged(x: Editable?) { labDraft["amp"] = x?.toString() ?: "" }
+                })
+            }, LinearLayout.LayoutParams(dp(90), -2).apply { marginStart = dp(8) })
+        })
+
         // 잰 값들 (2칸씩). 치명 모드: 치명타 X → 일반 / 가능 → 일반·치명 / 확정 → 치명
         val useCrit = t.optBoolean("useCrit", true)
         val slots = ArrayList<Triple<String, String, String>>()   // (m|c, 잴 것 id, 이름)
@@ -1371,6 +1400,8 @@ class OverlayService : Service() {
                     }
                 }
                 if (values.length() == 0 && critValues.length() == 0) { toast("잰 값을 하나 이상 적어 주세요."); return@setOnClickListener }
+                val ampText = labDraft["amp"]?.trim().orEmpty()
+                val ampNew = if (ampText.isEmpty()) null else (LabData.number(ampText) ?: run { toast("성장증폭에 숫자를 적어 주세요."); return@setOnClickListener })
                 val sid = s.optString("id")
                 val rid = editing?.optString("id") ?: LabData.newId()
                 val rec = JSONObject()
@@ -1388,6 +1419,8 @@ class OverlayService : Service() {
                     .put("critSamples", critSamples)
                     .put("skip", editing?.optBoolean("skip") ?: false)
                     .put("note", noteEdit.text.toString().trim())
+                labPetDraft?.let { p -> if (p.toString() != petNow?.toString()) rec.put("pet", p) }
+                if (ampNew != null && ampNew != ampNow) rec.put("amp", ampNew)
                 var no = 0
                 LabData.update(this@OverlayService) { d ->
                     val ss = LabData.session(d, sid) ?: return@update
@@ -1396,7 +1429,7 @@ class OverlayService : Service() {
                     if (idx != null) { arr.put(idx, rec); no = idx + 1 } else { arr.put(rec); no = arr.length() }
                 }
                 toast(if (editing != null) "#$no 수정했습니다." else "#$no 저장했습니다.")
-                labEditId = null; labLoadedEdit = "-"; labRows.clear(); labActs.clear(); labDraft.clear()
+                labEditId = null; labLoadedEdit = "-"; labRows.clear(); labActs.clear(); labDraft.clear(); labPetDraft = null
                 renderLab()
             }
         })
@@ -1850,6 +1883,34 @@ class OverlayService : Service() {
     private fun looksLikeRune(lines: List<OcrLine>): Boolean {
         val t = lines.map { it.text.replace(" ", "") }
         return t.any { (it.startsWith("주") || it.startsWith("부")) && it.contains("옵") && it.length <= 5 } || t.any { it.contains("의룬") || it.contains("룬[") }
+    }
+
+    /** [uptoId] 기록 바로 전까지의 소환수·성장증폭 (시작 상태 pet0 / amp0 → 기록의 pet / amp 로 바뀜) */
+    private fun labPetAmpAt(s: JSONObject, uptoId: String?): Pair<JSONObject?, Double?> {
+        var pet = s.optJSONObject("pet0")
+        fun ampOf(o: JSONObject?, k: String) = o?.takeIf { it.has(k) && !it.isNull(k) }?.optDouble(k)?.takeIf { it.isFinite() }
+        var amp = ampOf(s, "amp0") ?: ampOf(pet, "amp")
+        for (r in labArr(s, "records")) {
+            if (r.optString("id") == uptoId) break
+            r.optJSONObject("pet")?.let { pet = it; ampOf(it, "amp")?.let { a -> amp = a } }
+            ampOf(r, "amp")?.let { amp = it }
+        }
+        return pet to amp
+    }
+
+    /** 저장한 소환수에서 고르기 → 이름·속성·타입·원래 능력치 */
+    private fun labPickPet() {
+        val list = AppPrefs.presets(this)
+        if (list.isEmpty()) { toast("저장한 소환수가 없습니다. [계산]으로 소환수를 읽고 저장해 주세요."); return }
+        if (dbVersion != PetStore.version) reloadDb()
+        val names = list.map { p -> "${p.label}  (${p.name} · ${p.stats.joinToString("/")})" }
+        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("이 기록의 소환수").setItems(names.toTypedArray()) { _, w ->
+            val p = list[w]; val pet = db.find(p.name)
+            labPetDraft = JSONObject().put("name", p.name)
+                .put("elem", (pet?.element ?: "").let { if (it == "화염") "불" else it }).put("type", pet?.type ?: "")
+                .put("st", org.json.JSONArray(p.stats.toList()))
+            renderLab()
+        }.setNegativeButton("닫기", null))
     }
 
     private fun labAskName(title: String, onOk: (String) -> Unit) {
