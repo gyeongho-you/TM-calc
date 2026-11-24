@@ -19,6 +19,15 @@ object AppPrefs {
         }.apply()
     }
 
+    private const val RUNE_MODE = "runeMode"
+
+    /** 룬 비교 모드: 켜면 레이어 버튼 [룬] → 룬 비교 화면을 읽어 바꾸면 몇 % 인지 (끄면 평소처럼 소환수 계산) */
+    fun runeMode(c: Context): Boolean = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(RUNE_MODE, false)
+
+    fun setRuneMode(c: Context, on: Boolean) {
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(RUNE_MODE, on).apply()
+    }
+
     private const val SHOW_COMBAT = "showCombat"
 
     /** 종 대비 전투 능력치를 보여 줄지 (기본 켜짐) */

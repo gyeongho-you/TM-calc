@@ -17,6 +17,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
+import android.widget.Toast
 import android.widget.Button
 import android.widget.Switch
 import android.widget.EditText
@@ -162,14 +163,17 @@ class MainActivity : Activity() {
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "최적화 (스펙 효율 · 연구실)")) { _, which ->
+            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "최적화 (스펙 효율 · 연구실)",
+                "룬 비교 모드: " + if (AppPrefs.runeMode(this)) "켜짐 (끄기)" else "꺼짐 (켜기)")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
                     2 -> openSettings()
                     3 -> openDisplaySettings()
                     4 -> openPresetFiles()
-                    else -> openLab()
+                    5 -> openLab()
+                    else -> { val on = !AppPrefs.runeMode(this); AppPrefs.setRuneMode(this, on)
+                        Toast.makeText(this, if (on) "룬 비교 모드를 켰어요. 레이어 버튼이 [룬]이 되고, 룬 비교 화면을 읽어요." else "룬 비교 모드를 껐어요.", Toast.LENGTH_LONG).show() }
                 }
             }
             .show()

@@ -212,15 +212,15 @@ class OverlayService : Service() {
                     Log.d("tmcalc-ocr", "--end--")
                 }
                 val parsed = OcrParser.parse(lines, db)
-                // 소환수를 하나도 못 읽었을 때만 룬 비교 화면인지 본다 (소환수 계산은 지금과 똑같이)
-                if (parsed.pet == null && parsed.stats.all { it == null }) {
-                    if (RuneParser.isRuneCompare(lines)) {
-                        val rs = RuneParser.parse(lines)
-                        showRuneCompare(rs[0], rs[1])
+                // 룬 비교 모드(따로 켜는 옵션)일 때만 룬 비교 화면으로 읽는다. 끄면 평소처럼 소환수 계산
+                if (AppPrefs.runeMode(this)) {
+                    val rs0 = RuneParser.parse(lines)
+                    if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
+                        showRuneCompare(rs0[0], rs0[1])
                         return@addOnSuccessListener
                     }
-                    if (looksLikeRune(lines)) {
-                        val rs = RuneParser.parse(lines)
+                    run {
+                        val rs = rs0
                         val miss = when {
                             rs.size < 2 -> "위(장착중)·아래(새 룬) 상자 ${rs.size}개만 찾음"
                             rs.take(2).any { it.atk == null } -> "공격력 값을 못 읽음"
@@ -230,7 +230,8 @@ class OverlayService : Service() {
                         val txt = lines.sortedBy { it.top }.joinToString(nl) { it.text }
                         overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면 같은데 못 읽었어요")
                             .setMessage(miss + nl + "위 장착중 / 아래 새 룬이 다 보이게 띄우고 다시 눌러 주세요." + nl + nl + "읽힌 글자:" + nl + txt.take(2500))
-                            .setPositiveButton("닫기", null))
+                            .setPositiveButton("닫기", null)
+                            .setNegativeButton("룬 모드 끄기") { _, _ -> AppPrefs.setRuneMode(this, false); toast("룬 모드를 껐습니다. [계산]으로 소환수를 읽어요.") })
                         return@addOnSuccessListener
                     }
                 }
@@ -275,9 +276,10 @@ class OverlayService : Service() {
         if (busy) return
         val lab = labMode()
         val open = panel.visibility == View.VISIBLE || labOpen()
-        bubble.text = if (open) "✕" else if (lab) "연구" else "계산"
+        val rune = !lab && AppPrefs.runeMode(this)
+        bubble.text = if (open) "✕" else if (lab) "연구" else if (rune) "룬" else "계산"
         bubble.textSize = if (open) 20f else 13f
-        (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab) "#B39DDB" else "#F2B84B"))
+        (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab) "#B39DDB" else if (rune) "#80CBC4" else "#F2B84B"))
     }
 
     /** 박스 안의 채도 높은 픽셀이 빨강 계열이면 -1, 초록 계열이면 +1, 애매하면 0. */
@@ -842,6 +844,7 @@ class OverlayService : Service() {
     }
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "runeMode") main.post { if (running) updateBubble() }
         if (key == "labActive") main.post {
             if (!running) return@post
             if (labOpen()) showLab(false)
@@ -1807,6 +1810,7 @@ class OverlayService : Service() {
                 val title = "데미지 ${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict"
                 val decks = res.optJSONArray("decks") ?: org.json.JSONArray()
                 val b2 = android.app.AlertDialog.Builder(ui).setTitle(title).setMessage(sb.toString()).setPositiveButton("닫기", null)
+                    .setNegativeButton("룬 모드 끄기") { _, _ -> AppPrefs.setRuneMode(this@OverlayService, false); toast("룬 모드를 껐습니다. [계산]으로 소환수를 읽어요.") }
                 if (decks.length() > 1) b2.setNeutralButton("덱 바꾸기") { _, _ ->
                     val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
                     overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
@@ -1874,6 +1878,10 @@ class OverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        })
+        header.addView(headerButton("룬 모드") {
+            val on = !AppPrefs.runeMode(this); AppPrefs.setRuneMode(this, on)
+            toast(if (on) "룬 모드: 룬 비교 화면을 띄우고 [룬]을 누르세요." else "룬 모드를 껐습니다.")
         })
         header.addView(headerButton("다시읽기") { scan() })
         header.addView(headerButton("접기") { showPanel(false) })
