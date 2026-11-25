@@ -600,7 +600,7 @@ function tm2Template(){
     groups:[{id:'rune',name:'룬 옵션',reduce:false,items:rune},
       {id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률',unit:'pct'},{id:'dmg',name:'피해 (예전 방식)',unit:'pct'}]},
       {id:'wpn',name:'무기',reduce:false,items:[it('atkp','공격 % (상태창에 안 보임, 무기에서)','pct')]},
-      {id:'elv',name:'속성 강화',reduce:false,items:[...TM2_ELEM.map(([i,n])=>it(i,n,'flat')),it('all','모든능력치','flat')]},
+      {id:'elv',name:'속성 강화',reduce:false,items:[...TM2_ELEM.map(([i,n])=>it(i,n,'pct')),it('all','모든능력치','flat')]},
       {id:'buff',name:'특수 버프',reduce:false,items:[it('party','파티 피해 증가','flat')]},
       {id:'base',name:'기본능력치',reduce:false,items:[it('atk','공격력','flat')]}],
     measures:[{id:'basic',name:'평타',basePct:'100',crit:'none'},{id:'skill',name:'스킬',basePct:'100',crit:'none'}]}}
@@ -608,7 +608,9 @@ function tm2Template(){
 function tm2CritMigrate(){for(const t of data.templates){if(!t.tm2)continue
   const R=t.groups.find(g=>g.id==='rune');if(R&&!(R.items||[]).some(i=>i.id==='cd'))R.items.push({id:'cd',name:'치명타 피해',unit:'pct',reduce:false})
   const C=t.groups.find(g=>g.id==='crit'),D=C&&(C.items||[]).find(i=>i.id==='dmg');if(D&&D.name==='피해')D.name='피해 (예전 방식)'
-  t.runeMap=t.runeMap||{};for(const k of ['치명타피해','치명타 피해'])if(!t.runeMap[k]||t.runeMap[k]==='g:crit:dmg:pct')t.runeMap[k]='g:rune:cd:pct'}}
+  t.runeMap=t.runeMap||{};for(const k of ['치명타피해','치명타 피해'])if(!t.runeMap[k]||t.runeMap[k]==='g:crit:dmg:pct')t.runeMap[k]='g:rune:cd:pct'
+  // 상태창 속성 강화(화염~어둠)는 % (틀 단위만 맞춤)
+  const E=t.groups.find(g=>g.id==='elv'),ids=new Set(TM2_ELEM.map(([i])=>i));if(E)(E.items||[]).forEach(i=>{if(ids.has(i.id))i.unit='pct'})}}
 /** 예전 자료의 속성 '불' → 게임 표기 '화염' */
 function fireMigrate(){const fixKeys=o=>{if(!o||typeof o!=='object')return;for(const k of Object.keys(o))if(/@불$/.test(k)){o[k.replace(/@불$/,'@화염')]=o[k];delete o[k]}}
   const fixPet=p=>{if(p&&p.elem==='불')p.elem='화염'}
@@ -909,7 +911,7 @@ function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fse
   for(const m of TV){const L=FL.filter(x=>normT(x.f.target)===m.id);const x=L.find(q=>q.key===fsel[m.id])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];if(x)forms[m.id]={spec:x.f.spec,p:x.f.p,vars:x.f.vars,formula:x.f.formula,maxRel:isNum(x.f.maxRel)?x.f.maxRel:null}}
   const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')||v.startsWith('p:')))]
   if(t.useCrit!==false)for(const k of t.tm2?['g:crit:rate:pct']:['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
-  const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['성장증폭 %','user'],'p:ratk':['소환수 실전투 공격','pet']}
+  const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elemS:pct':['상태창 속성 강화 %','elem'],'p:elemS:flat':['상태창 속성 강화','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['성장증폭 %','user'],'p:ratk':['소환수 실전투 공격','pet']}
   const inputs=ids.map(id=>{if(PN[id])return{id,name:PN[id][0],unit:id.endsWith(':pct')||id==='p:amp'?'pct':'flat',cap:null,scope:PN[id][1]}
     const x=tv.find(q=>q.id===id);const M=vm[id]||{},name=(x?x.name:id).replace(/ 변화$/,'')
     // 어디에 붙는 값인지: 정해 둔 것 → 없으면 이름으로 짐작 (속성 = 소환수 속성별, 타입 = 소환수 타입별)
@@ -1245,7 +1247,7 @@ function runeKey(S,label){const L=String(label).replace(/\s/g,'')
   const elem=ELEMS.find(e=>L.startsWith(e)||(e==='화염'&&L.startsWith('불'))),type=TYPES.find(t=>L.startsWith(t))
   if(byId){const sc=scopeOf(S,byId);return sc==='elem'&&elem?byId.id+'@'+elem:sc==='type'&&type?byId.id+'@'+type:sc==='user'?byId.id:null}
   if(/^모든속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='user'&&/모든/.test(i.name));return i?i.id:null}
-  if(elem&&/속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='elem');return i?i.id+'@'+elem:null}
+  if(elem&&/속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='elem'&&!/^p:elemS/.test(i.id))||ins.find(i=>scopeOf(S,i)==='elem');return i?i.id+'@'+elem:null}
   if(type&&/타입/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='type');return i?i.id+'@'+type:null}
   if(L==='공격력'){const i=ins.find(i=>scopeOf(S,i)==='user'&&i.unit==='flat'&&/공격/.test(i.name)&&!/장비/.test(i.name))||ins.find(i=>scopeOf(S,i)==='user'&&/공격/.test(i.name));return i?i.id:null}
   const i=ins.find(i=>scopeOf(S,i)==='user'&&(nm(i).includes(L)||L.includes(nm(i))));return i?i.id:null}
@@ -1916,7 +1918,7 @@ function influenceCard(m,R,c){
 /** 테마 실험 순서: 바로 앞 기록과 비교해 그것 '하나만' 바뀐 기록 수·크기 종류 (소환수 바꾸기는 능력치·속성·타입을 묶어 하나로) */
 const TM2_STEPS=[['g:rune:atk:flat','룬 공격'],['g:rune:dmg:pct','룬 피해증가'],['g:rune:cd:pct','룬 치명타 피해'],['g:rune:nb:pct','룬 일반공격피해'],['g:rune:sk:pct','룬 스킬공격피해'],
   ['p:elem:pct','룬 속성 강화 (소환수 속성)'],['p:type:pct','룬 타입 강화 (소환수 타입)'],['g:rune:ae:pct','룬 모든속성 강화'],['g:rune:at:pct','룬 모든타입 강화'],
-  ['p:elem:flat','상태창 속성 강화 (소환수 속성)'],['g:elv:all:flat','모든능력치'],['g:wpn:atkp:pct','무기 공격 %'],['g:buff:party:flat','파티 피해 증가'],['g:base:atk:flat','기본 공격력'],
+  ['p:elemS:pct','상태창 속성 강화 % (소환수 속성)'],['g:elv:all:flat','모든능력치'],['g:wpn:atkp:pct','무기 공격 %'],['g:buff:party:flat','파티 피해 증가'],['g:base:atk:flat','기본 공격력'],
   ['pet','소환수 바꾸기 (능력치 다른 소환수)'],['p:amp','성장증폭']]
 function stepStatus(s){const D=sessionData(s),st={},PET=/^p:(atk|def|spd|hp|elem|type)/
   const rows=D.rows.filter(r=>!r.r.skip),ids=D.gvars.map(x=>x.id).filter(id=>id!=='p:ratk')
@@ -2077,6 +2079,8 @@ function vRecs(c,v){
 
 // ---------------------------------------------------------------- 공식 찾기
 /** 세션 기록 → 변수(분류별 누적 변화량, 잰 값)와 결과 */
+/** 테마: 상태창 속성 강화(분류 elv)는 룬 속성 강화와 다른 변수로 (둘 다 %라 섞이지 않게) */
+function elvTag(t,g,tag){return t&&t.tm2&&g==='elv'&&tag&&tag.k==='elem'?{k:'elemS',v:tag.v}:tag}
 function sessionData(s){
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   const gname=id=>(t.groups.find(g=>g.id===id)||{name:'(지운 분류)'}).name
@@ -2089,14 +2093,14 @@ function sessionData(s){
   gvars=keys.map(k=>{const [g,i,u]=k.split(':'),G=t.groups.find(x=>x.id===g),it=i?iname(g,i):null
     const IT=i&&G?(G.items||[]).find(x=>x.id===i):null
     const known=isFinite((s.start||{})[k])
-    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known,tag:itemTag(it||gname(g))||(it?itemTag(it+gname(g)):null)}})
+    return{id:'g:'+k,name:gname(g)+(it?' '+it:'')+(u==='pct'?' %':(known?'':' 변화')),cat:gname(g),item:it,unit:u,reduce:IT?!!IT.reduce:!!(G&&G.reduce),stack:stack[k],known,tag:elvTag(t,g,itemTag(it||gname(g))||(it?itemTag(it+gname(g)):null))}})
   // 소환수를 정한 실험: 속성·타입 강화는 그 소환수에 맞는 것만 '적용 속성/타입 강화'로 (나머지는 데미지와 무관), 원래 능력치·성장증폭도 변수로
   const pets=[s.pet0,...s.records.map(r=>r.pet)].filter(Boolean),hasPet=pets.length>0
   const allG=gvars,tagged=hasPet?allG.filter(x=>x.tag):[]
   if(hasPet)gvars=allG.filter(x=>!x.tag)
   const pvars=[]
-  for(const k of ['elem','type'])for(const u of ['flat','pct']){const L=tagged.filter(x=>x.tag.k===k&&x.unit===u);if(!L.length)continue
-    pvars.push({id:'p:'+k+':'+u,name:(k==='elem'?'적용 속성 강화':'적용 타입 강화')+(u==='pct'?' %':''),cat:'소환수',unit:u,stack:Math.max(0,...L.map(x=>x.stack||0)),known:L.every(x=>x.known),pk:k})}
+  for(const k of ['elem','elemS','type'])for(const u of ['flat','pct']){const L=tagged.filter(x=>x.tag.k===k&&x.unit===u);if(!L.length)continue
+    pvars.push({id:'p:'+k+':'+u,name:(k==='elem'?'적용 속성 강화':k==='elemS'?'적용 상태창 속성 강화':'적용 타입 강화')+(u==='pct'?' %':''),cat:'소환수',unit:u,stack:Math.max(0,...L.map(x=>x.stack||0)),known:L.every(x=>x.known),pk:k})}
   PSTAT.forEach(([k,l],i)=>{if(pets.some(p=>isNum((p.st||[])[i])))pvars.push({id:'p:'+k,name:'소환수 '+l,cat:'소환수',unit:'flat',known:true,pi:i})})
   const hasAmp=isNum(s.amp0)||s.records.some(r=>isNum(r.amp))||pets.some(p=>isNum(p.amp))
   if(hasAmp)pvars.push({id:'p:amp',name:'성장증폭 %',cat:'소환수',unit:'pct',known:true,pamp:true})
@@ -2121,7 +2125,7 @@ function sessionData(s){
     const tv={};tagged.forEach(x=>{tv[x.id]=acc[x.id]||0;tv[x.id+'*']=accC[x.id]||0})
     for(const [k,d] of once){const o=k in tv?tv:v;o[k]=(o[k]||0)+d;if(o[k+'*']!=null)o[k+'*']=((1+o[k+'*']/100)*(1+d/100)-1)*100}
     for(const x of pvars){
-      if(x.pk){const tg=curP&&(x.pk==='elem'?normElem(curP.elem):curP.type),L=tagged.filter(q=>q.tag.k===x.pk&&q.unit===x.unit&&q.tag.v===tg)
+      if(x.pk){const tg=curP&&(x.pk!=='type'?normElem(curP.elem):curP.type),L=tagged.filter(q=>q.tag.k===x.pk&&q.unit===x.unit&&q.tag.v===tg)
         v[x.id]=tg?L.reduce((a,q)=>a+tv[q.id],0):NaN;if(x.unit==='pct')v[x.id+'*']=tg?(L.reduce((a,q)=>a*(1+tv[q.id+'*']/100),1)-1)*100:NaN}
       else if(x.pamp){v[x.id]=isNum(curA)?curA:NaN;v[x.id+'*']=v[x.id]}
       else if(x.preal)v[x.id]=curP?realAtk(curP.st,curA):NaN
