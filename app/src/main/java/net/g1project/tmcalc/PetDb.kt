@@ -115,7 +115,7 @@ class PetDb(val pets: List<Pet>) {
                     name = str("n", "이름").trim().ifEmpty { throw IllegalArgumentException("${i + 1}번째 소환수에 이름이 없습니다") },
                     // 앱에서 추가한 소환수는 등급/속성/타입을 비워 둘 수 있다
                     grade = str("g", "등급"),
-                    element = str("e", "속성"),
+                    element = str("e", "속성").let { if (it.trim() == "불") "화염" else it },
                     type = str("t", "타입"),
                     init = IntArray(4) { ini.getInt(it) },
                     sGrowth = DoubleArray(4) { s.getDouble(it) },
@@ -154,6 +154,11 @@ class PetDb(val pets: List<Pet>) {
         fun skillJson(p: Pet): String = if (p.skill.isEmpty()) "" else
             ",\"스킬\":{" + p.skill.entries.joinToString(",") { (k, v) -> "\"$k\":" + (if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()) } + "}"
 
+        /** 내 도감 소환수가 스킬을 안 적었으면 기본 도감의 스킬을 이어받는다 (숫자만 고친 내 도감 줄이 기본 스킬을 가리지 않게) */
+        fun withBaseSkill(mine: Pet, base: Pet?): Pet =
+            if (mine.skill.isNotEmpty() || base == null || base.skill.isEmpty()) mine
+            else Pet(mine.name, mine.grade, mine.element, mine.type, mine.init, mine.sGrowth, mine.maxS, base.skill)
+
         /** 앱 연구실(최적화)에 넘길 스킬 객체 */
         fun skillObj(p: Pet): org.json.JSONObject = org.json.JSONObject().apply { for ((k, v) in p.skill) put(k, v) }
 
@@ -191,7 +196,7 @@ class PetDb(val pets: List<Pet>) {
             return user.filterNot { u ->
                 val b = byKey[key(u.name)] ?: return@filterNot false
                 u.init.contentEquals(b.init) && u.sGrowth.contentEquals(b.sGrowth) && u.maxS.contentEquals(b.maxS) &&
-                    tag(u.grade, b.grade) && tag(u.element, b.element) && tag(u.type, b.type) && u.skill == b.skill
+                    tag(u.grade, b.grade) && tag(u.element, b.element) && tag(u.type, b.type) && (u.skill.isEmpty() || u.skill == b.skill)
             }
         }
 

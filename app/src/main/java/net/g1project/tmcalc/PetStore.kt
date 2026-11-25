@@ -36,7 +36,7 @@ object PetStore {
 
     fun merge(base: List<Pet>, user: List<Pet>): List<Pet> {
         val mine = user.associateBy { PetDb.key(it.name) }
-        return base.map { mine[PetDb.key(it.name)] ?: it } +
+        return base.map { b -> mine[PetDb.key(b.name)]?.let { PetDb.withBaseSkill(it, b) } ?: b } +
             user.filter { u -> base.none { PetDb.key(it.name) == PetDb.key(u.name) } }
     }
 
@@ -84,7 +84,7 @@ object PetStore {
 
     /**
      * 내보내기 형식: 한 줄에 소환수 하나, 한글 키. PC 메모장/엑셀에서 고치기 쉽게.
-     * [{"이름":"라르곤","등급":"전설","속성":"불","타입":"야수","초기치":[14,9,10,114],"S성장률":[3.54,2.32,2.57,27.67],"만렙S":[541,356,394,4237]}, ...]
+     * [{"이름":"라르곤","등급":"전설","속성":"화염","타입":"야수","초기치":[14,9,10,114],"S성장률":[3.54,2.32,2.57,27.67],"만렙S":[541,356,394,4237]}, ...]
      * 배열 순서는 항상 공, 방, 순, 체.
      */
     fun exportJson(pets: List<Pet>): String = pets.joinToString(",\n", "[\n", "\n]\n") { p ->

@@ -604,6 +604,11 @@ function tm2Template(){
       {id:'buff',name:'특수 버프',reduce:false,items:[it('party','파티 피해 증가','flat')]},
       {id:'base',name:'기본능력치',reduce:false,items:[it('atk','공격력','flat')]}],
     measures:[{id:'basic',name:'평타',basePct:'100',crit:'none'},{id:'skill',name:'스킬',basePct:'100',crit:'none'}]}}
+/** 예전 자료의 속성 '불' → 게임 표기 '화염' */
+function fireMigrate(){const fixKeys=o=>{if(!o||typeof o!=='object')return;for(const k of Object.keys(o))if(/@불$/.test(k)){o[k.replace(/@불$/,'@화염')]=o[k];delete o[k]}}
+  const fixPet=p=>{if(p&&p.elem==='불')p.elem='화염'}
+  const sp=data.spec;if(sp){fixKeys(sp.st);fixKeys(sp.steps);for(const w of sp.wi||[])for(const r of w.rows||[])if(r.id)r.id=r.id.replace(/@불$/,'@화염');for(const d of sp.decks||[])(d.pets||[]).forEach(fixPet)}
+  for(const s of data.sessions||[]){fixPet(s.pet0);for(const r of s.records||[])fixPet(r.pet)}}
 function loadData(){
   try{data=JSON.parse(BR?TMCalc.load():(localStorage.getItem('tmcalcLab')||'null'))}catch(e){data=null}
   if(!data||!Array.isArray(data.templates))data={v:1,templates:[],sessions:[]}
@@ -615,6 +620,7 @@ function loadData(){
     t.critStyle='mult'}   // 치명 피해는 항상 배율 % (1.5배 = 150)
   migrateV2();inferUnits()
   if(!data.templates.some(t=>t.tm2))data.templates.unshift(tm2Template())
+  fireMigrate()
   try{active=BR?TMCalc.getActive():(localStorage.getItem('tmcalcLabActive')||'')}catch(e){active=''}
 }
 /** v1.6.1 이전 자료: 최적화가 세션마다 → 게임(틀)마다. 원본은 처음 한 번 브라우저 저장소에 백업 */
@@ -930,9 +936,9 @@ function vFront(c,v){
     $('#goSpec').onclick=()=>{LS.set('tmcalcFrontTab','spec');render()};return}
   vSpec($('#ftv'))
 }
-// TM2 덱: 속성·타입 목록 (도감 기준, 룬의 '화염' = 불)
-const ELEMS=['불','물','바람','빛','어둠'],TYPES=['야수','마법','자연','수중','던전','비행']
-const normElem=e=>e==='화염'?'불':e
+// TM2 덱: 속성·타입 목록 (게임 표기 '화염', 예전 자료의 '불' 도 화염으로)
+const ELEMS=['화염','물','바람','빛','어둠'],TYPES=['야수','마법','자연','수중','던전','비행']
+const normElem=e=>e==='불'?'화염':e
 const scopeOf=(S,i)=>i.scope||'user'
 const SCOPES=[['user','내 스펙 (공통)'],['elem','소환수 속성별'],['type','소환수 타입별'],['pet','소환수 자기 스펙']]
 const curDeck=sp=>{const L=(sp&&sp.decks)||[];return L.find(d=>d.id===sp.deckId)||L[0]||null}
@@ -1007,7 +1013,7 @@ function ampAt(s,uptoId){let a=isNum(s.amp0)?s.amp0:(s.pet0&&isNum(s.pet0.amp)?s
   for(const r of s.records){if(r.id===uptoId)break;if(isNum(r.amp))a=r.amp;else if(r.pet&&isNum(r.pet.amp))a=r.pet.amp}return a}
 const myAmp=()=>{const L=savedPetsList();const x=L.find(q=>typeof q.amp==='number');return x?x.amp:null}
 function petAt(s,uptoId){let p=s.pet0||null;for(const r of s.records){if(r.id===uptoId)break;if(r.pet)p=r.pet}return p}
-function itemTag(name){const L=String(name||'').replace(/\s/g,''),e=ELEMS.find(x=>L.startsWith(x))||(L.startsWith('화염')?'불':null),ty=TYPES.find(x=>L.startsWith(x))
+function itemTag(name){const L=String(name||'').replace(/\s/g,''),e=ELEMS.find(x=>L.startsWith(x))||(L.startsWith('불')?'화염':null),ty=TYPES.find(x=>L.startsWith(x))
   return e&&/속성/.test(L)?{k:'elem',v:e}:ty&&/타입/.test(L)?{k:'type',v:ty}:null}
 function petText(p){if(!p)return'안 정함'
   const st=(p.st||[]).some(isNum)?PSTAT.map(([k,l],i)=>l+' '+(isNum((p.st||[])[i])?fmt(p.st[i]):'?')).join(' '):''
@@ -1181,7 +1187,7 @@ function runeKey(S,label){const L=String(label).replace(/\s/g,'')
   // 공식 세트를 만들 때 연구실에서 연결해 둔 것 먼저
   const rm=(S.runeMap||{})[label];if(rm==='skip')return null
   const byId=rm&&ins.find(i=>i.id===rm)
-  const elem=ELEMS.find(e=>L.startsWith(e)||(e==='불'&&L.startsWith('화염'))),type=TYPES.find(t=>L.startsWith(t))
+  const elem=ELEMS.find(e=>L.startsWith(e)||(e==='화염'&&L.startsWith('불'))),type=TYPES.find(t=>L.startsWith(t))
   if(byId){const sc=scopeOf(S,byId);return sc==='elem'&&elem?byId.id+'@'+elem:sc==='type'&&type?byId.id+'@'+type:sc==='user'?byId.id:null}
   if(/^모든속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='user'&&/모든/.test(i.name));return i?i.id:null}
   if(elem&&/속성/.test(L)){const i=ins.find(i=>scopeOf(S,i)==='elem');return i?i.id+'@'+elem:null}

@@ -35,7 +35,7 @@ class DesktopPets(val dir: File = File(System.getenv("APPDATA") ?: System.getPro
 
     private fun load(): PetDb {
         val mine = user().associateBy { PetDb.key(it.name) }
-        val merged = builtIn.map { mine[PetDb.key(it.name)] ?: it } + mine.values.filter { PetDb.key(it.name) !in builtInKeys }
+        val merged = builtIn.map { b -> mine[PetDb.key(b.name)]?.let { PetDb.withBaseSkill(it, b) } ?: b } + mine.values.filter { PetDb.key(it.name) !in builtInKeys }
         return PetDb(merged)
     }
 

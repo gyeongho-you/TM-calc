@@ -31,4 +31,18 @@ class PetSkillTest {
         assertEquals(1, PetDb.pruneSameAsBase(listOf(pet(mapOf("mana" to 5.0))), base).size)
         assertEquals(0, PetDb.pruneSameAsBase(listOf(pet(emptyMap())), base).size)
     }
+
+    @Test fun userCopyKeepsBaseSkill() {
+        // 내 도감에서 숫자만 고친 소환수(스킬 없음)는 기본 도감 스킬을 이어받는다
+        val base = listOf(pet(mapOf("mana" to 20.0, "pct" to 300.0)))
+        val mine = Pet("라르곤", "전설", "화염", "야수", intArrayOf(14, 9, 10, 114), doubleArrayOf(3.54, 2.32, 2.57, 27.67), intArrayOf(541, 356, 395, 4237))
+        assertEquals(300.0, PetStore.merge(base, listOf(mine))[0].skill["pct"])
+        assertEquals(395, PetStore.merge(base, listOf(mine))[0].maxS[2])
+    }
+
+    @Test fun builtInDexHasSkills() {
+        val db = PetDb.parse(java.io.File("src/main/assets/pets.json").readText())
+        assertTrue(db.pets.all { it.skill["mana"] != null && it.skill["pct"] != null })
+        assertTrue(db.pets.none { it.element == "불" })
+    }
 }

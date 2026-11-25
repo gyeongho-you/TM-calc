@@ -1936,7 +1936,7 @@ class OverlayService : Service() {
         overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("이 기록의 소환수").setItems(names.toTypedArray()) { _, w ->
             val p = list[w]; val pet = db.find(p.name)
             val draft = JSONObject().put("name", p.name)
-                .put("elem", (pet?.element ?: "").let { if (it == "화염") "불" else it }).put("type", pet?.type ?: "")
+                .put("elem", (pet?.element ?: "").let { if (it == "불") "화염" else it }).put("type", pet?.type ?: "")
                 .put("st", org.json.JSONArray(p.stats.toList()))
             labPetDraft = draft
             // 도감에 스킬 배율이 없으면 이 실험에서만 쓸 값을 직접 (도감에는 저장 안 함)
