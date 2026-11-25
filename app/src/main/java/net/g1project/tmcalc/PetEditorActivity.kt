@@ -294,7 +294,7 @@ class PetEditorActivity : Activity() {
         val skE = PetDb.SKILL_KEYS.map { (k, label) -> k to field(label, pet?.skill?.get(k)?.let { v -> fmt(v) } ?: "", dec) }
         skE.chunked(2).forEach { row -> form.addView(LinearLayout(this).apply { row.forEach { (_, e) -> addView(e, weight()) } }) }
         form.addView(TextView(this).apply {
-            text = "· 마나: 평타마다 평타당 마나만큼 차고, 다 차면 스킬을 바로 써요.\n· 10초 공격 횟수 = 배속 끄고 평타+스킬을 센 값."
+            text = "· 마나: 평타마다 평타당 마나만큼 차고, 다 차면 스킬을 바로 써요."
             textSize = 11f
             setTextColor(Color.parseColor("#9A9DA3"))
         })

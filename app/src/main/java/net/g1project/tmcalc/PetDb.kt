@@ -133,7 +133,7 @@ class PetDb(val pets: List<Pet>) {
          */
         /** 스킬 칸: 키, 화면 이름. 마나: 평타마다 평타당 마나만큼 차고 다 차면 스킬을 바로 씀 */
         val SKILL_KEYS = listOf("mana" to "최대 마나", "per" to "평타당 마나", "pct" to "스킬 배율 %", "hits" to "스킬 타수",
-            "refund" to "스킬이 채우는 마나", "basicPct" to "평타 배율 %", "aps" to "10초 공격 횟수")
+            "refund" to "스킬이 채우는 마나", "basicPct" to "평타 배율 %")
 
         /** JSON 의 스킬 객체 (영어 키 또는 한글 이름) → 맵. 모르는 키·숫자 아닌 값은 버림 */
         fun parseSkill(o: org.json.JSONObject?): Map<String, Double> {

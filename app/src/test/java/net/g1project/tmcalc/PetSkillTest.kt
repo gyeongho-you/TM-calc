@@ -11,9 +11,9 @@ class PetSkillTest {
         Pet("라르곤", "전설", "불", "야수", intArrayOf(14, 9, 10, 114), doubleArrayOf(3.54, 2.32, 2.57, 27.67), intArrayOf(541, 356, 394, 4237), skill)
 
     @Test fun roundTrip() {
-        val p = pet(mapOf("mana" to 5.0, "pct" to 300.0, "aps" to 8.5))
+        val p = pet(mapOf("mana" to 5.0, "pct" to 300.0, "hits" to 1.5))
         val json = PetStore.exportJson(listOf(p))
-        assertTrue(json.contains("\"스킬\":{\"mana\":5,\"pct\":300,\"aps\":8.5}"))
+        assertTrue(json.contains("\"스킬\":{\"mana\":5,\"pct\":300,\"hits\":1.5}"))
         assertEquals(p.skill, PetDb.parse(json).pets[0].skill)
         // 스킬 없는 소환수는 예전 형식 그대로
         assertTrue(!PetStore.exportJson(listOf(pet(emptyMap()))).contains("스킬"))

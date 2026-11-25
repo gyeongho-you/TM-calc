@@ -219,7 +219,7 @@ class PetEditorDialog(owner: JFrame, private val pets: DesktopPets,
                 isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT
                 skE.forEach { (_, label, f) -> add(labeled(label, f)) }
             })
-            add(row(label("<html>· 마나: 평타마다 평타당 마나만큼 차고, 다 차면 스킬을 바로 써요.<br>· 10초 공격 횟수 = 배속 끄고 평타+스킬을 센 값.</html>", 11f, MainWindow.MUTED, allowHtml = true)))
+            add(row(label("<html>· 마나: 평타마다 평타당 마나만큼 차고, 다 차면 스킬을 바로 써요.</html>", 11f, MainWindow.MUTED, allowHtml = true)))
             if (d?.growth != null) add(row(label("<html>게임 도감 화면에서 읽은 값입니다. 저장 전에 한 번 확인해 주세요." +
                 (d.note?.let { "<br>성장률과 안 맞아 고친 값: " + it.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") } ?: "") +
                 "</html>", 11f, Color(0xF2B84B), allowHtml = true).apply { border = BorderFactory.createEmptyBorder(8, 0, 0, 0) }))
