@@ -215,6 +215,7 @@ class OverlayService : Service() {
                 // 룬 비교 모드(따로 켜는 옵션)일 때만 룬 비교 화면으로 읽는다. 끄면 평소처럼 소환수 계산
                 if (AppPrefs.runeMode(this)) {
                     val rs0 = RuneParser.parse(lines)
+                    RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
                     if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
                         showRuneCompare(rs0[0], rs0[1])
                         return@addOnSuccessListener
@@ -1654,6 +1655,7 @@ class OverlayService : Service() {
                         .setPositiveButton("닫기", null))
                     return@ocrLines
                 }
+                RuneLog.add(this, runes.take(2)) // 임시: 수치 공식 찾기용 (정식 배포 전 삭제)
                 labApplyRune(tid, runes[0], runes[1])
             }
         }
@@ -1932,7 +1934,7 @@ class OverlayService : Service() {
         val list = AppPrefs.presets(this)
         if (list.isEmpty()) { toast("저장한 소환수가 없습니다. [계산]으로 소환수를 읽고 저장해 주세요."); return }
         if (dbVersion != PetStore.version) reloadDb()
-        val names = list.map { p -> "${p.label}  (${p.name} · ${p.stats.joinToString("/")})" }
+        val names = list.map { p -> "${p.label}  (${p.name} · ${p.stats.joinToString("/")})" + (if (p.memo.isNotEmpty()) "\n" + p.memo else "") }
         overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("이 기록의 소환수").setItems(names.toTypedArray()) { _, w ->
             val p = list[w]; val pet = db.find(p.name)
             val draft = JSONObject().put("name", p.name)

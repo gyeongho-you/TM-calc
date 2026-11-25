@@ -82,7 +82,7 @@ class LabActivity : Activity() {
             val arr = org.json.JSONArray()
             for (p in AppPrefs.presets(this@LabActivity)) {
                 val pet = db.find(p.name)
-                arr.put(JSONObject().put("label", p.label).put("name", p.name).put("level", p.level)
+                arr.put(JSONObject().put("label", p.label).put("memo", p.memo).put("name", p.name).put("level", p.level)
                     .put("element", pet?.element ?: "").put("type", pet?.type ?: "").put("grade", pet?.grade ?: "")
                     .put("stats", org.json.JSONArray(p.stats.toList()))
                     .put("combat", combatOf(p.stats, AppPrefs.growthAmp(this@LabActivity)))

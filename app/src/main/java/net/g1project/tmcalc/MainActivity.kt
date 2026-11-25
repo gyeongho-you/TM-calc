@@ -164,7 +164,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
             .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "최적화 (스펙 효율 · 연구실)",
-                "룬 비교 모드: " + if (AppPrefs.runeMode(this)) "켜짐 (끄기)" else "꺼짐 (켜기)")) { _, which ->
+                "룬 비교 모드: " + if (AppPrefs.runeMode(this)) "켜짐 (끄기)" else "꺼짐 (켜기)", "읽은 룬 기록 (임시)")) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, PetEditorActivity::class.java))
                     1 -> openEstimate()
@@ -172,6 +172,7 @@ class MainActivity : Activity() {
                     3 -> openDisplaySettings()
                     4 -> openPresetFiles()
                     5 -> openLab()
+                    7 -> openRuneLog()
                     else -> { val on = !AppPrefs.runeMode(this); AppPrefs.setRuneMode(this, on)
                         Toast.makeText(this, if (on) "룬 비교 모드를 켰어요. 레이어 버튼이 [룬]이 되고, 룬 비교 화면을 읽어요." else "룬 비교 모드를 껐어요.", Toast.LENGTH_LONG).show() }
                 }
@@ -217,6 +218,25 @@ class MainActivity : Activity() {
 
     /** 연구실: 틀·세션 관리, 기록 보기, 공식 찾기 (세션을 시작하면 레이어 버튼이 [연구]) */
     private fun openLab() = startActivity(Intent(this, LabActivity::class.java))
+
+    /** 읽은 룬 기록 (임시): 등급|옵션별 레벨→수치, 줄여 보인 값은 추정값. 복사해서 보내면 수치 공식 찾기에 씀 */
+    private fun openRuneLog() {
+        val a = RuneLog.load(this)
+        AlertDialog.Builder(this).setTitle("읽은 룬 기록 (${a.length()}개)")
+            .setMessage("룬 읽기로 읽은 룬의 등급·레벨·옵션을 모아 둔 것 (가려진 옵션은 빠짐).\n1.2만처럼 줄여 보인 값은 같은 등급·옵션의 정확한 값으로 추정.\n\n" + RuneLog.summary(a))
+            .setPositiveButton("닫기", null)
+            .setNeutralButton("복사 (JSON)") { _, _ ->
+                getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("읽은 룬 기록", a.toString(1)))
+                Toast.makeText(this, "복사했어요.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("지우기") { _, _ ->
+                AlertDialog.Builder(this).setMessage("읽은 룬 기록 ${a.length()}개를 지울까요?")
+                    .setPositiveButton("지우기") { _, _ -> RuneLog.clear(this); Toast.makeText(this, "지웠어요.", Toast.LENGTH_SHORT).show() }
+                    .setNegativeButton("취소", null).show()
+            }
+            .show()
+    }
 
     /** 저장 목록(계산 레이어의 [저장])을 JSON 파일로 내보내거나 올린다. PC 프로그램과 같은 형식 */
     private fun openPresetFiles() {
