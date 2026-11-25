@@ -587,23 +587,28 @@ function realAtk(st,ampPct){if(!st||![0,1,2,3].every(i=>isNum(st[i]))||!isNum(am
 const TM2_ELEM=[['e1','화염'],['e2','물'],['e3','바람'],['e4','빛'],['e5','어둠']],TM2_TYPE=[['t1','야수'],['t2','마법'],['t3','자연'],['t4','수중'],['t5','던전'],['t6','비행']]
 function tm2Template(){
   const it=(id,name,unit)=>({id,name,unit,reduce:false})
-  const rune=[it('atk','공격','flat'),it('dmg','피해증가','pct'),it('nb','일반공격피해','pct'),it('sk','스킬공격피해','pct'),it('ae','모든속성 강화','pct'),it('at','모든타입 강화','pct'),
+  const rune=[it('atk','공격','flat'),it('dmg','피해증가','pct'),it('nb','일반공격피해','pct'),it('sk','스킬공격피해','pct'),it('ae','모든속성 강화','pct'),it('at','모든타입 강화','pct'),it('cd','치명타 피해','pct'),
     ...TM2_ELEM.map(([i,n])=>it(i,n+'속성 강화','pct')),...TM2_TYPE.map(([i,n])=>it(i,n+'타입 강화','pct'))]
   const rm={},put=(labels,v)=>labels.forEach(l=>{rm[l]=v;rm[l.replace(/\s/g,'')]=v})
   put(['공격','공격력','장비 공격'],'g:rune:atk:flat');put(['피해증가','피해 증가'],'g:rune:dmg:pct')
   put(['일반공격피해','일반공격 피해','일반공격 피해증가','일반공격피해증가'],'g:rune:nb:pct');put(['스킬공격피해','스킬공격 피해','스킬공격 피해증가','스킬공격피해증가'],'g:rune:sk:pct')
   put(['모든속성 강화','모두 속성 강화','모든 속성 강화'],'g:rune:ae:pct');put(['모든타입 강화','모두 타입 강화','모든 타입 강화'],'g:rune:at:pct')
-  put(['치명타확률','치명타 확률'],'g:crit:rate:pct');put(['치명타피해','치명타 피해'],'g:crit:dmg:pct')
+  put(['치명타확률','치명타 확률'],'g:crit:rate:pct');put(['치명타피해','치명타 피해'],'g:rune:cd:pct')
   TM2_ELEM.forEach(([i,n])=>put([n+'속성 강화',n+' 속성 강화'],'g:rune:'+i+':pct'));TM2_TYPE.forEach(([i,n])=>put([n+'타입 강화',n+' 타입 강화'],'g:rune:'+i+':pct'))
   put(['방어','방어력','장비 방어','속도','생명','생명력','명중','회피','피해감소','피해 감소'],'skip')
   return{id:'tm2',tm2:true,name:'테마 (기본)',useCrit:true,critStyle:'mult',opt:{list:'main',eq:{}},runeMap:rm,runeTable:{},
     groups:[{id:'rune',name:'룬 옵션',reduce:false,items:rune},
-      {id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률',unit:'pct'},{id:'dmg',name:'피해',unit:'pct'}]},
+      {id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률',unit:'pct'},{id:'dmg',name:'피해 (예전 방식)',unit:'pct'}]},
       {id:'wpn',name:'무기',reduce:false,items:[it('atkp','공격 % (상태창에 안 보임, 무기에서)','pct')]},
       {id:'elv',name:'속성 강화',reduce:false,items:[...TM2_ELEM.map(([i,n])=>it(i,n,'flat')),it('all','모든능력치','flat')]},
       {id:'buff',name:'특수 버프',reduce:false,items:[it('party','파티 피해 증가','flat')]},
       {id:'base',name:'기본능력치',reduce:false,items:[it('atk','공격력','flat')]}],
     measures:[{id:'basic',name:'평타',basePct:'100',crit:'none'},{id:'skill',name:'스킬',basePct:'100',crit:'none'}]}}
+/** 테마 틀: 룬 옵션 '치명타 피해' 추가 (룬 읽기도 그쪽으로). 기본 치명 피해는 소환수마다 다르고 알 수 없어 칸 없음 */
+function tm2CritMigrate(){for(const t of data.templates){if(!t.tm2)continue
+  const R=t.groups.find(g=>g.id==='rune');if(R&&!(R.items||[]).some(i=>i.id==='cd'))R.items.push({id:'cd',name:'치명타 피해',unit:'pct',reduce:false})
+  const C=t.groups.find(g=>g.id==='crit'),D=C&&(C.items||[]).find(i=>i.id==='dmg');if(D&&D.name==='피해')D.name='피해 (예전 방식)'
+  t.runeMap=t.runeMap||{};for(const k of ['치명타피해','치명타 피해'])if(!t.runeMap[k]||t.runeMap[k]==='g:crit:dmg:pct')t.runeMap[k]='g:rune:cd:pct'}}
 /** 예전 자료의 속성 '불' → 게임 표기 '화염' */
 function fireMigrate(){const fixKeys=o=>{if(!o||typeof o!=='object')return;for(const k of Object.keys(o))if(/@불$/.test(k)){o[k.replace(/@불$/,'@화염')]=o[k];delete o[k]}}
   const fixPet=p=>{if(p&&p.elem==='불')p.elem='화염'}
@@ -620,6 +625,7 @@ function loadData(){
     t.critStyle='mult'}   // 치명 피해는 항상 배율 % (1.5배 = 150)
   migrateV2();inferUnits()
   if(!data.templates.some(t=>t.tm2))data.templates.unshift(tm2Template())
+  tm2CritMigrate()
   fireMigrate()
   try{active=BR?TMCalc.getActive():(localStorage.getItem('tmcalcLabActive')||'')}catch(e){active=''}
 }
@@ -721,50 +727,52 @@ const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${S
 // ---------------------------------------------------------------- 도움말 (? 버튼)
 const HELP={
   start:['연구실 사용법',`
-<p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내고</b>, 그걸로 <b>가장 센 셋팅</b>을 찾는 곳이에요.</p>
-<p><b>맨 위 🎮 게임</b>: 게임마다 하나. <b>⚙ 게임 설정</b>에서 분류(바꿀 수 있는 것)·공격 그룹·칸·세트·상태창 규칙을 정해요.</p>
-<p><b>① 실험</b>: [+ 새 실험] → 시작 상태 적기 → 게임 위 [연구] 버튼으로 하나 바꾸고 데미지 적기 반복 → [공식 찾기] → [저장]</p>
-<p><b>② 공식</b>: 저장한 공식 모음. 공격 그룹마다 여러 개 둘 수 있어요.</p>
-<p><b>③ 아이템</b>: 가진 아이템(또는 지금 낀 옵션)을 등록만 해 두는 목록. 여러 개 만들 수 있어요.</p>
-<p><b>④ 최적화</b>: 공식·목록 고르기 → 지금 낀 것 체크 → 내 상태(상태창 값) → 최적 조합 / 바꿀 옵션 찾기 / 무엇을 올리면 이득?</p>
-<div class="ex"><b>예시</b><br>기록: 처음 1,000 → 룬 공격 +200 → 1,200 → 무기 +10% → 1,320 …<br>공식: <b>데미지 = (1000 + 룬) × (1 + 무기%)</b><br>최적화: "룬B로 바꾸면 +8.7%"</div>
-<p>처음이면 ① 실험의 [예시 넣기]로 한번 눌러 보세요.</p>`],
+<p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내는</b> 곳이에요. 찾은 공식은 <b>공식 세트</b>로 만들어 앱 메뉴 <b>최적화</b>(스펙 효율·덱·룬 비교)에서 써요.</p>
+<p><b>맨 위 🎮 게임</b>: 목록 맨 아래 <b>＋ 게임 추가</b>로 여러 개 만들 수 있어요.<br>
+· <b>테이밍마스터 기본 틀</b>: 상태창 항목(룬 옵션·무기·속성 강화·버프·기본 공격력), 평타·스킬, 소환수 연결이 다 들어 있어요. 사냥터별·캐릭터별로 나눠 실험하고 싶을 때 하나 더 만들어요.<br>
+· <b>커스터마이징</b>: 빈 틀에서 분류·항목·공격 그룹을 직접 정해요. 다른 게임도 이렇게 써요 (테이밍마스터 전용 기능은 없음).</p>
+<p><b>① 실험</b>: [+ 새 실험] → 쓰는 소환수 정하기 → 시작 상태(상태창 값) 적기 → 게임 위 [연구] 버튼으로 <b>하나만 바꾸고</b> 데미지 적기 반복 → [공식 찾기] → [저장]</p>
+<p><b>② 공식</b>: 저장한 공식 모음. ⚙ 게임 설정 › [공식 세트 만들기]로 최적화에 넘겨요.</p>
+<p><b>③ 아이템 · ④ 최적화</b>: 커스터마이징 게임용 (아이템 조합 찾기). 테이밍마스터는 앱 메뉴 <b>최적화</b>를 쓰면 돼요.</p>
+<div class="ex"><b>예시</b><br>기록: 처음 1,000 → 룬 공격 +200 → 1,200 → 무기 공격 +10% → 1,320 …<br>공식: <b>데미지 = (1000 + 룬 공격) × (1 + 무기 공격%)</b><br>최적화: "룬 피해증가 +1% → +0.62%"</div>
+<div class="ex"><b>기억할 것</b><br>· 데미지는 실험한 대상 기준이에요. 상대(방어·속도)가 바뀌면 숫자는 달라져요.<br>· 빗나감(MISS)은 기록하지 않아요.<br>· 성장증폭은 모든 소환수 공통 값이에요 (시작 상태 표 '소환수 공통').</div>`],
   session:['실험이란?',`
-<p>실험 한 번의 묶음이에요. 실험마다 기록이 따로 모여요.</p>
-<p><b>시작</b>을 누르면 그 세션이 "진행 중"이 되고, 게임 위 버튼이 [연구]로 바뀌어요. 그 상태에서 버튼을 누르면 바로 기록할 수 있어요. <b>멈추기</b>를 누르면 다시 [계산] 버튼이에요.</p>
-<p><b>기록</b> 보기·고치기 / <b>시작 상태</b> 처음 값 적기 / <b>공식 찾기</b> / <b>최적화</b> / <b>내보내기</b> 파일로 저장(다른 폰·PC에서 불러오기 가능)</p>
-<div class="ex"><b>팁</b><br>실험 도중 기록 안 한 변화(장비를 몰래 바꿈, 버프가 끝남)가 생기면 기록이 어긋나요. 그럴 땐 새 세션을 만드는 게 좋아요.</div>`],
+<p>실험 한 번의 묶음이에요. 실험마다 기록이 따로 모여요. 테이밍마스터 게임은 <b>쓰는 소환수</b>를 꼭 정해요 (스킬 배율·속성·타입을 맞추려고).</p>
+<p><b>시작</b>을 누르면 그 실험이 "진행 중"이 되고, 게임 위 버튼이 [연구]로 바뀌어요. 그 상태에서 버튼을 누르면 바로 기록할 수 있어요. <b>멈추기</b>를 누르면 다시 [계산] 버튼이에요.</p>
+<p><b>기록</b> 보기·고치기 / <b>시작 상태</b> 처음 값 적기 / <b>공식 찾기</b> / <b>내보내기</b> 파일로 저장(다른 폰·PC에서 불러오기 가능)</p>
+<div class="ex"><b>팁</b><br>실험 도중 기록 안 한 변화(장비를 몰래 바꿈, 버프가 끝남)가 생기면 기록이 어긋나요. 그럴 땐 [상태 다시 적기]나 새 실험을 써요.</div>`],
   tpl:['틀이란?',`
-<p>실험의 <b>설계도</b>예요. 같은 틀로 세션을 여러 번 만들 수 있어요.</p>
-<p><b>분류</b>: 바꿔 볼 것 (룬, 무기, 스킬, 적 방어 …)<br>
+<p>게임의 <b>설계도</b>예요. 같은 게임으로 실험을 여러 번 만들 수 있어요.</p>
+<p><b>테이밍마스터 기본 틀</b>은 항목이 정해져 있어요 (룬 옵션 · 무기 · 속성 강화 · 특수 버프 · 기본능력치, 평타·스킬). 따로 고칠 필요 없어요.</p>
+<p><b>커스터마이징</b>은 직접 정해요.<br><b>분류</b>: 바꿔 볼 것 (룬, 무기, 스킬, 적 방어 …)<br>
 <b>항목</b>: 분류 안을 더 나눌 때 (스킬 → 공격력 / 데미지 / 방깎)<br>
 <b>공격 그룹</b>: 데미지를 잴 큰 묶음 (일반공격, 스킬)</p>
-<div class="ex"><b>예시</b><br>분류 <b>룬</b> (항목: 공격력, 데미지)<br>분류 <b>스킬 옵션</b> (항목: 스킬 데미지, 방깎[감소형])<br>공격 그룹: <b>일반공격</b>, <b>스킬</b> (잰 공격 배율 300%)</div>
-<p>치명이 있는 게임이면 "치명" 분류(확률·피해)가 자동으로 들어가요.<br>틀을 고치면 그 틀을 쓰는 세션에도 바로 반영돼요.</p>`],
+<div class="ex"><b>예시</b> (커스터마이징)<br>분류 <b>룬</b> (항목: 공격력, 데미지)<br>분류 <b>스킬 옵션</b> (항목: 스킬 데미지, 방깎[감소형])<br>공격 그룹: <b>일반공격</b>, <b>스킬</b> (잰 공격 배율 300%)</div>
+<p>틀을 고치면 그 틀을 쓰는 실험에도 바로 반영돼요.</p>`],
   measure:['공격 그룹 (잴 것)',`
-<p><b>데미지를 잴 큰 묶음</b>이에요. 스킬 하나하나를 적는 게 아니에요.</p>
-<div class="ex"><b>예시</b><br>· <b>일반공격</b> (평타)<br>· <b>스킬</b> (모든 스킬)<br>→ "스킬 데미지 +%" 같은 옵션은 스킬 전체에 똑같이 붙으니까, 스킬은 하나로 묶어요.</div>
-<p><b>어떻게 재나요?</b> 그룹마다 공격 하나를 정해서, 그 공격의 한 방 데미지를 계속 적어요. 예: 스킬 그룹은 "스킬A"로만 재기.</p>
-<p><b>잰 공격 %</b>: 그 공격이 <b>1배(100%) 기준으로 몇 %인지</b> 적어요. 평타처럼 배율이 없으면 비움(= 100).<br>
-앱은 공식을 항상 <b>1배(100%) 기준</b>으로 바꿔서 써요. 그래서 최적화에서 다른 스킬은 배율만 적으면 돼요.</p>
-<div class="ex"><b>예시</b> 스킬 그룹을 "공격력의 300%" 스킬A로 잼 → 잰 공격 300<br>스킬A 한 방 6,000 → 1배 기준 2,000<br>최적화에서 500% 스킬B → 2,000 × 5 = 10,000</div>
+<p><b>데미지를 잴 큰 묶음</b>이에요. 테이밍마스터는 <b>평타 · 스킬</b> 두 개로 정해져 있어요.</p>
+<p><b>스킬</b>은 소환수마다 배율이 달라서, 도감의 스킬 배율로 나눠 <b>1배(100%) 기준</b>으로 맞춰 계산해요. 그래서 다른 소환수로 잰 스킬 기록도 같이 쓸 수 있어요. 도감에 스킬이 없는 소환수는 실험에서 직접 적어요.</p>
+<p><b>커스터마이징</b>: 그룹마다 공격 하나를 정해서 그 공격의 한 방 데미지를 계속 적어요. <b>잰 공격 %</b>에 그 공격이 1배 기준 몇 %인지 적어요 (평타면 비움 = 100).</p>
+<div class="ex"><b>예시</b> 스킬 300% 소환수로 잼 → 한 방 6,000 → 1배 기준 2,000<br>500% 스킬 소환수 → 2,000 × 5 = 10,000</div>
 <p><b>비치명 / 치명 칸</b>: 치명이 안 터진 숫자는 비치명 칸, 터진 숫자는 치명 칸. 본 것만 적고, 섞지만 않으면 돼요.</p>`],
   startState:['시작 상태란?',`
-<p>세션을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창 등에 보이는 지금 값을 적어요.</p>
-<p><b>치명 피해</b>는 배율 %로 적어요: 1.5배면 150, 2배면 200.</p>
+<p>실험을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창에 보이는 지금 값을 그대로 적어요.</p>
+<p><b>소환수 공통 › 성장증폭</b>: 모든 소환수에 같이 붙는 값이라 소환수 칸이 아니라 여기 있어요. 바뀌면 기록에서 고쳐요.</p>
+<p><b>치명</b>: 테이밍마스터는 치명 피해가 소환수·상대에 따라 달라서 여기 적지 않아요. 치명이 터진 데미지는 기록에서 치명 칸에 따로 적어요. 룬의 '치명타 피해'는 룬 옵션 칸에 적어요.</p>
 <p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
-<div class="ex"><b>예시</b> (처음에 스킬 데미지 30%를 이미 갖고 있음)<br>
+<div class="ex"><b>예시</b> (처음에 스킬공격피해 30%를 이미 갖고 있음)<br>
 시작 상태 안 적음 → 15000 × (1 + 0.667×스킬%) <span class="bad">(계수가 이상함)</span><br>
 시작 상태 30 적음 → <b>10000 × (1 + 스킬%)</b> (실제 공식 그대로)</div>
 <p>모르는 칸은 비워 두면 돼요. 그 항목만 바꾼 양으로 계산해요.</p>`],
   record:['기록하는 법',`
-<p>게임에서 <b>하나만 바꾸고</b>, 바뀐 한 방 데미지를 적어요.</p>
-<p><b>아이템</b>: 누를 때마다 끼기(+) → 빼기(−) → 안 함<br>
-<b>바뀐 값</b>: 무엇을 얼마나 바꿨는지 (+200, -5%). [±]를 누르면 "지금 값 → 바꿀 값"으로 자동 계산<br>
+<p>게임에서 <b>하나만 바꾸고</b>, 바뀐 한 방 데미지를 적어요. 게임 위 [연구] 창에서 하면 편해요 (룬 읽기·데미지 찍기).</p>
+<p><b>바뀐 값</b>: 무엇을 얼마나 바꿨는지 (+200, -5%). [±]를 누르면 "지금 값 → 바꿀 값"으로 자동 계산<br>
+<b>성장증폭 %</b>: 바뀌었을 때만 고쳐요 (모든 소환수 공통)<br>
+<b>소환수 바꾸기</b>: 다른 소환수로 잴 때. 능력치·속성·타입이 같이 바뀐 걸로 봐요<br>
 <b>이번만</b>: 이 기록에만 적용 (잠깐 켜진 버프)<br>
-<b>데미지</b>: 비치명 / 치명 칸에 본 것만. 흔들리면 여러 번 재서 띄어 적기 (1234 1250 1241)</p>
-<div class="ex"><b>예시</b><br>#1 기준 → 1000<br>#2 룬 +200 → 1200<br>#3 [− 스킬A] [+ 스킬B] → 1350 (한 기록에 같이)<br>#4 무기 +10% → 1485</div>
-<p><b>요령</b>: 한 번에 하나만 · 같은 항목을 크기 다르게 3번 이상 · 겹쳐서도 한 번 (+5% 상태에서 +5% 더)</p>
+<b>데미지</b>: 비치명 / 치명 칸에 본 것만. 흔들리면 여러 번 재서 띄어 적기 (1234 1250 1241). 빗나감(MISS)은 안 적어요</p>
+<div class="ex"><b>예시</b><br>#1 기준 → 1000<br>#2 룬 공격 +200 → 1200<br>#3 룬 피해증가 +5% → 1260<br>#4 무기 공격 +10% → 1386</div>
+<p><b>요령</b>: 한 번에 하나만 · 같은 항목을 크기 다르게 3번 이상 · 겹쳐서도 한 번 (+5% 상태에서 +5% 더). [실험 순서] 표가 더 잴 것을 알려 줘요.</p>
 <p>⚠ = 공식과 크게 어긋난 기록. 입력 실수인지 확인하고 고치거나 [빼기].</p>`],
   find:['공식 찾기',`
 <p><b>무엇의 공식?</b> 찾을 숫자(잴 것)를 골라요.<br><b>무엇으로 계산?</b> 그 숫자에 영향을 주는 것들을 골라요 (보라색 = 사용).</p>
@@ -820,9 +828,10 @@ const HELP={
 <b>? 아직 안 재 봄</b>: 틀에는 있는데 한 번도 바꿔 본 적 없어요 → <b>다음에 조사할 것</b></p>
 <div class="ex"><b>예시</b> 스킬 데미지 공식<br>✓ 공격력, 스킬 데미지 % · ○ 일반공격 데미지 % · ? 속성 피해 %<br>→ 속성 피해 %를 바꿔 가며 몇 번 기록해 보면 스킬에 붙는지 알 수 있어요.</div>`],
   gain:['무엇을 올리면 이득?',`
-<p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 사이클 평균)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
-<p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요.</p>
-<div class="ex"><b>예시</b><br>스킬 데미지 % +1% → +0.62%<br>치명 피해 % +1% → +0.41%<br>→ 스킬 데미지 %를 올리는 게 더 이득</div>`],
+<p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 덱 합계)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
+<p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요. 올릴 양은 고칠 수 있어요. 공식 세트가 실제 숫자를 맞히면 +○○/10초도 같이 보여요.</p>
+<p><b>표에서 숨기기</b>: 안 볼 항목을 체크하면 표에서 빠져요 (계산·바꿔 보기에는 그대로).</p>
+<div class="ex"><b>예시</b><br>룬 피해증가 +1% → +0.62%<br>성장증폭 +1% → +0.41%<br>→ 룬 피해증가를 올리는 게 더 이득</div>`],
   statRule:['상태창 규칙',`
 <p>최적화 [내 상태]에서 값을 어떻게 정할지예요. 게임마다 한 번만 정하면 돼요.</p>
 <p><b>상태창 숫자 입력</b> (기본): 게임 상태창에 총합이 보이는 값. 그 숫자를 그대로 적고, 지금 낀 아이템 몫은 그 안에 들어 있는 것으로 봐요.</p>
@@ -851,6 +860,16 @@ const HELP={
 <p>효과가 고정 숫자가 아니라 <b>다른 값에 따라 달라질 때</b> 식으로 적어요. 이 아이템을 꼈을 때만 적용돼요.</p>
 <div class="ex"><b>예시</b> "마력의 10%만큼 공격력 증가"<br>대상: 공격력 변화 · + · <code>[마력] * 0.1</code></div>
 <p><b>조건이 있어야 켜지는 능력</b>("체력 50% 이하일 때" 등)은 체크해 두면, 최적화 화면에서 켬/끔을 골라 두 경우를 각각 계산해 볼 수 있어요.</p>`],
+  spec:['최적화 (스펙 효율)',`
+<p>연구실에서 찾은 <b>공식 세트</b>로 내 스펙에서 무엇을 올리면 이득인지 보는 곳이에요.</p>
+<p><b>1 내 스펙</b>: 상태창 값을 그대로 적어요. 적은 값은 저장돼요. <b>성장증폭</b>도 여기 (모든 소환수 공통, 실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).</p>
+<p><b>2 덱</b>: 소환수 최대 3마리. [저장한 소환수에서]로 불러오면 원래 능력치·개체 속도가 들어가요 (메모도 보여요).<br>
+· 소환수마다 자기 속성·타입 강화만 넣고, 마나 한 바퀴(평타 N번 + 스킬)로 계산해요<br>
+· 공속 = (개체 속도 + 도감 S 순발) ÷ 2 기준 (실측 ±4%)<br>
+· <b>추가 치명 확률</b>: 장착 스킬 등으로 그 소환수만 더 높을 때<br>
+· <b>실제 데미지 (선택)</b>: 같은 상대에게 때린 비치명·치명 한 방 → 치명 배율을 역산해 그 소환수에 써요 (그 상대 기준)</p>
+<p><b>10초 예상 데미지</b>: 실험한 대상·버프 없음·빗나감 제외 기준이에요. 상대가 바뀌면 숫자는 달라지지만 "무엇을 올리면 이득?" 순서는 대체로 같아요.</p>
+<p><b>룬 비교</b>: 앱 메뉴에서 룬 비교 모드를 켜고 게임의 룬 비교 화면에서 [룬] 버튼을 누르면, 여기 저장한 스펙·덱으로 "바꾸면 +x%"를 보여 줘요.</p>`],
   optimize:['최적 셋팅',`
 <p>틀에 등록한 아이템들 중 <b>칸 제한 안에서 가장 센 조합</b>을 찾아 줘요. 1~3등까지 보여 줘요.</p>
 <p>지금 낀 것은 시작 상태의 "낀 아이템" + 기록의 끼기/빼기로 자동으로 계산해요.</p>
@@ -889,7 +908,7 @@ function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fse
   const forms={}
   for(const m of TV){const L=FL.filter(x=>normT(x.f.target)===m.id);const x=L.find(q=>q.key===fsel[m.id])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];if(x)forms[m.id]={spec:x.f.spec,p:x.f.p,vars:x.f.vars,formula:x.f.formula,maxRel:isNum(x.f.maxRel)?x.f.maxRel:null}}
   const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')||v.startsWith('p:')))]
-  if(t.useCrit!==false)for(const k of ['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
+  if(t.useCrit!==false)for(const k of t.tm2?['g:crit:rate:pct']:['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
   const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['성장증폭 %','user'],'p:ratk':['소환수 실전투 공격','pet']}
   const inputs=ids.map(id=>{if(PN[id])return{id,name:PN[id][0],unit:id.endsWith(':pct')||id==='p:amp'?'pct':'flat',cap:null,scope:PN[id][1]}
     const x=tv.find(q=>q.id===id);const M=vm[id]||{},name=(x?x.name:id).replace(/ 변화$/,'')
@@ -909,7 +928,7 @@ function setEval(S,st,cyc){
   const fOf=k=>{const f=S.forms[k];if(!f)return null;f.fn=f.fn||makeF(f.spec);return f}
   const val=(f)=>f.fn(f.p,f.vars.map(id=>z[id]??z[id.replace(/\*$/,'')]??0))
   const list=(cyc.list||[]).length?cyc.list:[{name:(S.measures[0]||{}).name,group:(S.measures[0]||{}).id,pct:'',count:'1',crit:'can'}]
-  const p0=S.useCrit?Math.min(1,Math.max(0,(z['g:crit:rate:pct']||0)/100)):0,cm=S.useCrit&&z['g:crit:dmg:pct']?z['g:crit:dmg:pct']/100:1
+  const p0=S.useCrit?Math.min(1,Math.max(0,(z['g:crit:rate:pct']||0)/100)):0,cm0=!S.useCrit?1:z['g:crit:dmg:pct']?z['g:crit:dmg:pct']/100:1,ovr=S.useCrit&&num(st.__cm)>1?num(st.__cm):0,cm=ovr||cm0
   const byTime=cyc.mode==='time',T=num(cyc.time)||10
   const kind=e=>byTime?(e.kind2||'count'):'count'
   const realCd=e=>(num(e.cd)||0)*(1-(num(e.cdr)||0)/100),realIv=e=>(num(e.iv)||0)/(1+(num(e.aspd)||0)/100)
@@ -918,7 +937,7 @@ function setEval(S,st,cyc){
   for(const e of list){const m=S.measures.find(x=>x.id===e.group)||S.measures[0];if(!m){miss++;continue}
     const N=fOf('m:'+m.id),C=fOf('c:'+m.id);if(!N&&!C){miss++;continue}
     const r=(num(e.pct)||100)/(m.basePct||100)
-    const nd=N?val(N)*r:val(C)*r/cm,cd=C?val(C)*r:nd*cm
+    const nd=N?val(N)*r:val(C)*r/cm,cd=ovr?nd*ovr:C?val(C)*r:nd*cm
     const p=Math.min(1,Math.max(0,p0+(num(e.critAdd)||0)/100)),md=S.useCrit?(e.crit||'can'):'none'
     const avg=md==='none'?nd:md==='always'?cd:nd*(1-p)+cd*p
     const k=kind(e),h=num(e.hits)||1
@@ -948,10 +967,14 @@ function petState(S,st,p){const o={}
     o[i.id]=sc==='elem'?st[i.id+'@'+normElem(p.elem)]:sc==='type'?st[i.id+'@'+p.type]:sc==='pet'?(p.st||{})[i.id]:st[i.id]}
   // 소환수마다 추가 치명 확률 (장착 스킬 등): 공통 치명 확률에 더함 (최대 100%는 계산에서 자름)
   const pc=num(p&&p.crit);if(pc&&S.inputs.some(i=>i.id==='g:crit:rate:pct'))o['g:crit:rate:pct']=(num(o['g:crit:rate:pct'])||0)+pc
+  // 실제 비치명·치명 데미지를 적었으면 그 비율을 이 소환수의 치명 배율로 (그 상대 기준)
+  const cr=petCritRatio(p);if(cr)o.__cm=cr
   // 성장증폭은 내 스펙(모든 소환수 같음), 실전투 공격은 소환수 원래 능력치 × 성장증폭으로 다시 계산
   if(S.inputs.some(i=>i.id==='p:amp')){const a=ampOf(st);if(isNum(a))o['p:amp']=a}
   if(S.inputs.some(i=>i.id==='p:ratk')){const r=petReal(p,st);if(r)o['p:ratk']=r}
   return o}
+/** 소환수 치명 배율 역산: 같은 상대에게 때린 치명 ÷ 비치명 (1보다 커야 씀) */
+function petCritRatio(p){const a=num(p&&p.hitN),b=num(p&&p.hitC);return a>0&&b>a?b/a:null}
 /** 내 스펙의 성장증폭 % (안 적었으면 앱 설정 값) */
 const ampOf=st=>{const n=num((st||{})['p:amp']);return isFinite(n)?n:myAmp()}
 /** 소환수 원래 능력치 (공·방·순·체): 저장한 소환수에서 불러온 값, 없으면 공식 칸에 적은 값 */
@@ -1068,7 +1091,7 @@ function bindPet(root,p,redraw){const q=k=>root.querySelector(k)
 function vSpec(v){
   const S=activeSet(),sets=data.formulaSets||[],SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
-    <div class="row" style="margin-top:10px"><button class="pri" id="sImp">공식 세트 불러오기</button><button id="sLab">🔬 연구실로</button></div></div>`
+    <div class="row" style="margin-top:10px"><button class="pri" id="sImp">공식 세트 불러오기</button><button id="sLab">🔬 연구실로</button>${hb('spec')}</div></div>`
     $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click();$('#sLab').onclick=()=>go({v:'home'});return}
   const st=SS.st,cyc=SS.cyc,deck=curDeck(sp),pets=deck?deck.pets:[],useDeck=pets.length>0,g=deckGroups(S,sp)
   const inUser=S.inputs.filter(i=>scopeOf(S,i)==='user'),inElem=S.inputs.filter(i=>scopeOf(S,i)==='elem'),inType=S.inputs.filter(i=>scopeOf(S,i)==='type'),inPet=S.inputs.filter(i=>scopeOf(S,i)==='pet'&&i.id!=='p:ratk')
@@ -1093,7 +1116,7 @@ function vSpec(v){
   const list=(cyc.list||[]).length?cyc.list:[]
   const decks=sp.decks||[]
   v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
-      ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button><button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button></div>
+      ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button><button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>${hb('spec')}</div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
     <div class="grid" style="margin-top:8px">${inUser.map(i=>inp(i.id,i.name,i)).join('')}</div>
@@ -1109,6 +1132,8 @@ function vSpec(v){
       ${inPet.length?`<div class="grid">${inPet.map(i=>`<label class="f">${esc(i.name)}<input type="text" class="pst" data-k="${esc(i.id)}" value="${esc((p.st||{})[i.id]??'')}"></label>`).join('')}</div>`:''}
       ${needBase&&!hasBaseIn?`<div class="grid">${PSTAT.map(([q,l],j)=>`<label class="f">${l} (원래 능력치)<input type="text" inputmode="decimal" class="pbs" pix="${j}" value="${isNum((p.base||[])[j])?p.base[j]:''}" placeholder="모름"></label>`).join('')}</div>`:''}
       <div class="row" style="margin-top:4px;gap:6px">${S.useCrit?`<label class="row mut" style="gap:4px">추가 치명 확률<input type="text" inputmode="decimal" class="pcr" value="${esc(p.crit??'')}" placeholder="0" style="width:50px">%</label>`:''}<label class="row mut" style="gap:4px">개체 속도<input type="text" inputmode="decimal" class="psp" value="${esc(p.spd??'')}" placeholder="모름" style="width:70px"></label><span class="mut" style="flex:1">${apsNote(p)}</span></div>
+      ${S.useCrit?`<div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><span class="mut">실제 데미지 (선택)</span><label class="row mut" style="gap:4px">비치명<input type="text" class="phn" value="${esc(p.hitN??'')}" placeholder="예: 440만" style="width:90px"></label><label class="row mut" style="gap:4px">치명<input type="text" class="phc" value="${esc(p.hitC??'')}" placeholder="예: 790만" style="width:90px"></label>
+        <span class="mut">${petCritRatio(p)?`→ 치명 배율 <b>×${fmt(petCritRatio(p),3)}</b> (역산, 그 상대 기준)`:(p.hitN||p.hitC)?'<span class="bad">치명이 비치명보다 커야 해요</span>':'같은 상대에게 때린 비치명·치명 한 방을 적으면 치명 배율을 역산해요 (상대가 계속 세지는 곳은 막히는 구간에서 재기)'}</span></div>`:''}
       <div class="mut" style="margin-top:4px">스킬: ${skHas(sk)?esc(skText(sk)):'<span class="bad">도감에 스킬 정보가 없어요</span>'} <span class="mut">(앱·PC 도감 › 수정에서 적어요)</span></div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p,st)?`실전투 공격 ${fmt(petAtk(p,st))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${useDeck?(S.abs?(ten?`<div class="card" style="background:var(--card2);margin-top:6px"><div class="big">10초 예상 데미지</div>
@@ -1181,6 +1206,7 @@ function vSpec(v){
     el.querySelector('.pe').onchange=e=>P(x=>x.elem=e.target.value)
     el.querySelector('.pty').onchange=e=>P(x=>x.type=e.target.value)
     el.querySelector('.psp').onchange=e=>P(x=>{const n=num(e.target.value);if(n>0)x.spd=n;else delete x.spd})
+    for(const [c,k] of [['.phn','hitN'],['.phc','hitC']]){const q=el.querySelector(c);if(q)q.onchange=e=>P(x=>{const n=num(e.target.value);if(n>0)x[k]=n;else delete x[k]})}
     const pcr=el.querySelector('.pcr');if(pcr)pcr.onchange=e=>P(x=>{const n=num(e.target.value);if(n)x.crit=n;else delete x.crit})
     el.querySelector('.px').onclick=()=>dk((p,D)=>D.pets.splice(k,1))
     el.querySelectorAll('.pbs').forEach(i=>i.onchange=()=>P(x=>{x.base=[0,1,2,3].map(j=>isNum((x.base||[])[j])?x.base[j]:null);const n=num(i.value);x.base[+i.getAttribute('pix')]=isFinite(n)?n:null}))
@@ -1277,20 +1303,31 @@ function vHome(c,v){
       <div class="row" style="margin-top:12px"><button class="pri" id="nT">+ 새 게임</button><button id="sample">예시 넣기</button><button id="imp">불러오기</button><button data-help="start">사용법</button></div></div>`
     $('#nT').onclick=()=>go({v:'tpl',id:null});$('#sample').onclick=()=>{addSample();render()};$('#imp').onclick=()=>BR?TMCalc.pickFile():$('#file').click();return}
   const tabs=[['exp','① 실험'],['form','② 공식'],['items','③ 아이템'],['opt','④ 최적화']]
-  v.innerHTML=`<div class="row" style="margin-top:6px"><select id="gsel" style="flex:1;font-weight:600">${[...data.templates].sort((a,b)=>!!b.tm2-!!a.tm2).map(x=>`<option value="${x.id}"${x.id===t.id?' selected':''}>🎮 ${esc(x.name)}${x.tm2?'':' (예전 방식)'}</option>`).join('')}</select>
+  v.innerHTML=`<div class="row" style="margin-top:6px"><select id="gsel" style="flex:1;font-weight:600">${[...data.templates].sort((a,b)=>!!b.tm2-!!a.tm2).map(x=>`<option value="${x.id}"${x.id===t.id?' selected':''}>🎮 ${esc(x.name)}${x.tm2?'':' (커스터마이징)'}</option>`).join('')}<option value="__new">＋ 게임 추가…</option></select>
     <button class="sm" id="gset">⚙ 게임 설정</button><button class="qm" data-help="start" title="사용법">?</button></div>
   <div class="seg" style="display:flex;margin-top:10px">${tabs.map(([k,l])=>`<button style="flex:1" data-tab="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div>
   <div id="tabv"></div>`
-  $('#gsel').onchange=e=>{if(e.target.value==='__new')return go({v:'tpl',id:null});LS.set('tmcalcLabGame',e.target.value);render()}
+  $('#gsel').onchange=e=>{if(e.target.value==='__new'){e.target.value=t.id;return addGameDialog()}LS.set('tmcalcLabGame',e.target.value);render()}
   $('#gset').onclick=()=>go({v:'gset',id:t.id})
   v.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{LS.set('tmcalcLabTab',b.dataset.tab);render()})
   const tv=$('#tabv')
   if(!t.tm2){const b=document.createElement('div');b.className='card';b.style.borderColor='var(--acc)'
-    b.innerHTML='<b>예전 방식 게임이에요.</b> <span class="mut">평타·스킬 고정, 소환수 필수, 스킬 배율 자동 맞춤 같은 테마 기능은 <b>테마 (기본)</b> 게임에서만 돼요. 예전 실험은 [테마 (기본)으로 옮기기]로 옮길 수 있어요.</span><div class="row" style="margin-top:6px"><button class="sm pri" id="toTm2">테마 (기본)으로 가기</button></div>'
-    tv.before(b);b.querySelector('#toTm2').onclick=()=>{LS.set('tmcalcLabGame','tm2');render()}}
+    b.innerHTML='<b>커스터마이징 게임이에요.</b> <span class="mut">분류·항목·공격 그룹을 직접 정해서 써요 (⚙ 게임 설정). 평타·스킬 고정, 소환수 필수, 스킬 배율 자동 맞춤 같은 테이밍마스터 기능은 <b>테이밍마스터 기본 틀</b> 게임에서만 돼요. 이 게임의 실험은 [테마 (기본)으로 옮기기]로 옮길 수 있어요.</span><div class="row" style="margin-top:6px"><button class="sm" id="toTm2">테이밍마스터 게임으로 가기</button></div>'
+    tv.before(b);b.querySelector('#toTm2').onclick=()=>{LS.set('tmcalcLabGame',(tpl('tm2')||data.templates.find(x=>x.tm2)||{}).id);render()}}
   if(tab==='exp')homeExp(t,tv);else if(tab==='form')homeForm(t,tv);else if(tab==='items')homeItems(t,tv);else{c.id=t.id;vOpt(c,tv)}
   $('#title').textContent='연구실'
 }
+/** 게임 추가: 테이밍마스터 기본 틀 (테마 기능 그대로) / 커스터마이징 (빈 틀에서 직접, 다른 게임도 가능) */
+function addGameDialog(){const m=document.createElement('div');m.className='hmask'
+  m.innerHTML=`<div class="hbox"><h3>게임 추가</h3>
+    <button class="pri" id="agTm" style="width:100%;text-align:left;padding:10px"><b>테이밍마스터 기본 틀</b><div style="font-weight:400;font-size:12px;margin-top:2px">룬 옵션·치명·무기·속성 강화·버프·기본 공격력, 평타·스킬, 소환수 연결까지 다 들어 있는 틀. 실험을 따로 나눠 하고 싶을 때 (예: 사냥터별, 캐릭터별).</div></button>
+    <button id="agCu" style="width:100%;text-align:left;padding:10px;margin-top:8px"><b>커스터마이징</b><div style="font-weight:400;font-size:12px;margin-top:2px">빈 틀에서 분류·항목·공격 그룹을 직접 정해요. 다른 게임도 이 방식으로 써요 (테이밍마스터 전용 기능은 없음).</div></button>
+    <div class="row" style="margin-top:10px"><button id="agX">닫기</button></div></div>`
+  m.querySelector('#agX').onclick=()=>m.remove()
+  m.querySelector('#agCu').onclick=()=>{m.remove();go({v:'tpl',id:null})}
+  m.querySelector('#agTm').onclick=()=>{const n=prompt('게임 이름','테마 (기본) '+(data.templates.filter(x=>x.tm2).length+1));if(n==null)return;m.remove()
+    const t=tm2Template();t.id=uid();t.name=n.trim()||t.name;mutate(d=>d.templates.push(t));LS.set('tmcalcLabGame',t.id);LS.set('tmcalcLabTab','exp');render()}
+  document.body.append(m)}
 /** 예전 게임(직접 만든 틀)의 실험 → 테마 (기본) 복사본. 항목은 이름으로 맞춤, 못 맞춘 항목·아이템은 빠짐. 원본은 그대로 */
 function tm2KeyFor(t,gid,iid,unit){const G=t.groups.find(g=>g.id===gid);if(!G)return null
   if(gid==='crit')return iid==='rate'||iid==='dmg'?'crit:'+iid+':pct':null
@@ -1547,7 +1584,7 @@ function vNewSes(c,v){
   $('#title').textContent='새 실험'
   v.innerHTML=`<div class="card">
     <label class="f">실험 이름 (나중에 바꿀 수 있어요)<input type="text" id="sn" value="실험 ${data.sessions.filter(x=>x.templateId===c.tid).length+1}"></label>
-    <label class="f" style="margin-top:12px">게임<select id="st">${[...data.templates].sort((a,b)=>!!b.tm2-!!a.tm2).map(t=>`<option value="${t.id}"${t.id===(tpl(c.tid)&&tpl(c.tid).tm2?c.tid:'tm2')?' selected':''}>${esc(t.name)}${t.tm2?'':' (예전 방식)'}</option>`).join('')}</select></label>
+    <label class="f" style="margin-top:12px">게임<select id="st">${[...data.templates].sort((a,b)=>!!b.tm2-!!a.tm2).map(t=>`<option value="${t.id}"${t.id===(tpl(c.tid)&&tpl(c.tid).tm2?c.tid:'tm2')?' selected':''}>${esc(t.name)}${t.tm2?'':' (커스터마이징)'}</option>`).join('')}</select></label>
     <div class="mut" id="sti" style="margin-top:6px"></div>
     <div id="npet" style="margin-top:12px"></div>
     <div class="row" style="margin-top:14px"><button class="pri" id="sgo">만들고 시작</button><button id="smk">만들기만</button></div></div>`
@@ -1762,7 +1799,7 @@ function startSlots(t){
   const out=[]
   for(const g of t.groups){
     const its=(g.items||[]).length?g.items:[null]
-    for(const it of its){if(g.id==='crit'&&it&&it.id==='rate')continue   // 치명 확률은 최적화에서 적는다
+    for(const it of its){if(g.id==='crit'&&it&&(it.id==='rate'||(t.tm2&&it.id==='dmg')))continue   // 치명 확률은 최적화에서, 테마 기본 치명 피해는 소환수마다 달라 못 적음 (치명 기록으로 따로 계산)
       out.push({label:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':g.name+(it?' '+it.name:''),short:g.id==='crit'&&it&&it.id==='dmg'?'치명 피해 (1.5배 = 150)':(it?it.name:g.name),group:g.name,key:g.id+':'+(it?it.id:'')})}
   }
   return out
@@ -1784,13 +1821,14 @@ function vStart(c,v){
     ${sl.length?`<input type="search" id="stq" placeholder="항목 검색 (예: 화염, 피해)" style="width:100%;margin-top:10px">
       <div class="scroll" style="margin-top:6px"><table id="stt"><tr><th class="l">항목</th><th>값 (+공격력 등)</th><th>%</th></tr>
       ${sl.map((x,i)=>`${i===0||sl[i-1].group!==x.group?`<tr class="stg" data-g="${esc(x.group)}"><td class="l" colspan="3" style="padding-top:10px"><b>${esc(x.group)}</b></td></tr>`:''}<tr data-sr="${esc(x.group+' '+x.short)}" data-g="${esc(x.group)}"><td class="l" style="padding-left:14px">${esc(x.short)}</td>
-        ${['flat','pct'].map(u=>unitsOf(unitOfGI(t,...x.key.split(':'))).includes(u)?`<td><input type="text" inputmode="decimal" data-sk="${x.key}:${u}" value="${isFinite(st[x.key+':'+u])?st[x.key+':'+u]:''}" style="width:${u==='flat'?110:80}px;text-align:right" placeholder="모름"></td>`:'<td class="mut">-</td>').join('')}</tr>`).join('')}</table></div>`
+        ${['flat','pct'].map(u=>unitsOf(unitOfGI(t,...x.key.split(':'))).includes(u)?`<td><input type="text" inputmode="decimal" data-sk="${x.key}:${u}" value="${isFinite(st[x.key+':'+u])?st[x.key+':'+u]:''}" style="width:${u==='flat'?110:80}px;text-align:right" placeholder="모름"></td>`:'<td class="mut">-</td>').join('')}</tr>`).join('')}
+      <tr class="stg" data-g="소환수 공통"><td class="l" colspan="3" style="padding-top:10px"><b>소환수 공통</b></td></tr>
+      <tr data-sr="소환수 공통 성장증폭" data-g="소환수 공통"><td class="l" style="padding-left:14px">성장증폭</td><td class="mut">-</td><td><input type="text" inputmode="decimal" id="ampIn" style="width:80px;text-align:right" placeholder="${(()=>{const m=myAmp();return m!=null?'앱 '+fmt(m):'모름'})()}"></td></tr></table></div>
+      <div class="mut" style="margin-top:4px">성장증폭: 모든 소환수에 같이 붙는 값 (소환수를 바꿔도 그대로). 비워 두면 앱 설정 값이 아니라 '모름'으로 봐요.</div>`
       :'<div class="empty">틀에 분류가 없어요.</div>'}
     ${(t.items||[]).length?`<div class="big" style="margin-top:16px">시작할 때 낀 아이템</div><div class="mut">개수를 적어요 (안 꼈으면 비움). 기록에서 [빼기]를 하려면 여기 낀 걸로 되어 있어야 해요.</div>
       <div class="grid" style="margin-top:8px">${t.items.map(it=>`<label class="f">${esc(it.name)}<input type="text" data-eq="${it.id}" value="${eqShow[it.id]||''}" placeholder="0"></label>`).join('')}</div>`:''}
-    <div class="big" style="margin-top:16px">쓰는 소환수 (선택)</div><div class="mut">데미지를 잰 소환수예요. 정해 두면 원래 능력치·성장증폭을 공식에 넣을 수 있고, 속성·타입 강화는 이 소환수에 맞는 것만 적용돼요. 기록에서 [소환수 바꾸기]로 바꿀 수 있어요.</div><div id="petBox" style="margin-top:8px"></div>
-    <label class="f" style="margin-top:10px">성장증폭 % (게임 상태창 값)<input type="text" inputmode="decimal" id="ampIn" placeholder="${(()=>{const m=myAmp();return m!=null?'앱 설정 '+fmt(m)+' (확인 후 적기)':'모름'})()}"></label>
-    <div class="mut">앱에 적어 둔 값과 다를 수 있으니 게임에서 보이는 값을 적어요. 바뀌면 기록에서 고쳐요.</div>
+    <div class="big" style="margin-top:16px">쓰는 소환수 (선택)</div><div class="mut">데미지를 잰 소환수예요. 정해 두면 원래 능력치를 공식에 넣을 수 있고 (성장증폭은 위 표 '소환수 공통'), 속성·타입 강화는 이 소환수에 맞는 것만 적용돼요. 기록에서 [소환수 바꾸기]로 바꿀 수 있어요.</div><div id="petBox" style="margin-top:8px"></div>
     ${c.reset?`<div class="big" style="margin-top:16px">지금 잰 값 (선택)</div><div class="grid" style="margin-top:8px">${t.measures.map(m=>`<label class="f">${esc(m.name)}<input type="text" data-rmv="${m.id}"></label>`).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="pri" id="ss">저장</button><button id="sc">${c.fresh?'나중에':'닫기'}</button></div><div class="mut" style="margin-top:6px">적던 내용은 저장 안 해도 남아 있어요. [저장]을 눌러야 반영돼요.</div></div>`
   const stq=$('#stq');if(stq)stq.oninput=()=>{const Q=stq.value.replace(/\s/g,''),vis=new Set()
@@ -1798,8 +1836,8 @@ function vStart(c,v){
     v.querySelectorAll('.stg').forEach(r=>r.style.display=vis.has(r.dataset.g)?'':'none')}
   if(!c.pet)c.pet=JSON.parse(JSON.stringify((c.reset?petAt(s):s.pet0)||{}))
   const pbox=$('#petBox'),drawPet=()=>{pbox.innerHTML=petFields(c.pet);bindPet(pbox,c.pet,drawPet)};drawPet()
-  const amp0=c.reset?ampAt(s):(isNum(s.amp0)?s.amp0:ampAt(s,(s.records[0]||{}).id));if(isNum(amp0))$('#ampIn').value=amp0
-  const ampVal=()=>{const n=num($('#ampIn').value);return isFinite(n)?n:null}
+  const amp0=c.reset?ampAt(s):(isNum(s.amp0)?s.amp0:ampAt(s,(s.records[0]||{}).id));if(isNum(amp0)&&$('#ampIn'))$('#ampIn').value=amp0
+  const ampVal=()=>{if(!$('#ampIn'))return null;const n=num($('#ampIn').value);return isFinite(n)?n:null}
   const dk='start:'+s.id+(c.reset?':reset':'')
   if(formRestore(v,dk))draftBanner(v,()=>{draftDel(dk);render()})
   v.addEventListener('input',()=>formSnap(v,dk))
@@ -1876,7 +1914,7 @@ function influenceCard(m,R,c){
 }
 /** 측정 현황: 틀의 분류·항목(값/%)과 아이템마다 얼마나 측정했는지, 뭐가 더 필요한지 */
 /** 테마 실험 순서: 바로 앞 기록과 비교해 그것 '하나만' 바뀐 기록 수·크기 종류 (소환수 바꾸기는 능력치·속성·타입을 묶어 하나로) */
-const TM2_STEPS=[['g:rune:atk:flat','룬 공격'],['g:rune:dmg:pct','룬 피해증가'],['g:crit:dmg:pct','치명 피해'],['g:rune:nb:pct','룬 일반공격피해'],['g:rune:sk:pct','룬 스킬공격피해'],
+const TM2_STEPS=[['g:rune:atk:flat','룬 공격'],['g:rune:dmg:pct','룬 피해증가'],['g:rune:cd:pct','룬 치명타 피해'],['g:rune:nb:pct','룬 일반공격피해'],['g:rune:sk:pct','룬 스킬공격피해'],
   ['p:elem:pct','룬 속성 강화 (소환수 속성)'],['p:type:pct','룬 타입 강화 (소환수 타입)'],['g:rune:ae:pct','룬 모든속성 강화'],['g:rune:at:pct','룬 모든타입 강화'],
   ['p:elem:flat','상태창 속성 강화 (소환수 속성)'],['g:elv:all:flat','모든능력치'],['g:wpn:atkp:pct','무기 공격 %'],['g:buff:party:flat','파티 피해 증가'],['g:base:atk:flat','기본 공격력'],
   ['pet','소환수 바꾸기 (능력치 다른 소환수)'],['p:amp','성장증폭']]
@@ -1950,7 +1988,6 @@ function vRecs(c,v){
         return`<button class="chip${a?' on':''}" data-act-it="${it.id}">${a>0?'+ ':a<0?'− ':''}${esc(it.name)}${eq[it.id]?` <span class="mut">(낌 ${eq[it.id]})</span>`:''}</button>`}).join('')}</div>`).join('')}`:''}
     <div class="row" style="margin-top:10px"><span class="mut" style="flex:1">소환수: ${esc(petText(curPet))}${!c.petOn&&curPet?`<br>📏 ${petAdjText(curPet)}`:''}</span><button class="sm" id="petTg">${c.petOn?'소환수 안 바꿈':curPet?'소환수 바꾸기':'소환수 정하기'}</button></div>
     ${c.petOn?'<div id="petBox" class="card" style="background:var(--card2);margin-top:6px"></div>':''}
-    <label class="row mut" style="gap:6px;margin-top:6px">성장증폭 %<input type="text" inputmode="decimal" id="ampIn" value="${esc(c.amp??(ed&&isNum(ed.amp)?ed.amp:isNum(curAmp)?curAmp:''))}" placeholder="모름" style="width:80px"><span>${isNum(curAmp)?'(지금 '+fmt(curAmp)+'%, 바뀌었으면 고쳐요)':'(게임 상태창 값)'}</span></label>
     <div class="mut" style="margin-top:10px">바뀐 값 ${items.length?'(아이템 말고 직접)':''}</div>
     ${c.rows.map((r,k)=>`<div class="list-row" data-cr="${k}" style="flex-wrap:wrap">
       <button class="sm cgi" style="text-align:left;max-width:60%">${esc(giName(t,r.gi))} ▾</button>
@@ -1960,6 +1997,7 @@ function vRecs(c,v){
       <label class="row mut" style="gap:4px"><input type="checkbox" class="conce"${r.once?' checked':''}>이번만</label>
       <button class="sm danger cdel">✕</button></div>`).join('')}
     ${gis.length?'<button class="sm" id="addCh">+ 바뀐 값</button>':''}
+    <label class="row mut" style="gap:6px;margin-top:10px">성장증폭 %<input type="text" inputmode="decimal" id="ampIn" value="${esc(c.amp??(ed&&isNum(ed.amp)?ed.amp:isNum(curAmp)?curAmp:''))}" placeholder="모름" style="width:80px"><span>${isNum(curAmp)?'(지금 '+fmt(curAmp)+'%, 바뀌었으면 고쳐요)':'(게임 상태창 값)'}</span></label>
     ${!c.rows.length&&!Object.values(c.acts).some(Boolean)?'<div class="mut" style="margin-top:4px">아무것도 안 바꿨으면 "기준 (변경 없음)" 기록이 돼요.</div>':''}
     <div class="grid" style="margin-top:10px">${t.measures.map(m=>{const md=t.useCrit===false?'none':'can',cur=(pre,VAL,SAM)=>ed?((ed[SAM]&&ed[SAM][m.id])||[(ed[VAL]||{})[m.id]]).filter(isFinite).join(' '):''
       const ph=(VAL,SAM)=>{const a=last&&last[SAM]&&last[SAM][m.id],x=a&&a.length?a.reduce((p,q)=>p+q,0)/a.length:last&&(last[VAL]||{})[m.id];return isFinite(x)?fmt(x):''}

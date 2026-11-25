@@ -1268,9 +1268,20 @@ class OverlayService : Service() {
             })
         })
 
-        // 소환수 · 성장증폭 (연구실 실험과 같음: 바뀐 기록에만 남고, 그다음 기록들로 이어짐)
+        // 성장증폭(모든 소환수 공통 상태값) · 소환수 (연구실 실험과 같음: 바뀐 기록에만 남고, 그다음 기록들로 이어짐)
         val (petNow, ampNow) = labPetAmpAt(s, editing?.optString("id"))
         val petShow = labPetDraft ?: petNow
+        labBody.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(labLabel("성장증폭 % (모든 소환수 공통)"))
+            addView(labInput(ampNow?.let { "지금 " + LabData.fmt(it) } ?: "게임 상태창 값", labDraft["amp"] ?: ampNow?.let { LabData.fmt(it).replace(",", "") } ?: "").apply {
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                    override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
+                    override fun afterTextChanged(x: Editable?) { labDraft["amp"] = x?.toString() ?: "" }
+                })
+            }, LinearLayout.LayoutParams(dp(90), -2).apply { marginStart = dp(8) })
+        })
         labBody.addView(LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(TextView(ui).apply {
@@ -1282,18 +1293,6 @@ class OverlayService : Service() {
             if (labPetDraft != null) addView(headerButton("안 바꿈") { labPetDraft = null; renderLab() })
             addView(headerButton(if (petNow == null) "정하기" else "바꾸기") { labPickPet() })
         })
-        labBody.addView(LinearLayout(ui).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            addView(labLabel("성장증폭 %"))
-            addView(labInput(ampNow?.let { "지금 " + LabData.fmt(it) } ?: "게임 상태창 값", labDraft["amp"] ?: ampNow?.let { LabData.fmt(it).replace(",", "") } ?: "").apply {
-                addTextChangedListener(object : TextWatcher {
-                    override fun beforeTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
-                    override fun onTextChanged(s2: CharSequence?, a2: Int, b2: Int, c2: Int) {}
-                    override fun afterTextChanged(x: Editable?) { labDraft["amp"] = x?.toString() ?: "" }
-                })
-            }, LinearLayout.LayoutParams(dp(90), -2).apply { marginStart = dp(8) })
-        })
-
         // 잰 값들 (2칸씩). 치명 모드: 치명타 X → 일반 / 가능 → 일반·치명 / 확정 → 치명
         val useCrit = t.optBoolean("useCrit", true)
         val slots = ArrayList<Triple<String, String, String>>()   // (m|c, 잴 것 id, 이름)
@@ -1464,6 +1463,8 @@ class OverlayService : Service() {
                 })
             }, LinearLayout.LayoutParams(-1, -2))
             for (g in groups) {
+                // 테마: 치명 확률은 최적화에서, 기본 치명 피해는 소환수마다 달라 못 적음 → 치명 분류는 안 보임
+                if (t.optBoolean("tm2") && g.optString("id") == "crit") continue
                 val its = labArr(g, "items").ifEmpty { listOf(null) }
                 val head = TextView(ui).apply { text = g.optString("name"); textSize = 12f; setTextColor(LAB_ACC); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(2)) }
                 labBody.addView(head)
