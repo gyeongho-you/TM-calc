@@ -714,9 +714,9 @@ class MainWindow(
         return if (p == Math.floor(p)) p.toLong().toString() else p.toString()
     }
 
-    /** 설정 > 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 (기본 꺼짐) */
+    /** 설정 > 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 EX(실버)로 (기본 꺼짐) */
     private fun showDisplaySettings() {
-        val box = JCheckBox("SS++ 넘는 등급을 SSS(무지개)로 표시", prefs.getBoolean("showSss", false)).apply { putClientProperty("html.disable", true) }
+        val box = JCheckBox("SS++ 넘는 등급을 EX(실버)로 표시", prefs.getBoolean("showSss", false)).apply { putClientProperty("html.disable", true) }
         val panel = JPanel(java.awt.BorderLayout(0, 8)).apply {
             add(box, java.awt.BorderLayout.NORTH)
             add(JLabel("<html><div style='width:300px'>" + esc(Calculator.BEYOND_HELP).replace("\n", "<br>") + "</div></html>"), java.awt.BorderLayout.CENTER)
@@ -1038,7 +1038,7 @@ class MainWindow(
             cells.forEachIndexed { c, v ->
                 val header = r == 0
                 val parts = v.split("\n")
-                // SS++ 를 넘는 계산기 전용 등급은 무지개로 직접 그린다 (HTML 로는 그라데이션을 못 그림)
+                // SS++ 를 넘는 계산기 전용 등급(EX)은 실버로 직접 그린다 (HTML 로는 그라데이션을 못 그림)
                 if (!header && Calculator.isBeyondGame(parts.last())) {
                     add(RainbowCell(if (parts.size == 2) parts[0] else null, parts.last(),
                         UI_FONT.deriveFont(if (style == RowStyle.BOLD) Font.BOLD else Font.PLAIN, if (small) 11f else 13f),
@@ -1076,7 +1076,7 @@ class MainWindow(
     private fun gradeColor(c: String): Color {
         val g = c.substringAfterLast(' ')
         return when {
-            Calculator.isBeyondGame(g) -> Color.WHITE // 실제로는 무지개 (RainbowCell / RainbowLabel)
+            Calculator.isBeyondGame(g) -> Color(0xE9EDF2) // 실제로는 실버 (RainbowCell / RainbowLabel)
             g.startsWith("SS") -> Color(0xF2B84B)
             g.startsWith("S") -> Color(0xFF8A7A)
             g.startsWith("A") -> Color(0x8FD48A)
@@ -1102,16 +1102,22 @@ class MainWindow(
     }
 }
 
-/** 무지개 색 (빨강 → 보라). SS++ 를 넘는 계산기 전용 등급(SSS…)에 쓴다 */
-private val RAINBOW = arrayOf(Color(0xFF6A6A), Color(0xFFB86A), Color(0xF2E06A), Color(0x7FD48A), Color(0x5FE3F0), Color(0x6A9CFF), Color(0xC27FFF))
-private val RAINBOW_STOPS = floatArrayOf(0f, 1f / 6, 2f / 6, 3f / 6, 4f / 6, 5f / 6, 1f)
-
-private fun java.awt.Graphics2D.drawRainbow(text: String, x: Int, y: Int, width: Int) {
-    paint = java.awt.LinearGradientPaint(x.toFloat(), 0f, (x + maxOf(width, 2)).toFloat(), 0f, RAINBOW_STOPS, RAINBOW)
+/** EX 등급: 거의 흰 은색 + 굵게 + 은은한 하늘빛 번짐 (테두리 없음). 번짐은 둘레에 옅게 여러 번 찍어서 */
+private fun java.awt.Graphics2D.drawRainbow(text: String, x: Int, y: Int, @Suppress("UNUSED_PARAMETER") width: Int) {
+    font = font.deriveFont(java.awt.Font.BOLD)
+    setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+    for ((r, a) in listOf(4 to 18, 3 to 26, 2 to 40, 1 to 70)) {
+        color = Color(205, 222, 255, a)
+        for (k in 0 until 12) {
+            val t = Math.PI * 2 * k / 12
+            drawString(text, x + Math.round(Math.cos(t) * r).toInt(), y + Math.round(Math.sin(t) * r).toInt())
+        }
+    }
+    color = Color(0xF8FAFD)
     drawString(text, x, y)
 }
 
-/** 총 성장률 옆 등급: SSS 면 무지개, 아니면 보통 글자 */
+/** 총 성장률 옆 등급: EX 면 실버, 아니면 보통 글자 */
 class RainbowLabel : JLabel() {
     init { putClientProperty("html.disable", true) }
     override fun paintComponent(g: java.awt.Graphics) {
@@ -1126,7 +1132,7 @@ class RainbowLabel : JLabel() {
     }
 }
 
-/** 표 칸: 위 줄 숫자(있으면) + 아래 줄 무지개 등급 */
+/** 표 칸: 위 줄 숫자(있으면) + 아래 줄 실버 등급 */
 class RainbowCell(private val value: String?, private val grade: String, private val f: Font, private val valueColor: Color,
                   private val dim: Boolean) : javax.swing.JComponent() {
     override fun getPreferredSize(): Dimension {

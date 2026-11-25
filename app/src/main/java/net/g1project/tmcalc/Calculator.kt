@@ -12,23 +12,25 @@ object Calculator {
 
     /**
      * '등급'!B2:B14 배율, 열 G..T 순서. index 8 은 S(100) = 도감값 그대로.
-     * 14~16 (SSS, SSS+, SSS++) 은 게임에 없는 등급: 게임은 SS++ 가 끝이지만 그걸 넘는 능력치가 있어서
-     * 같은 2% 간격으로 이어 붙였다 (계산기에서만 보이는 등급, 무지개 색).
+     * 14~16 (SSS, SSS+, SSS++) 은 SS++ 를 넘는 구간 (2% 간격). 지금 게임(2버전)에는 없는 등급이라 계산기 전용 —
+     * 켜면 1버전 표기처럼 EX · EX+ · EX++ (밝은 실버) 로 보인다 (기본 꺼짐).
      */
     val MULTS = doubleArrayOf(0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15)
     val LABELS = listOf("C++", "B", "B+", "B++", "A", "A+", "A++", "S", "S(100)", "S+", "S++", "SS", "SS+", "SS++", "SSS", "SSS+", "SSS++")
 
-    /** 게임에 없는 계산기 전용 등급인지 (SS++ 를 넘음) */
-    fun isBeyondGame(grade: String) = grade.contains("SSS")
+    /** SS++ 를 넘는 계산기 전용 등급(EX)인지 — 실버 색으로 그린다 */
+    fun isBeyondGame(grade: String) = grade.contains("SSS") || grade.contains("EX")
 
-    /** 표시 설정에서 켠 사람만 SSS 를 본다 (기본은 게임처럼 SS++ 까지). 화면을 그리기 전에 폰/PC 가 설정값으로 맞춘다 */
+    /** 표시 설정에서 켠 사람만 EX 를 본다 (기본은 게임처럼 SS++ 까지). 화면을 그리기 전에 폰/PC 가 설정값으로 맞춘다 */
     @Volatile var showBeyondGame = false
 
     /** 표시 설정 화면의 설명 (폰·PC 같이 씀) */
-    const val BEYOND_HELP = "게임은 SS++ 가 마지막 등급이지만, 그보다 더 높은 능력치가 있습니다. 켜면 2%씩 SSS(×1.11) · SSS+(×1.13) · " +
-        "SSS++(×1.15) 로 무지개 색으로 보여 줍니다.\n게임에 없는 계산기 전용 등급이라 게임 화면에서는 SS++ 로 보입니다."
+    const val BEYOND_HELP = "지금 게임은 SS++ 가 마지막 등급이지만, 그보다 더 높은 능력치(도감 대비 ×1.11 이상)가 있습니다. " +
+        "켜면 1버전 표기처럼 2%씩 EX(×1.11) · EX+(×1.13) · EX++(×1.15) 밝은 실버로 보여 줍니다.\n지금 게임에 없는 계산기 전용 등급이라 게임 화면에서는 SS++ 로 보입니다."
 
-    private fun capGrade(g: String) = if (!showBeyondGame && isBeyondGame(g)) g.replace(Regex("SSS\\+{0,2}"), "SS++") else g
+    /** 꺼져 있으면 SS++ 로, 켜면 EX · EX+ · EX++ 로 */
+    private fun capGrade(g: String) =
+        if (showBeyondGame) g.replace(Regex("SSS(\\+{0,2})"), "EX$1") else g.replace(Regex("SSS\\+{0,2}"), "SS++")
 
     /** 성장률 등급 IF 체인 (성장률계산기!B20). 시트의 라벨을 그대로 따른다. */
     private val STAT_CHAIN = listOf(16 to "SSS++", 15 to "SSS+", 14 to "SSS", 13 to "SS++", 12 to "SS+", 11 to "SS", 10 to "S++", 9 to "S+", 7 to "S",

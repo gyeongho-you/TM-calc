@@ -2300,9 +2300,9 @@ class OverlayService : Service() {
         }
     }
 
-    /** 글자 안의 SSS / SSS+ / SSS++ 를 무지개로 (나머지는 그대로) */
+    /** 글자 안의 EX · EX+ · EX++ 를 밝은 실버로 (나머지는 그대로) */
     private fun gradeText(c: String): CharSequence {
-        val found = Regex("SSS\\+{0,2}").findAll(c).toList()
+        val found = Regex("EX\\+{0,2}|SSS\\+{0,2}").findAll(c).toList()
         if (found.isEmpty()) return c
         return android.text.SpannableString(c).apply {
             found.forEach { setSpan(RainbowSpan(), it.range.first, it.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
@@ -2313,7 +2313,7 @@ class OverlayService : Service() {
         val g = c.substringAfterLast(' ').substringAfterLast('\n').removePrefix("≈")
         return Color.parseColor(
             when {
-                Calculator.isBeyondGame(g) -> "#FFFFFF" // 실제로는 무지개 (gradeText)
+                Calculator.isBeyondGame(g) -> "#E9EDF2" // 실제로는 실버 (gradeText)
                 g.startsWith("SS") -> "#F2B84B"
                 g.startsWith("S") -> "#FF8A7A"
                 g.startsWith("A") -> "#8FD48A"
@@ -2456,24 +2456,31 @@ class OverlayService : Service() {
     }
 }
 
-/** SS++ 를 넘는 계산기 전용 등급(SSS…)을 무지개 그라데이션으로 그린다 */
+/** SS++ 를 넘는 계산기 전용 등급 EX · EX+ · EX++ 를 흰 은색 + 굵게 + 은은한 빛으로 그린다 */
 private class RainbowSpan : android.text.style.ReplacementSpan() {
     override fun getSize(paint: android.graphics.Paint, text: CharSequence, start: Int, end: Int, fm: android.graphics.Paint.FontMetricsInt?): Int {
         if (fm != null) paint.getFontMetricsInt(fm)
-        return Math.ceil(paint.measureText(text, start, end).toDouble()).toInt()
+        val bold = paint.isFakeBoldText; paint.isFakeBoldText = true
+        val w = paint.measureText(text, start, end); paint.isFakeBoldText = bold
+        return Math.ceil(w.toDouble()).toInt() + 2
     }
 
     override fun draw(canvas: android.graphics.Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int,
                       paint: android.graphics.Paint) {
-        val w = paint.measureText(text, start, end)
-        val old = paint.shader
-        paint.shader = android.graphics.LinearGradient(x, 0f, x + w, 0f, RAINBOW, null, android.graphics.Shader.TileMode.CLAMP)
-        canvas.drawText(text, start, end, x, y.toFloat(), paint)
-        paint.shader = old
+        // 거의 흰 은색 + 굵게 + 은은한 하늘빛 번짐 (테두리 없음)
+        val oldColor = paint.color; val oldBold = paint.isFakeBoldText; val oldShader = paint.shader
+        paint.shader = null; paint.isFakeBoldText = true; paint.color = TEXT
+        paint.setShadowLayer(paint.textSize * 0.38f, 0f, 0f, GLOW_WIDE)
+        canvas.drawText(text, start, end, x + 1f, y.toFloat(), paint)
+        paint.setShadowLayer(paint.textSize * 0.17f, 0f, 0f, GLOW_NEAR)
+        canvas.drawText(text, start, end, x + 1f, y.toFloat(), paint)
+        paint.clearShadowLayer()
+        paint.color = oldColor; paint.isFakeBoldText = oldBold; paint.shader = oldShader
     }
 
     companion object {
-        val RAINBOW = intArrayOf(0xFFFF6A6A.toInt(), 0xFFFFB86A.toInt(), 0xFFF2E06A.toInt(), 0xFF7FD48A.toInt(),
-            0xFF5FE3F0.toInt(), 0xFF6A9CFF.toInt(), 0xFFC27FFF.toInt())
+        val TEXT = 0xFFF8FAFD.toInt()
+        val GLOW_NEAR = 0xCCE1ECFF.toInt()   // rgba(225,236,255,.8)
+        val GLOW_WIDE = 0x73B9D0FF           // rgba(185,208,255,.45)
     }
 }

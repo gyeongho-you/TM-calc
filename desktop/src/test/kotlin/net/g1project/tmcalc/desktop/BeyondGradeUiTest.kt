@@ -14,7 +14,7 @@ import javax.imageio.ImageIO
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
-/** 표시 설정을 켜면 SS++ 를 넘는 능력치는 무지개 SSS 칸으로 그린다 */
+/** SS++ 를 넘는 능력치는 실버 EX 칸으로 그린다 */
 class BeyondGradeUiTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -27,7 +27,7 @@ class BeyondGradeUiTest {
         SwingUtilities.invokeAndWait {
             win = MainWindow(DesktopPets(tmp.newFolder()), prefs); win.setSize(420, 1300); win.isVisible = true
             fun f(name: String) = MainWindow::class.java.getDeclaredField(name).apply { isAccessible = true }.get(win)
-            // 라르곤 도감 541 356 394 4237: 공 ×1.13(611) → SSS+, 순 ×1.115(439) → SSS
+            // 라르곤 도감 541 356 394 4237: 공 ×1.13(611) → EX+, 순 ×1.115(439) → EX
             (f("nameF") as JTextField).text = "라르곤"; (f("levelF") as JTextField).text = "150"; (f("breakF") as JTextField).text = "0"
             val st = f("statF") as Array<*>; val de = f("deltaF") as Array<*>
             listOf(611, 360, 439, 4300).forEachIndexed { i, v -> (st[i] as JTextField).text = "$v" }
@@ -39,7 +39,7 @@ class BeyondGradeUiTest {
         var cells = 0; val texts = mutableListOf<String>()
         fun walk(c: Container) { for (x in c.components) { if (x is RainbowCell) cells++; if (x is javax.swing.JLabel) texts += x.text.orEmpty(); if (x is Container) walk(x) } }
         SwingUtilities.invokeAndWait { walk(win.contentPane as Container) }
-        assertTrue("무지개 칸 $cells", cells >= 2)
+        assertTrue("EX 칸 $cells", cells >= 2)
         // 설명 줄은 표에 없다 (표시 설정 창에만)
         assertTrue(texts.none { it.contains("계산기 전용 등급") })
         val img = BufferedImage(win.width, win.height, BufferedImage.TYPE_INT_RGB)

@@ -60,7 +60,7 @@ object OcrParser {
     /** 성장 평균 숫자 (소수 둘째 자리) */
     private val GROWTH = Regex("""(?<![\d.])(\d{1,3}\.\d{2})(?!\d)""")
     /** 성장 평균 등급: 글자 그대로 읽혔을 때만 인정 ("S+t" 처럼 애매하면 버림) */
-    private val GRADE = Regex("""^\s*(SS|S|A|B|C|D)(\+{0,2})\s*$""")
+    private val GRADE = Regex("""^\s*(EX|SS|S|A|B|C|D)(\+{0,2})\s*$""")
     /** 총 성장 점수 "96%". 옆 글자와 붙어 읽혀도("100% 1,747.4", "총 성장 점수 100%") 첫 번째 % 숫자를 쓴다 */
     private val PERCENT = Regex("""(?<![\d.,])(\d{2,3})\s*%""")
 

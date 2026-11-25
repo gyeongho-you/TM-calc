@@ -179,7 +179,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    /** 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 SSS(무지개)로 보여 줄지 */
+    /** 표시 설정: SS++ 를 넘는 능력치를 계산기 전용 등급 EX(실버)로 보여 줄지 */
     private fun openDisplaySettings() {
         val dp = resources.displayMetrics.density
         // 성장증폭 설정의 스위치와 같은 모양: 파란 스위치 + 글자로 켜짐/꺼짐
@@ -192,7 +192,7 @@ class MainActivity : Activity() {
             trackTintList = ColorStateList(states, intArrayOf(Color.parseColor("#804FC3F7"), Color.parseColor("#80555960")))
             isChecked = AppPrefs.showSss(this@MainActivity)
             fun paint(checked: Boolean) {
-                text = "SSS 등급(무지개) 표시  " + if (checked) "켜짐" else "꺼짐"
+                text = "EX 등급(실버) 표시  " + if (checked) "켜짐" else "꺼짐"
                 setTextColor(if (checked) on else off)
             }
             paint(isChecked)
