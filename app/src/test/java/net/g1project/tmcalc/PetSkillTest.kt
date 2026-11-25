@@ -44,5 +44,6 @@ class PetSkillTest {
         val db = PetDb.parse(java.io.File("src/main/assets/pets.json").readText())
         assertTrue(db.pets.all { it.skill["mana"] != null && it.skill["pct"] != null })
         assertTrue(db.pets.none { it.element == "불" })
+        assertTrue(db.pets.all { it.grade.isNotBlank() && it.element.isNotBlank() && it.type.isNotBlank() })
     }
 }
