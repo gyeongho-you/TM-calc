@@ -31,13 +31,18 @@ class LabActivity : Activity() {
             addJavascriptInterface(Bridge(), "TMCalc")
             loadUrl("file:///android_asset/lab.html")
         }
-        // 화면 위아래(상태 바, 키보드)에 가리지 않게
-        web.setOnApplyWindowInsetsListener { v, insets ->
-            val b = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-            v.setPadding(b.left, b.top, b.right, b.bottom)
-            insets
+        // 화면 위아래(상태 바, 노치, 키보드)에 가리지 않게: WebView 는 자기 padding 을 무시하고 그 밑까지 그리므로
+        // 바깥 틀에 여백을 준다
+        val frame = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xFF17181B.toInt())
+            addView(web, android.widget.FrameLayout.LayoutParams(-1, -1))
+            setOnApplyWindowInsetsListener { v, insets ->
+                val b = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
+                v.setPadding(b.left, b.top, b.right, b.bottom)
+                insets
+            }
         }
-        setContentView(web)
+        setContentView(frame)
     }
 
     override fun onResume() {
