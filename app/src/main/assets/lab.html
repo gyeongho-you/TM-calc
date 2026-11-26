@@ -611,7 +611,7 @@ function tm2Template(){
     ...TM2_ELEM.map(([i,n])=>it(i,n+'속성 강화','pct')),...TM2_TYPE.map(([i,n])=>it(i,n+'타입 강화','pct'))]
   const rm={},put=(labels,v)=>labels.forEach(l=>{rm[l]=v;rm[l.replace(/\s/g,'')]=v})
   put(['공격','공격력','장비 공격'],'g:rune:atk:flat');put(['피해증가','피해 증가'],'g:rune:dmg:pct')
-  put(['일반공격피해','일반공격 피해','일반공격 피해증가','일반공격피해증가'],'g:rune:nb:pct');put(['스킬공격피해','스킬공격 피해','스킬공격 피해증가','스킬공격피해증가'],'g:rune:sk:pct')
+  put(['일반공격피해','일반공격 피해','일반공격 피해증가','일반공격피해증가','스킬공격피해','스킬공격 피해','스킬공격 피해증가','스킬공격피해증가'],'skip')   // 소환수 데미지와 무관 (실측)
   put(['모든속성 강화','모두 속성 강화','모든 속성 강화'],'g:rune:ae:pct');put(['모든타입 강화','모두 타입 강화','모든 타입 강화'],'g:rune:at:pct')
   put(['치명타확률','치명타 확률'],'g:crit:rate:pct');put(['치명타피해','치명타 피해'],'g:rune:cd:pct')
   TM2_ELEM.forEach(([i,n])=>put([n+'속성 강화',n+' 속성 강화'],'g:rune:'+i+':pct'));TM2_TYPE.forEach(([i,n])=>put([n+'타입 강화',n+' 타입 강화'],'g:rune:'+i+':pct'))
@@ -630,6 +630,8 @@ function tm2CritMigrate(){for(const t of data.templates){if(!t.tm2)continue
   const R=t.groups.find(g=>g.id==='rune');if(R&&!(R.items||[]).some(i=>i.id==='cd'))R.items.push({id:'cd',name:'치명타 피해',unit:'pct',reduce:false})
   const C=t.groups.find(g=>g.id==='crit'),D=C&&(C.items||[]).find(i=>i.id==='dmg');if(D&&D.name==='피해')D.name='피해 (예전 방식)'
   t.runeMap=t.runeMap||{};for(const k of ['치명타피해','치명타 피해'])if(!t.runeMap[k]||t.runeMap[k]==='g:crit:dmg:pct')t.runeMap[k]='g:rune:cd:pct'
+  // 일반공격피해·스킬공격피해는 소환수 데미지에 효과 없음 (실측) → 계산 안 함
+  for(const k of Object.keys(t.runeMap))if(t.runeMap[k]==='g:rune:nb:pct'||t.runeMap[k]==='g:rune:sk:pct')t.runeMap[k]='skip'
   // 도감 누적 보너스 (상태창에 안 보이는 타입 강화·피해증가·속성 강화가 여기서 옴). 예전 '타입 강화(tlv)' 분류는 도감으로 바꿈
   t.groups=t.groups.filter(g=>g.id!=='tlv')
   if(!t.groups.some(g=>g.id==='dogam')){const it=(id,name,unit)=>({id,name,unit,reduce:false}),i=t.groups.findIndex(g=>g.id==='buff');t.groups.splice(i<0?t.groups.length:i,0,{id:'dogam',name:'도감',reduce:false,items:[it('atk','공격','flat'),it('dmg','피해증가','pct'),...TM2_ELEM.map(([i,n])=>it(i,n+' 속성 강화','pct')),it('ae','모든 속성 강화','pct'),...TM2_TYPE.map(([i,n])=>it(i,n+' 타입 강화','pct')),it('at','모든 타입 강화','pct')]})}
@@ -897,7 +899,9 @@ const HELP={
 · 소환수마다 자기 속성·타입 강화만 넣고, 마나 한 바퀴(평타 N번 + 스킬)로 계산해요<br>
 · 공속 = (개체 속도 + 도감 S 순발) ÷ 2 기준 (실측 ±4%)<br>
 · <b>추가 치명 확률</b>: 장착 스킬 등으로 그 소환수만 더 높을 때<br>
-· <b>실제 데미지 (선택)</b>: 같은 상대에게 때린 비치명·치명 한 방 → 치명 배율을 역산해 그 소환수에 써요 (그 상대 기준)</p>
+· <b>실제 데미지 (선택)</b>: 같은 상대에게 때린 비치명·치명 한 방 → 치명 배율을 역산해 그 소환수에 써요 (그 상대 기준). 덱 소환수 <b>모두</b> 비치명을 적으면 소환수 세기도 그 실측으로 (상성·전용 스킬 포함)<br>
+· <b>대상 방어</b>: 대상 방어가 덱 평균 실전투 공격의 몇 %인지. 소환수 세기 = 실전투 − 방어라서, 방어가 셀수록 센 소환수가 더 유리해요 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%)<br>
+· 룬 <b>일반공격피해·스킬공격피해</b>는 소환수 데미지에 효과가 없어서 계산에서 빼요 (실측)</p>
 <p><b>10초 예상 데미지</b>: 실험한 대상·버프 없음·빗나감 제외 기준이에요. 상대가 바뀌면 숫자는 달라지지만 "무엇을 올리면 이득?" 순서는 대체로 같아요.</p>
 <p><b>룬 비교</b>: 앱 메뉴에서 룬 비교 모드를 켜고 게임의 룬 비교 화면에서 [룬] 버튼을 누르면, 여기 저장한 스펙·덱으로 "바꾸면 +x%"를 보여 줘요.</p>`],
   optimize:['최적 셋팅',`
@@ -1056,15 +1060,25 @@ function deckTen(S,st,deck,g){if(!S.abs||!deck||!deck.pets.length)return null
   const per=deck.pets.map(p=>{const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy),att=cy.nb+(num(skOf(p).mana)>0?1:0),aps=petAps(p)
     const am=advMul(p);return{name:p.name,cycle:e.r*am,ten:aps>0&&att>0?e.r*am/att*aps*10:null,est:!petSpd(p),adv:am>1}})
   return{per,total:per.every(x=>x.ten!=null)?per.reduce((a,x)=>a+x.ten,0):null}}
+/** 대상 방어 (덱 평균 실전투 공격 대비 %). 실측: 원소던전 첫 몬스터 ≈ 0, 센 던전 80~90% */
+const defPct=()=>{const n=num((data.spec||{}).defPct);return isFinite(n)&&n>0?Math.min(95,n):0}
+/** 소환수 세기 (공식에 소환수 스펙이 없을 때): 실전투 공격 − 방어 (덱 평균 기준) */
+function petPower(p,st,P){const a=petAtk(p,st);if(!a)return null;const d=defPct();if(!d)return a
+  const as=P.map(q=>petAtk(q,st)).filter(x=>x>0),m=as.reduce((x,y)=>x+y,0)/(as.length||1);return Math.max(a-m*d/100,a*0.02)}
+/** 덱의 모든 소환수에 '실제 데미지 비치명'(같은 대상)을 적었으면 그 실측으로 소환수 세기를 맞춤 */
+const deckMeasured=P=>P.length>1&&P.every(p=>num(p.hitN)>0)
 function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],P=deck.pets
   const hasPetIn=S.inputs.some(i=>scopeOf(S,i)==='pet'),atk=!hasPetIn&&P.length>0&&P.every(p=>petAtk(p,st))
-  const speed=P.length>0&&P.every(p=>petAps(p)),dex=false
-  for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r*advMul(p)
-    if(atk)v*=petAtk(p,st)
+  const speed=P.length>0&&P.every(p=>petAps(p)),dex=false,meas=deckMeasured(P),st0=(data.spec||{}).st||st
+  for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r*(meas?1:advMul(p))
+    if(atk)v*=petPower(p,st,P)
+    // 실측 보정: 지금 저장된 스펙에서 이 소환수 평타 한 방(계산) ↔ 적은 실제 비치명 → 그 비율을 곱함 (상성·전용 스킬·방어가 실측에 다 들어 있음)
+    if(meas){const h0=setEval(S,petState(S,st0,p),{mode:'cycle',list:[{group:g.basic,count:'1',crit:'none',pct:''}]}).r*(atk?petPower(p,st0,P):1)
+      if(h0>0)v*=num(p.hitN)/h0}
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
     if(speed||dex)v=v/((cy.nb+(num(skOf(p).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
     r+=v;miss+=e.miss;per.push(v)}
-  return{r,miss,per,speed,dex,atk,hasPetIn}}
+  return{r,miss,per,speed,dex,atk,hasPetIn,meas}}
 /** 저장한 소환수 (앱: 계산 화면에서 저장한 것, PC: pets.js) */
 function savedPetsList(){try{return BR&&TMCalc.savedPets?JSON.parse(TMCalc.savedPets()):(window.SAVEDPETS||[])}catch(e){return[]}}
 function pickSaved(cb){const L=savedPetsList()
@@ -1162,6 +1176,7 @@ function vSpec(v){
     <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
     <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+      <label class="row mut" style="gap:4px" title="대상 방어가 덱 평균 실전투 공격의 몇 %인지. 원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%">대상 방어<input type="text" inputmode="decimal" id="tDef" value="${esc(sp.defPct??'')}" placeholder="0" style="width:50px">%</label>
       ${sp.targetElem?`<label class="row mut" style="gap:4px">상성 배율 ×<input type="text" inputmode="decimal" id="tAm" value="${esc(sp.advMul??'')}" placeholder="${ADV_MUL}" style="width:60px"></label><span class="mut">${esc(Object.keys(ADV).filter(k=>ADV[k]===sp.targetElem).join('·'))} 소환수가 상성</span>`:''}</div>
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
       <button class="sm" id="dNew">+ 새 덱</button>${deck?'<button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}</div>
@@ -1171,7 +1186,7 @@ function vSpec(v){
       ${needBase&&!hasBaseIn?`<div class="grid">${PSTAT.map(([q,l],j)=>`<label class="f">${l} (원래 능력치)<input type="text" inputmode="decimal" class="pbs" pix="${j}" value="${isNum((p.base||[])[j])?p.base[j]:''}" placeholder="모름"></label>`).join('')}</div>`:''}
       <div class="row" style="margin-top:4px;gap:6px">${S.useCrit?`<label class="row mut" style="gap:4px">추가 치명 확률<input type="text" inputmode="decimal" class="pcr" value="${esc(p.crit??'')}" placeholder="0" style="width:50px">%</label>`:''}<label class="row mut" style="gap:4px">개체 속도<input type="text" inputmode="decimal" class="psp" value="${esc(p.spd??'')}" placeholder="모름" style="width:70px"></label><span class="mut" style="flex:1">${apsNote(p)}</span></div>
       ${S.useCrit?`<div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><span class="mut">실제 데미지 (선택)</span><label class="row mut" style="gap:4px">비치명<input type="text" class="phn" value="${esc(p.hitN??'')}" placeholder="예: 440만" style="width:90px"></label><label class="row mut" style="gap:4px">치명<input type="text" class="phc" value="${esc(p.hitC??'')}" placeholder="예: 790만" style="width:90px"></label>
-        <span class="mut">${petCritRatio(p)?`→ 치명 배율 <b>×${fmt(petCritRatio(p),3)}</b> (역산, 그 상대 기준)`:(p.hitN||p.hitC)?'<span class="bad">치명이 비치명보다 커야 해요</span>':'같은 상대에게 때린 비치명·치명 한 방을 적으면 치명 배율을 역산해요 (상대가 계속 세지는 곳은 막히는 구간에서 재기)'}</span></div>`:''}
+        <span class="mut">${petCritRatio(p)?`→ 치명 배율 <b>×${fmt(petCritRatio(p),3)}</b> (역산, 그 상대 기준)`:(p.hitN||p.hitC)?'<span class="bad">치명이 비치명보다 커야 해요</span>':'같은 상대에게 때린 비치명·치명 한 방 → 치명 배율 역산. 덱 소환수 모두 비치명을 적으면 소환수 세기도 실측으로 (원소던전은 새로 입장 첫 타)'}</span></div>`:''}
       <div class="mut" style="margin-top:4px">스킬: ${skHas(sk)?esc(skText(sk)):'<span class="bad">도감에 스킬 정보가 없어요</span>'} <span class="mut">(앱·PC 도감 › 수정에서 적어요)</span></div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p,st)?`실전투 공격 ${fmt(petAtk(p,st))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${useDeck?(S.abs?(ten?`<div class="card" style="background:var(--card2);margin-top:6px"><div class="big">10초 예상 데미지</div>
@@ -1181,7 +1196,7 @@ function vSpec(v){
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${(BR&&TMCalc.savedPets)||window.SAVEDPETS?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
       <details style="margin-top:6px"><summary>평타·스킬에 쓸 공식 그룹</summary><div class="grid" style="margin-top:6px"><label class="f">평타<select id="gB">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.basic?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="f">스킬<select id="gS">${S.measures.map(m=>`<option value="${m.id}"${m.id===g.skill?' selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div></details>
       <div class="mut" style="margin-top:6px">소환수마다 자기 속성·타입 강화만 넣고, 3마리 데미지를 합쳐서 비교해요. 공속은 개체 속도와 도감 S 순발로 계산해요 (실전투·총능과 무관).</div>
-      ${pets.length>1?`<div class="mut" style="margin-top:4px">덱 안 비중: 세기 = ${base.hasPetIn?'공식의 소환수 스펙':base.atk?'실전투 공격력':'<span class="bad">모두 같음 (저장한 소환수에서 불러오면 실전투 공격력 반영)</span>'} · 빠르기 = ${base.speed?'공속 (개체 속도·도감 S 순발 평균)':'<span class="bad">모두 같음 (도감에 있는 이름이면 공속 반영)</span>'}</div>
+      ${pets.length>1?`<div class="mut" style="margin-top:4px">덱 안 비중: 세기 = ${base.meas?'실측 비치명 (상성·전용 스킬·방어 포함)':base.hasPetIn?'공식의 소환수 스펙':base.atk?'실전투 공격력'+(defPct()?` − 대상 방어 ${fmt(defPct())}%`:''):'<span class="bad">모두 같음 (저장한 소환수에서 불러오면 실전투 공격력 반영)</span>'} · 빠르기 = ${base.speed?'공속 (개체 속도·도감 S 순발 평균)':'<span class="bad">모두 같음 (도감에 있는 이름이면 공속 반영)</span>'}</div>
         ${(!base.hasPetIn&&!base.atk)||(!base.speed&&!base.dex)?'<div class="bad">→ 속성·타입 강화 순위는 참고용 (공통 스펙 순위는 그대로 맞아요)</div>':''}`:''}`
     :'<div class="mut" style="margin-top:6px">소환수 1~3마리를 넣어 덱을 구성해 주세요. 덱이 없으면 아래 공격 구성으로 계산해요. [+ 새 덱]으로 소환수 3마리를 넣으면 속성·타입 강화까지 덱 기준으로 계산해요.</div>'}</details>
   ${useDeck?'':`<details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">공격 구성 <span class="mut" style="font-weight:400">(덱 없이 직접)</span></summary>
@@ -1223,6 +1238,7 @@ function vSpec(v){
   // 덱
   const dk=f=>saveSpec(p=>{p.decks=p.decks||[];const D=p.decks.find(d=>d.id===(curDeck(p)||{}).id);f(p,D)})
   $('#dSel').onchange=e=>saveSpec(p=>p.deckId=e.target.value||null)
+  const tdf=$('#tDef');if(tdf)tdf.onchange=()=>saveSpec(p=>{const n=num(tdf.value);if(n>0)p.defPct=Math.min(95,n);else delete p.defPct})
   $('#tEl').onchange=e=>saveSpec(p=>{if(e.target.value)p.targetElem=e.target.value;else delete p.targetElem})
   const tam=$('#tAm');if(tam)tam.onchange=()=>saveSpec(p=>{const n=num(tam.value);if(n>0)p.advMul=n;else delete p.advMul})
   $('#dNew').onclick=()=>{const n=prompt('덱 이름','덱 '+(decks.length+1));if(!n)return;saveSpec(p=>{p.decks=p.decks||[];const D={id:uid(),name:n.trim(),pets:[{name:'',elem:'',type:'',skill:{}}]};p.decks.push(D);p.deckId=D.id})}
@@ -2193,7 +2209,7 @@ function vFind(c,v){
   const varies=x=>new Set(D.rows.map(r=>r.v[x.id]).filter(isFinite)).size>1
   const all=[...D.gvars.filter(x=>!hideP(x)&&(varies(x)||x.id==='p:ratk')),...D.mvars.filter(m=>m.id!==c.target)]
   const fixed=D.gvars.filter(x=>!hideP(x)&&!varies(x)&&x.id!=='p:ratk')
-  const offFor=x=>(/^m:/.test(c.target)&&/^g:(rune:cd|crit:dmg)/.test(x.id))||(/basic$/.test(c.target)&&/^g:rune:sk:/.test(x.id))||(/skill$/.test(c.target)&&/^g:rune:nb:/.test(x.id))
+  const offFor=x=>(/^m:/.test(c.target)&&/^g:(rune:cd|crit:dmg)/.test(x.id))||/^g:rune:(sk|nb):/.test(x.id)   // 일반·스킬공격피해는 소환수 데미지와 무관 (실측)
   if(!c.use||c.useFor!==c.target){c.use=all.filter(x=>!/^[mc]:/.test(x.id)&&!offFor(x)).map(x=>x.id);c.useFor=c.target}
   if(hasReal&&!c.use.includes('p:ratk'))c.use.push('p:ratk')
   v.innerHTML=`<div class="card">
