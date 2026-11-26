@@ -756,15 +756,14 @@ const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${S
 // ---------------------------------------------------------------- 도움말 (? 버튼)
 const HELP={
   start:['연구실 사용법',`
-<p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내는</b> 곳이에요. 찾은 공식은 <b>공식 세트</b>로 만들어 앱 메뉴 <b>최적화</b>(스펙 효율·덱·룬 비교)에서 써요.</p>
-<p><b>맨 위 🎮 게임</b>: 목록 맨 아래 <b>＋ 게임 추가</b>로 여러 개 만들 수 있어요.<br>
-· <b>테이밍마스터 기본 틀</b>: 상태창 항목(룬 옵션·무기·속성 강화·버프·기본 공격력), 평타·스킬, 소환수 연결이 다 들어 있어요. 사냥터별·캐릭터별로 나눠 실험하고 싶을 때 하나 더 만들어요.<br>
-· <b>커스터마이징</b>: 빈 틀에서 분류·항목·공격 그룹을 직접 정해요. 다른 게임도 이렇게 써요 (테이밍마스터 전용 기능은 없음).</p>
-<p><b>① 실험</b>: [+ 새 실험] → 쓰는 소환수 정하기 → 시작 상태(상태창 값) 적기 → 게임 위 [연구] 버튼으로 <b>하나만 바꾸고</b> 데미지 적기 반복 → [공식 찾기] → [저장]</p>
+<p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내는</b> 곳이에요. 테이밍마스터는 실측으로 확정한 <b>기본 공식</b>이 최적화에 이미 들어 있어서, 연구실은 더 깊게 확인하고 싶을 때 써요.</p>
+<p><b>맨 위 🎮 게임</b>: 목록 맨 아래 <b>＋ 게임 추가</b><br>
+· <b>테이밍마스터 기본 틀</b>: 룬 옵션·무기·속성 강화·도감·버프·기본 공격력, 평타·스킬, 소환수 연결이 다 들어 있어요<br>
+· <b>커스터마이징</b>: 빈 틀에서 분류·항목·공격 그룹을 직접 정해요 (다른 게임도 가능)</p>
+<p><b>① 실험</b>: [+ 새 실험] → 쓰는 소환수 → 시작 상태(상태창·도감 값) → 게임 위 [연구] 버튼으로 <b>하나만 바꾸고</b> 데미지 적기 반복 → [공식 찾기] → [저장]</p>
 <p><b>② 공식</b>: 저장한 공식 모음. ⚙ 게임 설정 › [공식 세트 만들기]로 최적화에 넘겨요.</p>
-<p><b>③ 아이템 · ④ 최적화</b>: 커스터마이징 게임용 (아이템 조합 찾기). 테이밍마스터는 앱 메뉴 <b>최적화</b>를 쓰면 돼요.</p>
-<div class="ex"><b>예시</b><br>기록: 처음 1,000 → 룬 공격 +200 → 1,200 → 무기 공격 +10% → 1,320 …<br>공식: <b>데미지 = (1000 + 룬 공격) × (1 + 무기 공격%)</b><br>최적화: "룬 피해증가 +1% → +0.62%"</div>
-<div class="ex"><b>기억할 것</b><br>· 데미지는 실험한 대상 기준이에요. 상대(방어·속도)가 바뀌면 숫자는 달라져요.<br>· 빗나감(MISS)은 기록하지 않아요.<br>· 성장증폭은 모든 소환수 공통 값이에요 (시작 상태 표 '소환수 공통').</div>`],
+<p><b>③ 아이템 · ④ 최적화</b>: 커스터마이징 게임용 (아이템 조합 찾기).</p>
+<div class="ex"><b>잴 때 기억할 것</b><br>· 같은 대상끼리 비교해요. 원소던전은 때릴수록 몬스터가 세져서 <b>새로 입장한 첫 타</b>끼리만 비교해요<br>· 전용 스킬이 있는 소환수는 그 효과까지 들어가요 (가능하면 혼자 출전)<br>· 빗나감(MISS)은 기록하지 않아요 · 성장증폭은 모든 소환수 공통<br>· 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어요 (실측)</div>`],
   session:['실험이란?',`
 <p>실험 한 번의 묶음이에요. 실험마다 기록이 따로 모여요. 테이밍마스터 게임은 <b>쓰는 소환수</b>를 꼭 정해요 (스킬 배율·속성·타입을 맞추려고).</p>
 <p><b>시작</b>을 누르면 그 실험이 "진행 중"이 되고, 게임 위 버튼이 [연구]로 바뀌어요. 그 상태에서 버튼을 누르면 바로 기록할 수 있어요. <b>멈추기</b>를 누르면 다시 [계산] 버튼이에요.</p>
@@ -785,15 +784,13 @@ const HELP={
 <div class="ex"><b>예시</b> 스킬 300% 소환수로 잼 → 한 방 6,000 → 1배 기준 2,000<br>500% 스킬 소환수 → 2,000 × 5 = 10,000</div>
 <p><b>비치명 / 치명 칸</b>: 치명이 안 터진 숫자는 비치명 칸, 터진 숫자는 치명 칸. 본 것만 적고, 섞지만 않으면 돼요.</p>`],
   startState:['시작 상태란?',`
-<p>실험을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창에 보이는 지금 값을 그대로 적어요.</p>
-<p><b>도감</b>: 소환수 › 도감 미션 › 누적 보너스 옵션의 값 (공격, 피해증가, 속성·타입 강화). 상태창에 안 보여서 따로 적어요.<br><b>타입 강화</b>는 게임이 기본으로 약 70%를 더 붙여요 (실측: 소환수·대상과 무관). 그래서 타입 강화 1%의 효과는 생각보다 작아요.</p>
-<p><b>소환수 공통 › 성장증폭</b>: 모든 소환수에 같이 붙는 값이라 소환수 칸이 아니라 여기 있어요. 바뀌면 기록에서 고쳐요.</p>
-<p><b>치명</b>: 테이밍마스터는 치명 피해가 소환수·상대에 따라 달라서 여기 적지 않아요. 치명이 터진 데미지는 기록에서 치명 칸에 따로 적어요. 룬의 '치명타 피해'는 룬 옵션 칸에 적어요.</p>
-<p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
-<div class="ex"><b>예시</b> (처음에 스킬공격피해 30%를 이미 갖고 있음)<br>
-시작 상태 안 적음 → 15000 × (1 + 0.667×스킬%) <span class="bad">(계수가 이상함)</span><br>
-시작 상태 30 적음 → <b>10000 × (1 + 스킬%)</b> (실제 공식 그대로)</div>
-<p>모르는 칸은 비워 두면 돼요. 그 항목만 바꾼 양으로 계산해요.</p>`],
+<p>실험을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 보이는 지금 값을 그대로 적어요.</p>
+<p><b>상태창</b>: 룬 옵션 합계, 속성 강화(도감 제외 값), 모든능력치, 파티 피해 증가 등<br>
+<b>도감</b>: 소환수 › 도감 미션 › 누적 보너스 옵션 (공격, 피해증가, 속성·타입 강화) — 상태창에 안 보여서 따로<br>
+<b>무기 공격 %</b>: 무기 상세에서 · <b>성장증폭</b>: 소환수 공통 (표 맨 아래)</p>
+<p><b>타입 강화</b>는 게임이 기본으로 약 70%를 더 붙여요 (실측: 소환수·대상과 무관). 그래서 타입 강화 1%의 효과는 생각보다 작아요.</p>
+<p><b>치명</b>: 치명 피해는 대상·공격력에 따라 달라서 여기 적지 않아요. 치명이 터진 데미지는 기록에서 치명 칸에 따로 적어요.</p>
+<p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요. 모르는 칸은 비워 두면 그 항목만 바꾼 양으로 계산해요.</p>`],
   record:['기록하는 법',`
 <p>게임에서 <b>하나만 바꾸고</b>, 바뀐 한 방 데미지를 적어요. 게임 위 [연구] 창에서 하면 편해요 (룬 읽기·데미지 찍기).</p>
 <p><b>바뀐 값</b>: 무엇을 얼마나 바꿨는지 (+200, -5%). [±]를 누르면 "지금 값 → 바꿀 값"으로 자동 계산<br>
@@ -860,10 +857,10 @@ const HELP={
 <b>? 아직 안 재 봄</b>: 틀에는 있는데 한 번도 바꿔 본 적 없어요 → <b>다음에 조사할 것</b></p>
 <div class="ex"><b>예시</b> 스킬 데미지 공식<br>✓ 공격력, 스킬 데미지 % · ○ 일반공격 데미지 % · ? 속성 피해 %<br>→ 속성 피해 %를 바꿔 가며 몇 번 기록해 보면 스킬에 붙는지 알 수 있어요.</div>`],
   gain:['무엇을 올리면 이득?',`
-<p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(데미지, 덱 합계)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
-<p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요. 올릴 양은 고칠 수 있어요. 공식 세트가 실제 숫자를 맞히면 +○○/10초도 같이 보여요.</p>
+<p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(덱 데미지)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
+<p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요. 올릴 양은 고칠 수 있어요. 예상 데미지가 나오는 공식이면 +○○/10초도 같이 보여요.</p>
 <p><b>표에서 숨기기</b>: 안 볼 항목을 체크하면 표에서 빠져요 (계산·바꿔 보기에는 그대로).</p>
-<div class="ex"><b>예시</b><br>룬 피해증가 +1% → +0.62%<br>성장증폭 +1% → +0.41%<br>→ 룬 피해증가를 올리는 게 더 이득</div>`],
+<div class="ex"><b>읽는 법</b><br>묶음(타입·속성·피해)이 이미 클수록 그 묶음 +1%의 효과는 작아요. 예: 파티 피해 증가 340%가 있으면 피해증가 +1%는 +0.2% 정도.<br>무기 공격 %·모든능력치·룬 공격은 공격 쪽이라 효과가 큰 편이에요.</div>`],
   statRule:['상태창 규칙',`
 <p>최적화 [내 상태]에서 값을 어떻게 정할지예요. 게임마다 한 번만 정하면 돼요.</p>
 <p><b>상태창 숫자 입력</b> (기본): 게임 상태창에 총합이 보이는 값. 그 숫자를 그대로 적고, 지금 낀 아이템 몫은 그 안에 들어 있는 것으로 봐요.</p>
@@ -892,19 +889,26 @@ const HELP={
 <p>효과가 고정 숫자가 아니라 <b>다른 값에 따라 달라질 때</b> 식으로 적어요. 이 아이템을 꼈을 때만 적용돼요.</p>
 <div class="ex"><b>예시</b> "마력의 10%만큼 공격력 증가"<br>대상: 공격력 변화 · + · <code>[마력] * 0.1</code></div>
 <p><b>조건이 있어야 켜지는 능력</b>("체력 50% 이하일 때" 등)은 체크해 두면, 최적화 화면에서 켬/끔을 골라 두 경우를 각각 계산해 볼 수 있어요.</p>`],
-  spec:['최적화 (스펙 효율)',`
-<p>내 스펙에서 무엇을 올리면 이득인지 보는 곳이에요. 기본으로 <b>테이밍마스터 기본 공식</b>(실측으로 확정)을 써요. 연구실에서 만든 공식 세트를 불러오면 바꿔 쓸 수 있어요.</p>
-<p><b>예상 평타 한 방</b>: 덱 소환수 카드에 원소던전 첫 몬스터 기준 평타·치명 예상이 나와요 (버프·전용 스킬 제외). 같은 조건 첫 타와 비교해 보세요.</p>
-<p><b>1 내 스펙</b>: 상태창 값을 그대로 적어요. 적은 값은 저장돼요. <b>성장증폭</b>도 여기 (모든 소환수 공통, 실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).</p>
-<p><b>2 덱</b>: 소환수 최대 3마리. [저장한 소환수에서]로 불러오면 원래 능력치·개체 속도가 들어가요 (메모도 보여요).<br>
-· 소환수마다 자기 속성·타입 강화만 넣고, 마나 한 바퀴(평타 N번 + 스킬)로 계산해요<br>
-· 공속 = (개체 속도 + 도감 S 순발) ÷ 2 기준 (실측 ±4%)<br>
-· <b>추가 치명 확률</b>: 장착 스킬 등으로 그 소환수만 더 높을 때<br>
-· <b>실제 데미지 (선택)</b>: 같은 상대에게 때린 비치명·치명 한 방 → 치명 배율을 역산해 그 소환수에 써요 (그 상대 기준). 덱 소환수 <b>모두</b> 비치명을 적으면 소환수 세기도 그 실측으로 (상성·전용 스킬 포함)<br>
-· <b>대상 방어</b>: 대상 방어가 덱 평균 실전투 공격의 몇 %인지. 소환수 세기 = 실전투 − 방어라서, 방어가 셀수록 센 소환수가 더 유리해요 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%)<br>
-· 룬 <b>일반공격피해·스킬공격피해</b>는 소환수 데미지에 효과가 없어서 계산에서 빼요 (실측)</p>
-<p><b>10초 예상 데미지</b>: 실험한 대상·버프 없음·빗나감 제외 기준이에요. 상대가 바뀌면 숫자는 달라지지만 "무엇을 올리면 이득?" 순서는 대체로 같아요.</p>
-<p><b>룬 비교</b>: 앱 메뉴에서 룬 비교 모드를 켜고 게임의 룬 비교 화면에서 [룬] 버튼을 누르면, 여기 저장한 스펙·덱으로 "바꾸면 +x%"를 보여 줘요.</p>`],
+  spec:['최적화 사용법',`
+<p>내 스펙에서 <b>무엇을 올리면 이득인지</b>, 덱 소환수가 얼마나 센지 보는 곳이에요. 기본으로 <b>테이밍마스터 기본 공식</b>(실측으로 확정)을 써요. 연구실에서 만든 공식 세트를 [불러오기]하면 바꿔 쓸 수 있어요.</p>
+<p><b>1 내 스펙</b> — 보이는 값 그대로 적어요 (적은 값은 저장돼요)<br>
+· <b>① 상태창</b>: 룬 공격·피해증가·모든속성·모든타입·치명타 피해, 모든능력치, 파티 피해 증가, 성장증폭, 속성 강화(도감 제외 값), 룬 속성·타입 강화<br>
+· <b>② 무기</b>: 상태창에 안 보여요 — 무기 상세의 공격 %<br>
+· <b>③ 코스튬</b>: 모든 타입 강화, 파티 속성 강화<br>
+· <b>④ 도감</b>: 소환수 › 도감 미션 › 누적 보너스 옵션 (피해증가, 모든 속성·타입, 치명타 피해, 속성·타입별)</p>
+<p><b>2 덱</b> — 소환수 최대 3마리<br>
+· <b>[+ 새 덱]</b>: 저장한 소환수를 골라 만들어요 (빈 소환수도 가능). 덱은 평소엔 보기만 되고 <b>[수정]</b> → 고친 뒤 <b>[저장]</b>/[취소]<br>
+· 카드에 저장 이름·Lv·강화·메모, 실전투 공격(원래 능력치 × 성장증폭), <b>예상 평타 한 방·치명</b>(원소던전 첫 몬스터 기준, 버프·전용 스킬 제외)이 나와요<br>
+· <b>전투 설정</b> (덱 위): 던전·대상마다 다른 값<br>
+&nbsp;&nbsp;- 대상 속성: 상성이면 그 소환수 ×2.42 (화염→바람, 물→화염, 바람→물, 빛↔어둠)<br>
+&nbsp;&nbsp;- 치명 확률·명중률: 속도·대상에 따라 바뀌어서 기본은 <b>치명 30% · 명중 90%</b>. 그 던전에서 체감한 값이 있으면 [직접 입력]을 켜고 고쳐요<br>
+&nbsp;&nbsp;- 치명 배율: 치명 ÷ 평타 (원소던전 첫 몬스터 ≈ 2.42, 센 곳 1.4~1.9). 룬·도감 치명타 피해는 여기에 더해져요<br>
+&nbsp;&nbsp;- 대상 방어: 덱 평균 실전투 공격의 몇 %인지 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%). 방어가 셀수록 센 소환수가 더 유리해요<br>
+· 소환수마다: 추가 치명 확률·추가 명중률(장착 스킬 등), 개체 속도(공속), <b>실제 데미지</b>(같은 대상 한 방 → 치명 배율 역산. 덱 전원 비치명을 적으면 소환수 세기도 실측으로)</p>
+<p><b>무엇을 올리면 이득?</b> 항목 하나를 조금 올렸을 때 덱 데미지가 몇 % 오르는지. 안 볼 항목은 [표에서 숨기기]. <b>바꿔 보기</b>로 여러 개를 한꺼번에 바꿔 볼 수 있어요.</p>
+<p><b>룬 비교</b>: 앱 메뉴에서 룬 비교 모드를 켜고 게임의 룬 비교 화면에서 [룬] 버튼 → 여기 스펙·덱으로 "바꾸면 +x%". 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어서 빼요 (실측).</p>
+<div class="ex"><b>기본 공식</b> (실측, 소환수 5마리 ±0.5%)<br>평타 = 실전투 공격 × (공격 합) × (1 + 무기%) × 타입 × 속성 × 피해<br>
+· 타입 = 1 + (기본 70 + 모든 타입 + 그 소환수 타입)/100<br>· 속성 = 1 + (상태창 속성 + 모든 속성 + 그 소환수 속성)/100<br>· 피해 = 1 + (피해증가 + 파티 피해 증가)/100<br>· 스킬 = 평타 × 스킬 배율, 전용 스킬(공격력 %)은 곱하기</div>`],
   optimize:['최적 셋팅',`
 <p>틀에 등록한 아이템들 중 <b>칸 제한 안에서 가장 센 조합</b>을 찾아 줘요. 1~3등까지 보여 줘요.</p>
 <p>지금 낀 것은 시작 상태의 "낀 아이템" + 기록의 끼기/빼기로 자동으로 계산해요.</p>
@@ -964,6 +968,10 @@ function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fse
  * K 는 원소던전 첫 몬스터 기준 (치명 ≈ 평타 × 2.42) — 다른 대상이면 절대값은 달라지고 비교(%)는 그대로
  */
 const TM2_K=0.018809,TM2_CRIT=2.42
+/** 치명 배율 (실측): 원소던전 첫 몬스터 기준 ≈ 2.405 + (룬 + 도감 치명타 피해)/100 — 실험 2에서 룬 치명타 피해 +8.67% → 배율 +0.085. 기본값은 대상마다 다름 (센 곳 1.4~1.9) */
+const TM2_CRITB=2.405
+const tm2CritB=()=>{const n=num((data.spec||{}).critBase);return isFinite(n)&&n>=1?n-0.015:TM2_CRITB}   // 적는 값은 '지금 치명 배율'(도감 1.5% 포함) 기준
+const tm2CritMul=z=>tm2CritB()+((z['g:rune:cd:pct']||0)+(z['g:dogam:cd:pct']||0))/100
 const TM2_SET=(()=>{
   // 출처별로 따로 적고 (룬 · 도감 · 코스튬 · 상태창), 합은 공식에서
   const V=['p:ratk','g:rune:atk:flat','g:elv:all:flat','g:wpn:atkp:pct',
@@ -978,18 +986,23 @@ const TM2_SET=(()=>{
     abs:true,err:null,useCrit:true,measures:[{id:'basic',name:'평타',basePct:100},{id:'skill',name:'스킬',basePct:100}],forms:{'m:basic':F,'m:skill':F},
     inputs:[
       I('g:rune:atk:flat','룬 공격','flat','user','① 상태창'),I('g:rune:dmg:pct','룬 피해증가 %','pct','user','① 상태창'),I('g:rune:ae:pct','룬 모든속성 강화 %','pct','user','① 상태창'),I('g:rune:at:pct','룬 모든타입 강화 %','pct','user','① 상태창'),
-      I('g:elv:all:flat','모든능력치','flat','user','① 상태창'),I('g:buff:party:pct','파티 피해 증가 %','pct','user','① 상태창'),I('g:crit:rate:pct','치명 확률','pct','user','① 상태창',100),
+      I('g:rune:cd:pct','룬 치명타 피해 %','pct','user','① 상태창'),I('g:elv:all:flat','모든능력치','flat','user','① 상태창'),I('g:buff:party:pct','파티 피해 증가 %','pct','user','① 상태창'),
       I('p:elemS:pct','속성 강화 %','pct','elem','① 상태창'),I('p:elem:pct','룬 속성 강화 %','pct','elem','① 상태창'),I('p:type:pct','룬 타입 강화 %','pct','type','① 상태창'),
       I('g:wpn:atkp:pct','공격 %','pct','user','② 무기'),
       I('g:cos:at:pct','모든 타입 강화 %','pct','user','③ 코스튬'),I('p:elemC:pct','파티 속성 강화 %','pct','elem','③ 코스튬'),
-      I('g:dogam:dmg:pct','피해증가 %','pct','user','④ 도감'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','④ 도감'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','④ 도감'),
+      I('g:dogam:dmg:pct','피해증가 %','pct','user','④ 도감'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','④ 도감'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','④ 도감'),I('g:dogam:cd:pct','치명타 피해 %','pct','user','④ 도감'),
       I('p:elemD:pct','속성 강화 %','pct','elem','④ 도감'),I('p:typeD:pct','타입 강화 %','pct','type','④ 도감'),
+      I('g:crit:rate:pct','치명 확률 (체감)','pct','user','__battle',100),I('g:hit:rate:pct','명중률 (체감)','pct','user','__battle',100),
       I('p:ratk','소환수 실전투 공격','flat','pet')],
-    runeMap:tm2Template().runeMap,runeTable:{}}})()
+    runeMap:{...tm2Template().runeMap,'명중':'g:hit:rate:pct'},runeTable:{}}})()
 const GRP_HINT={'① 상태창':'캐릭터 상태창에 보이는 값 그대로 (속성 강화는 도감 제외 값)','② 무기':'상태창엔 안 보여요 — 장비 › 무기 상세의 공격 %','③ 코스튬':'상태창엔 안 보여요 — 코스튬 효과에서','④ 도감':'상태창엔 안 보여요 — 소환수 › 도감 미션 › 누적 보너스 옵션'}
 const allSets=()=>[...(data.formulaSets||[]),TM2_SET]
 const activeSet=()=>{const L=allSets();return L.find(s=>s.id===(data.spec||{}).setId)||L[0]||null}
-function specState(){const sp=data.spec||{};return{st:{...(sp.st||{})},cyc:sp.cyc||{mode:'cycle',time:'10',list:[]},steps:sp.steps||{},wi:sp.wi||[]}}
+const BATTLE_DEF={'g:crit:rate:pct':30,'g:hit:rate:pct':90}
+/** 내장 공식: 직접 입력을 안 켰으면 치명·명중은 기본값 */
+function battleSt(st){const sp=data.spec||{},S=activeSet();if(!S||!S.builtin)return st;const o={...st}
+  for(const [k,v] of Object.entries(BATTLE_DEF))if(!sp.battleCustom||!isFinite(num(o[k])))o[k]=v;return o}
+function specState(){const sp=data.spec||{};return{st:battleSt({...(sp.st||{})}),cyc:sp.cyc||{mode:'cycle',time:'10',list:[]},steps:sp.steps||{},wi:sp.wi||[]}}
 function saveSpec(f){mutate(d=>{d.spec=d.spec||{};f(d.spec)});render()}
 /** 공식 세트로 계산: 한 바퀴(또는 초당) 데미지. 결과는 비교(%)로만 씀 */
 function setEval(S,st,cyc){
@@ -997,7 +1010,7 @@ function setEval(S,st,cyc){
   const fOf=k=>{const f=S.forms[k];if(!f)return null;f.fn=f.fn||makeF(f.spec);return f}
   const val=(f)=>f.fn(f.p,f.vars.map(id=>z[id]??z[id.replace(/\*$/,'')]??0))
   const list=(cyc.list||[]).length?cyc.list:[{name:(S.measures[0]||{}).name,group:(S.measures[0]||{}).id,pct:'',count:'1',crit:'can'}]
-  const p0=S.useCrit?Math.min(1,Math.max(0,(z['g:crit:rate:pct']||0)/100)):0,cm0=!S.useCrit?1:z['g:crit:dmg:pct']?z['g:crit:dmg:pct']/100:1,ovr=S.useCrit&&num(st.__cm)>1?num(st.__cm):0,cm=ovr||cm0
+  const p0=S.useCrit?Math.min(1,Math.max(0,(z['g:crit:rate:pct']||0)/100)):0,cm0=!S.useCrit?1:S.builtin?tm2CritMul(z):z['g:crit:dmg:pct']?z['g:crit:dmg:pct']/100:1,ovr=S.useCrit&&num(st.__cm)>1?num(st.__cm):0,cm=ovr||cm0
   const byTime=cyc.mode==='time',T=num(cyc.time)||10
   const kind=e=>byTime?(e.kind2||'count'):'count'
   const realCd=e=>(num(e.cd)||0)*(1-(num(e.cdr)||0)/100),realIv=e=>(num(e.iv)||0)/(1+(num(e.aspd)||0)/100)
@@ -1012,6 +1025,7 @@ function setEval(S,st,cyc){
     const k=kind(e),h=num(e.hits)||1
     const n=k==='cd'?(realCd(e)>0?T/realCd(e)*h:0):k==='fill'?(realIv(e)>0?leftT/realIv(e)*h:0):(num(e.count)||0)
     tot+=avg*n}
+  if(S.builtin){const h=num(st['g:hit:rate:pct']);if(isFinite(h))tot*=Math.min(1,Math.max(0,h/100))}
   return{r:byTime?tot/T:tot,miss}}
 function vFront(c,v){
   $('#title').textContent='최적화'
@@ -1036,6 +1050,7 @@ function petState(S,st,p){const o={}
     o[i.id]=sc==='elem'?st[i.id+'@'+normElem(p.elem)]:sc==='type'?st[i.id+'@'+p.type]:sc==='pet'?(p.st||{})[i.id]:st[i.id]}
   // 소환수마다 추가 치명 확률 (장착 스킬 등): 공통 치명 확률에 더함 (최대 100%는 계산에서 자름)
   const pc=num(p&&p.crit);if(pc&&S.inputs.some(i=>i.id==='g:crit:rate:pct'))o['g:crit:rate:pct']=(num(o['g:crit:rate:pct'])||0)+pc
+  const ph=num(p&&p.hit);if(ph&&S.inputs.some(i=>i.id==='g:hit:rate:pct'))o['g:hit:rate:pct']=Math.min(100,(isFinite(num(o['g:hit:rate:pct']))?num(o['g:hit:rate:pct']):100)+ph)
   // 실제 비치명·치명 데미지를 적었으면 그 비율을 이 소환수의 치명 배율로 (그 상대 기준)
   const cr=petCritRatio(p);if(cr)o.__cm=cr
   // 성장증폭은 내 스펙(모든 소환수 같음), 실전투 공격은 소환수 원래 능력치 × 성장증폭으로 다시 계산
@@ -1214,13 +1229,15 @@ function vSpec(v){
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
     ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
       const row=(i,L)=>`<div class="mut" style="margin-top:8px">${esc(i.name)}</div><div style="display:grid;grid-template-columns:repeat(${L.length},minmax(0,1fr));gap:4px">${L.map(e=>sm(i.id+'@'+e,e,i)).join('')}</div>`
-      const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))].sort((x,y)=>(x?1:0)-(y?1:0)||x.localeCompare(y))
+      const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))].filter(g=>g!=='__battle').sort((x,y)=>(x?1:0)-(y?1:0)||x.localeCompare(y))
       return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn)
         return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}</div>`}).join('')})()}
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
     <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
-    <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+    <div class="mut" style="margin-top:8px"><b>전투 설정</b> — 던전·대상마다 다른 값. 치명 30%·명중 90%가 기본, [직접 입력]을 켜면 체감 값으로</div><div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+      ${inUser.some(i=>i.grp==='__battle')?`<label class="row mut" style="gap:4px"><input type="checkbox" id="bCus"${sp.battleCustom?' checked':''}>직접 입력</label>${inUser.filter(i=>i.grp==='__battle').map(i=>`<label class="row mut" style="gap:4px">${esc(i.name.replace(' (체감)',''))}<input type="text" inputmode="decimal" data-sv="${esc(i.id)}" value="${esc(st[i.id]??'')}" style="width:50px"${sp.battleCustom?'':' disabled'}>%</label>`).join('')}`:''}
+      ${S.builtin?`<label class="row mut" style="gap:4px" title="치명 한 방 ÷ 평타 한 방. 원소던전 첫 몬스터 ≈ 2.42, 센 곳 1.4~1.9. 룬·도감 치명타 피해를 바꾸면 그만큼 더해요">치명 배율 ×<input type="text" inputmode="decimal" id="tCb" value="${esc(sp.critBase??'')}" placeholder="2.42" style="width:50px"></label>`:''}
       <label class="row mut" style="gap:4px" title="대상 방어가 덱 평균 실전투 공격의 몇 %인지. 원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%">대상 방어<input type="text" inputmode="decimal" id="tDef" value="${esc(sp.defPct??'')}" placeholder="0" style="width:50px">%</label>
       ${sp.targetElem?`<label class="row mut" style="gap:4px">상성 배율 ×<input type="text" inputmode="decimal" id="tAm" value="${esc(sp.advMul??'')}" placeholder="${ADV_MUL}" style="width:60px"></label><span class="mut">${esc(Object.keys(ADV).filter(k=>ADV[k]===sp.targetElem).join('·'))} 소환수가 상성</span>`:''}</div>
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
@@ -1231,10 +1248,10 @@ function vSpec(v){
       <div class="list-row"><input type="text" class="pn" value="${esc(p.name||'')}" placeholder="소환수 이름" style="flex:1"><select class="pe">${['',...ELEMS].map(e=>`<option value="${e}"${normElem(p.elem||'')===e?' selected':''}>${e||'속성'}</option>`).join('')}</select><select class="pty">${['',...TYPES].map(t=>`<option value="${t}"${(p.type||'')===t?' selected':''}>${t||'타입'}</option>`).join('')}</select><button class="sm danger px">✕</button></div>
       ${inPet.length?`<div class="grid">${inPet.map(i=>`<label class="f">${esc(i.name)}<input type="text" class="pst" data-k="${esc(i.id)}" value="${esc((p.st||{})[i.id]??'')}"></label>`).join('')}</div>`:''}
       ${needBase&&!hasBaseIn?`<div class="grid">${PSTAT.map(([q,l],j)=>`<label class="f">${l} (원래 능력치)<input type="text" inputmode="decimal" class="pbs" pix="${j}" value="${isNum((p.base||[])[j])?p.base[j]:''}" placeholder="모름"></label>`).join('')}</div>`:''}
-      <div class="row" style="margin-top:4px;gap:6px">${S.useCrit?`<label class="row mut" style="gap:4px">추가 치명 확률<input type="text" inputmode="decimal" class="pcr" value="${esc(p.crit??'')}" placeholder="0" style="width:50px">%</label>`:''}<label class="row mut" style="gap:4px">개체 속도<input type="text" inputmode="decimal" class="psp" value="${esc(p.spd??'')}" placeholder="모름" style="width:70px"></label><span class="mut" style="flex:1">${apsNote(p)}</span></div>
+      <div class="row" style="margin-top:4px;gap:6px">${S.useCrit?`<label class="row mut" style="gap:4px">추가 치명 확률<input type="text" inputmode="decimal" class="pcr" value="${esc(p.crit??'')}" placeholder="0" style="width:50px">%</label>`:''}${S.inputs.some(i=>i.id==='g:hit:rate:pct')?`<label class="row mut" style="gap:4px">추가 명중률<input type="text" inputmode="decimal" class="phit" value="${esc(p.hit??'')}" placeholder="0" style="width:50px">%</label>`:''}<label class="row mut" style="gap:4px">개체 속도<input type="text" inputmode="decimal" class="psp" value="${esc(p.spd??'')}" placeholder="모름" style="width:70px"></label><span class="mut" style="flex:1">${apsNote(p)}</span></div>
       ${S.useCrit?`<div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><span class="mut">실제 데미지 (선택)</span><label class="row mut" style="gap:4px">비치명<input type="text" class="phn" value="${esc(p.hitN??'')}" placeholder="예: 440만" style="width:90px"></label><label class="row mut" style="gap:4px">치명<input type="text" class="phc" value="${esc(p.hitC??'')}" placeholder="예: 790만" style="width:90px"></label>
         <span class="mut">${petCritRatio(p)?`→ 치명 배율 <b>×${fmt(petCritRatio(p),3)}</b> (역산, 그 상대 기준)`:(p.hitN||p.hitC)?'<span class="bad">치명이 비치명보다 커야 해요</span>':'같은 상대에게 때린 비치명·치명 한 방 → 치명 배율 역산. 덱 소환수 모두 비치명을 적으면 소환수 세기도 실측으로 (원소던전은 새로 입장 첫 타)'}</span></div>`:''}
-      ${S.builtin&&ok?(()=>{const h=setEval(S,petState(S,st,p),{mode:'cycle',list:[{group:'basic',count:'1',crit:'none',pct:''}]}).r*advMul(p);return h>0?`<div class="mut" style="margin-top:4px">예상 평타 한 방 (원소던전 첫 몬스터, 버프·전용 스킬 제외): <b>${krNum(h)}</b> · 치명 ≈ <b>${krNum(h*TM2_CRIT)}</b></div>`:''})():''}
+      ${S.builtin&&ok?(()=>{const h=setEval(S,petState(S,st,p),{mode:'cycle',list:[{group:'basic',count:'1',crit:'none',pct:''}]}).r*advMul(p);return h>0?`<div class="mut" style="margin-top:4px">예상 평타 한 방 (원소던전 첫 몬스터, 버프·전용 스킬 제외): <b>${krNum(h)}</b> · 치명 ≈ <b>${krNum(h*tm2CritMul(petState(S,st,p)))}</b></div>`:''})():''}
       <div class="mut" style="margin-top:4px">스킬: ${skHas(sk)?esc(skText(sk)):'<span class="bad">도감에 스킬 정보가 없어요</span>'} <span class="mut">(앱·PC 도감 › 수정에서 적어요)</span></div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p,st)?`실전투 공격 ${fmt(petAtk(p,st))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${useDeck?(S.abs?(ten?`<div class="card" style="background:var(--card2);margin-top:6px"><div class="big">10초 예상 데미지</div>
@@ -1292,6 +1309,8 @@ function vSpec(v){
   const dsv=$('#dSave');if(dsv)dsv.onclick=()=>{const D=deckDraft;deckDraft=null;saveSpec(p=>{p.decks=(p.decks||[]).map(d=>d.id===D.id?D:d)});toast('덱을 저장했어요.')}
   const dcn=$('#dCancel');if(dcn)dcn.onclick=()=>{deckDraft=null;render()}
   $('#dSel').onchange=e=>{deckDraft=null;saveSpec(p=>p.deckId=e.target.value||null)}
+  const bcu=$('#bCus');if(bcu)bcu.onchange=()=>saveSpec(p=>{if(bcu.checked)p.battleCustom=true;else delete p.battleCustom})
+  const tcb=$('#tCb');if(tcb)tcb.onchange=()=>saveSpec(p=>{const n=num(tcb.value);if(n>=1)p.critBase=n;else delete p.critBase})
   const tdf=$('#tDef');if(tdf)tdf.onchange=()=>saveSpec(p=>{const n=num(tdf.value);if(n>0)p.defPct=Math.min(95,n);else delete p.defPct})
   $('#tEl').onchange=e=>saveSpec(p=>{if(e.target.value)p.targetElem=e.target.value;else delete p.targetElem})
   const tam=$('#tAm');if(tam)tam.onchange=()=>saveSpec(p=>{const n=num(tam.value);if(n>0)p.advMul=n;else delete p.advMul})
@@ -1326,6 +1345,7 @@ function vSpec(v){
     el.querySelector('.psp').onchange=e=>P(x=>{const n=num(e.target.value);if(n>0)x.spd=n;else delete x.spd})
     for(const [c,k] of [['.phn','hitN'],['.phc','hitC']]){const q=el.querySelector(c);if(q)q.onchange=e=>P(x=>{const n=num(e.target.value);if(n>0)x[k]=n;else delete x[k]})}
     const pcr=el.querySelector('.pcr');if(pcr)pcr.onchange=e=>P(x=>{const n=num(e.target.value);if(n)x.crit=n;else delete x.crit})
+    const phit=el.querySelector('.phit');if(phit)phit.onchange=e=>P(x=>{const n=num(e.target.value);if(n)x.hit=n;else delete x.hit})
     el.querySelector('.px').onclick=()=>dk((p,D)=>D.pets.splice(k,1))
     el.querySelectorAll('.pbs').forEach(i=>i.onchange=()=>P(x=>{x.base=[0,1,2,3].map(j=>isNum((x.base||[])[j])?x.base[j]:null);const n=num(i.value);x.base[+i.getAttribute('pix')]=isFinite(n)?n:null}))
     el.querySelectorAll('.pst').forEach(i=>i.onchange=()=>P(x=>{x.st=x.st||{};const n=num(i.value);if(isFinite(n))x.st[i.dataset.k]=n;else delete x.st[i.dataset.k]}))
@@ -1377,7 +1397,7 @@ function runeNum(S,grade,label,level,n){if(!n)return{v:0,est:false};if(n.lo===n.
 window.runeCompare=function(aJ,bJ){loadData()
   const a=typeof aJ==='string'?JSON.parse(aJ):aJ,b=typeof bJ==='string'?JSON.parse(bJ):bJ
   const S=activeSet();if(!S)return JSON.stringify({err:'공식 세트가 없어요. 앱 > 최적화에서 공식 세트를 불러오거나 만들어 주세요.'})
-  const sp=data.spec||{},st=(sp.st)||{};if(!Object.keys(st).length)return JSON.stringify({err:'내 스펙이 비어 있어요. 앱 > 최적화 > 스펙 효율에서 내 스펙을 먼저 저장해 주세요.'})
+  const sp=data.spec||{},st=battleSt((sp.st)||{});if(!Object.keys(sp.st||{}).length)return JSON.stringify({err:'내 스펙이 비어 있어요. 앱 > 최적화 > 스펙 효율에서 내 스펙을 먼저 저장해 주세요.'})
   const deck=curDeck(sp),useDeck=deck&&deck.pets.length>0,g=deckGroups(S,sp),cyc=sp.cyc||{mode:'cycle',list:[]}
   const evalAll=s=>useDeck?deckEval(S,s,deck,g):setEval(S,s,cyc)
   const base=evalAll(st);if(!(base.r>0))return JSON.stringify({err:'지금 내 스펙으로 계산이 안 돼요. 앱 > 최적화에서 내 스펙을 확인해 주세요.'})
