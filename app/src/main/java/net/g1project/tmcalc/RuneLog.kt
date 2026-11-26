@@ -118,6 +118,6 @@ object RuneLog {
             }
             sb.append("\n")
         }
-        return if (sb.isEmpty()) "아직 읽은 룬이 없어요. 룬 비교 모드나 [연구] 창의 룬 읽기로 룬 화면을 읽으면 쌓여요." else sb.toString().trimEnd()
+        return if (sb.isEmpty()) "아직 읽은 룬이 없어요. [최적화] 버튼이나 [연구] 창의 룬 읽기로 룬 화면을 읽으면 쌓여요." else sb.toString().trimEnd()
     }
 }

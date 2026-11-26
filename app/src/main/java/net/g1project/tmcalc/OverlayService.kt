@@ -125,6 +125,7 @@ class OverlayService : Service() {
         running = false
         getSharedPreferences("settings", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
         labPanel?.let { p -> runCatching { wm.removeView(p) } }
+        optPanel?.let { p -> flushSpec(); runCatching { wm.removeView(p) } }
         runCatching { wm.removeView(bubble) }
         runCatching { wm.removeView(panel) }
         runCatching { wm.removeView(trash) }
@@ -212,29 +213,27 @@ class OverlayService : Service() {
                     Log.d("tmcalc-ocr", "--end--")
                 }
                 val parsed = OcrParser.parse(lines, db)
-                // 룬 비교 모드(따로 켜는 옵션)일 때만 룬 비교 화면으로 읽는다. 끄면 평소처럼 소환수 계산
+                // 최적화 모드: 룬 비교 화면이면 룬 비교, 그 밖의 화면이면 내 스펙 입력 창
                 if (AppPrefs.runeMode(this)) {
                     val rs0 = RuneParser.parse(lines)
-                    RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
+                    if (rs0.isNotEmpty()) RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
                     if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
                         showRuneCompare(rs0[0], rs0[1])
                         return@addOnSuccessListener
                     }
-                    run {
-                        val rs = rs0
+                    if (rs0.isNotEmpty()) {
                         val miss = when {
-                            rs.size < 2 -> "위(장착중)·아래(새 룬) 상자 ${rs.size}개만 찾음"
-                            rs.take(2).any { it.atk == null } -> "공격력 값을 못 읽음"
-                            else -> "주 옵션 / 부 옵션 글자를 못 찾음"
+                            rs0.size < 2 -> "위(장착중)·아래(새 룬) 상자 ${rs0.size}개만 찾음"
+                            else -> "공격력 값을 못 읽음"
                         }
-                        val nl = "\n"
-                        val txt = lines.sortedBy { it.top }.joinToString(nl) { it.text }
-                        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면 같은데 못 읽었어요")
-                            .setMessage(miss + nl + "위 장착중 / 아래 새 룬이 다 보이게 띄우고 다시 눌러 주세요." + nl + nl + "읽힌 글자:" + nl + txt.take(2500))
+                        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면을 못 읽었어요")
+                            .setMessage(miss + "\n위 장착중 / 아래 새 룬이 다 보이게 띄우고 다시 눌러 주세요.")
                             .setPositiveButton("닫기", null)
-                            .setNegativeButton("룬 모드 끄기") { _, _ -> AppPrefs.setRuneMode(this, false); toast("룬 모드를 껐습니다. [계산]으로 소환수를 읽어요.") })
+                            .setNeutralButton("내 스펙") { _, _ -> showSpecInput() })
                         return@addOnSuccessListener
                     }
+                    showSpecInput()
+                    return@addOnSuccessListener
                 }
                 lastParsed = parsed
                 worstOn = false; lowerOn = false
@@ -276,9 +275,9 @@ class OverlayService : Service() {
     private fun updateBubble() {
         if (busy) return
         val lab = labMode()
-        val open = panel.visibility == View.VISIBLE || labOpen()
+        val open = panel.visibility == View.VISIBLE || labOpen() || optOpen()
         val rune = !lab && AppPrefs.runeMode(this)
-        bubble.text = if (open) "✕" else if (lab) "연구" else if (rune) "룬" else "계산"
+        bubble.text = if (open) "✕" else if (lab) "연구" else if (rune) "최적화" else "계산"
         bubble.textSize = if (open) 20f else 13f
         (bubble.background as? GradientDrawable)?.setColor(Color.parseColor(if (lab) "#B39DDB" else if (rune) "#80CBC4" else "#F2B84B"))
     }
@@ -807,6 +806,7 @@ class OverlayService : Service() {
             onTap = {
                 when {
                     labOpen() -> showLab(false)
+                    optOpen() -> showOpt(false)
                     panel.visibility == View.VISIBLE -> showPanel(false)
                     labMode() -> showLab(true)
                     else -> scan()
@@ -845,10 +845,11 @@ class OverlayService : Service() {
     }
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "runeMode") main.post { if (running) updateBubble() }
+        if (key == "runeMode") main.post { if (running) { if (optOpen()) showOpt(false); if (panel.visibility == View.VISIBLE) showPanel(false); updateBubble() } }
         if (key == "labActive") main.post {
             if (!running) return@post
             if (labOpen()) showLab(false)
+            if (optOpen()) showOpt(false)
             if (panel.visibility == View.VISIBLE) showPanel(false)
             updateBubble()
         }
@@ -1867,36 +1868,44 @@ class OverlayService : Service() {
             engine?.evaluateJavascript(js) { raw ->
                 val res = runCatching { JSONObject(org.json.JSONTokener(raw).nextValue() as String) }.getOrNull()
                 if (res == null) { toast("룬 비교 계산을 못 했습니다."); return@evaluateJavascript }
-                if (res.has("err")) {
-                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교").setMessage(res.optString("err")).setPositiveButton("닫기", null))
-                    return@evaluateJavascript
-                }
-                val g = res.optDouble("g")
-                val fmtV = { v: Double, p: Boolean -> LabData.fmt(Math.round(v * 100) / 100.0) + if (p) "%" else "" }
-                val sb = StringBuilder()
-                val ra = res.optJSONObject("a"); val rb = res.optJSONObject("b")
-                sb.append("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}\n")
-                sb.append("공식: ${res.optString("set")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}\n\n")
-                val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
-                for (i in 0 until rows.length()) {
-                    val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
-                    sb.append("${r.optString("label")}: ${fmtV(r.optDouble("old"), p)} → ${fmtV(r.optDouble("new"), p)} (${if (d >= 0) "+" else ""}${fmtV(d, p)})")
-                    if (r.optBoolean("est")) sb.append(" ≈추정")
-                    r.optString("why").takeIf { it.isNotEmpty() }?.let { sb.append(" · $it") }
-                    sb.append("\n")
-                }
-                val verdict = when { g > 0.05 -> "✅ 바꾸기 추천"; g < -0.05 -> "❌ 바꾸지 마세요"; else -> "≈ 비슷함" }
-                val title = "데미지 ${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict"
+                flushSpec(); specEdits.clear()
+                if (optPanel == null) buildOpt()
+                optBody.removeAllViews()
                 val decks = res.optJSONArray("decks") ?: org.json.JSONArray()
-                val b2 = android.app.AlertDialog.Builder(ui).setTitle(title).setMessage(sb.toString()).setPositiveButton("닫기", null)
-                    .setNegativeButton("룬 모드 끄기") { _, _ -> AppPrefs.setRuneMode(this@OverlayService, false); toast("룬 모드를 껐습니다. [계산]으로 소환수를 읽어요.") }
-                if (decks.length() > 1) b2.setNeutralButton("덱 바꾸기") { _, _ ->
+                val btns = ArrayList<Pair<String, () -> Unit>>()
+                btns += "내 스펙" to { showSpecInput() }
+                if (decks.length() > 1) btns += "덱" to {
                     val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
                     overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
                         engine?.evaluateJavascript("runeSetDeck(${JSONObject.quote(decks.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
                     })
                 }
-                overlayDialog(b2)
+                optHeader("룬 비교", btns)
+                fun line(t: String, size: Float = 13f, color: Int = Color.WHITE, bold: Boolean = false) = optBody.addView(TextView(ui).apply {
+                    text = t; textSize = size; setTextColor(color); if (bold) typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(2), 0, dp(2))
+                })
+                if (res.has("err")) {
+                    line(res.optString("err"))
+                    showOpt(true); return@evaluateJavascript
+                }
+                val g = res.optDouble("g")
+                val fmtV = { v: Double, p: Boolean -> LabData.fmt(Math.round(v * 100) / 100.0) + if (p) "%" else "" }
+                val ra = res.optJSONObject("a"); val rb = res.optJSONObject("b")
+                val verdict = when { g > 0.05 -> "바꾸기 추천"; g < -0.05 -> "바꾸지 마세요"; else -> "비슷함" }
+                val col = Color.parseColor(when { g > 0.05 -> "#81C784"; g < -0.05 -> "#E57373"; else -> "#9A9DA3" })
+                line("새 룬으로 바꾸면 덱 데미지", 12f, Color.parseColor("#9A9DA3"))
+                line("${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict", 22f, col, true)
+                line("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}", 12f)
+                line("공식: ${res.optString("set")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}", 11f, Color.parseColor("#9A9DA3"))
+                val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
+                for (i in 0 until rows.length()) {
+                    val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
+                    val sb = StringBuilder("${r.optString("label")}: ${fmtV(r.optDouble("old"), p)} → ${fmtV(r.optDouble("new"), p)} (${if (d >= 0) "+" else ""}${fmtV(d, p)})")
+                    if (r.optBoolean("est")) sb.append(" ≈추정")
+                    r.optString("why").takeIf { it.isNotEmpty() }?.let { sb.append(" · $it") }
+                    line(sb.toString(), 12f)
+                }
+                showOpt(true)
             }
         }
     }
@@ -1962,7 +1971,182 @@ class OverlayService : Service() {
             .setNegativeButton("취소", null))
     }
 
-    /** 게임 위(레이어)에서는 보통 대화상자를 못 띄우므로 레이어 종류로 띄운다 */
+    // ---------------------------------------------------------------- 최적화 창: 내 스펙 입력 · 룬 비교 결과 (끌어서 옮기는 창 + 👁)
+    private var optPanel: LinearLayout? = null
+    private var optParams: WindowManager.LayoutParams? = null
+    private lateinit var optTitle: TextView
+    private lateinit var optBtns: LinearLayout
+    private lateinit var optBody: LinearLayout
+    private var specTab = 0
+    private val specEdits = LinkedHashMap<String, EditText>()
+    private val specSave = Runnable { flushSpec() }
+
+    private fun optOpen() = optPanel?.visibility == View.VISIBLE
+
+    private fun showOpt(show: Boolean) {
+        if (show && optPanel == null) buildOpt()
+        val v = optPanel ?: return
+        val p = optParams ?: return
+        if (!show) flushSpec()
+        v.visibility = if (show) View.VISIBLE else View.GONE
+        // 칸에 적으려면 창이 포커스를 받아야 한다. 닫으면 게임에 돌려준다
+        p.flags = if (show) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        runCatching { wm.updateViewLayout(v, p) }
+        if (!show) getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0)
+        updateBubble()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun buildOpt() {
+        val dm = resources.displayMetrics
+        val box = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            background = round(0xFF2B2D31.toInt(), 14)
+            setPadding(dp(12), dp(8), dp(12), dp(10))
+            visibility = View.GONE
+        }
+        val params = WindowManager.LayoutParams(
+            minOf(dm.widthPixels - dp(16), dp(400)), ViewGroup.LayoutParams.WRAP_CONTENT, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = dp(8)
+            y = dp(40)
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+        }
+        val header = LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        header.addView(eyeButton(box))
+        optTitle = TextView(ui).apply {
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(OPT_ACC)
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        header.addView(optTitle)
+        optBtns = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+        header.addView(optBtns)
+        header.setOnTouchListener(DragListener(params, box, onTap = {}, onLongPress = {}))
+        box.addView(header)
+        val maxH = (dm.heightPixels * 0.6).toInt()
+        val scroll = ScrollView(ui)
+        optBody = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(optBody)
+        box.addView(scroll, LinearLayout.LayoutParams(-1, -2))
+        box.viewTreeObserver.addOnGlobalLayoutListener {
+            val want = if (optBody.height > maxH) maxH else ViewGroup.LayoutParams.WRAP_CONTENT
+            if (scroll.layoutParams.height != want) scroll.layoutParams = scroll.layoutParams.apply { height = want }
+        }
+        optPanel = box; optParams = params
+        wm.addView(box, params)
+        bringBubbleToFront()
+    }
+
+    private fun optHeader(title: String, btns: List<Pair<String, () -> Unit>> = emptyList()) {
+        optTitle.text = title
+        optBtns.removeAllViews()
+        for ((l, f) in btns) optBtns.addView(headerButton(l, f))
+        optBtns.addView(headerButton("접기") { showOpt(false) })
+    }
+
+    /** 적은 값을 최적화 › 내 스펙(spec.st)에 저장. 칠 때마다 잠깐 뒤에, 탭을 바꾸거나 닫을 때 바로 */
+    private fun flushSpec() {
+        main.removeCallbacks(specSave)
+        if (specEdits.isEmpty()) return
+        val vals = specEdits.map { (k, e) -> k to e.text.toString().trim() }
+        LabData.update(this) { d ->
+            val sp = d.optJSONObject("spec") ?: JSONObject().also { d.put("spec", it) }
+            val s2 = sp.optJSONObject("st") ?: JSONObject().also { sp.put("st", it) }
+            for ((k, t) in vals) {
+                val n = if (t.isEmpty()) null else LabData.number(t)
+                if (n == null) s2.remove(k) else s2.put(k, n)
+            }
+        }
+    }
+
+    /**
+     * 게임 위 '내 스펙': 최적화 › 내 스펙(테이밍마스터 기본 공식)과 같은 값을 게임 화면을 보면서 적는다.
+     * 키는 lab.html TM2_SET 입력 id 와 같고, 속성·타입별은 'id@화염' 처럼 저장 (spec.st).
+     */
+    private fun showSpecInput(tab: Int = specTab) {
+        flushSpec()
+        specEdits.clear()
+        specTab = tab.coerceIn(0, 3)
+        if (optPanel == null) buildOpt()
+        val elems = listOf("화염", "물", "바람", "빛", "어둠")
+        val types = listOf("야수", "마법", "자연", "수중", "던전", "비행")
+        // (탭 이름, 어디서 보는지, 칸들) — 칸: (키, 이름, 0 = 한 칸 / 1 = 속성마다 / 2 = 타입마다)
+        val groups = listOf(
+            Triple("상태창", "캐릭터 상태창에 보이는 값", listOf(Triple("g:rune:atk:flat", "룬 공격", 0), Triple("g:rune:dmg:pct", "룬 피해증가 %", 0), Triple("g:rune:ae:pct", "룬 모든속성 강화 %", 0),
+                Triple("g:rune:at:pct", "룬 모든타입 강화 %", 0), Triple("g:rune:cd:pct", "룬 치명타 피해 %", 0), Triple("g:elv:all:flat", "모든능력치", 0),
+                Triple("g:buff:party:pct", "파티 피해 증가 %", 0), Triple("p:amp", "성장증폭 %", 0),
+                Triple("p:elemS:pct", "속성 강화 % (도감 제외)", 1), Triple("p:elem:pct", "룬 속성 강화 %", 1), Triple("p:type:pct", "룬 타입 강화 %", 2))),
+            Triple("무기", "무기 상세 (상태창에 안 보여요)", listOf(Triple("g:wpn:atkp:pct", "공격 %", 0))),
+            Triple("코스튬", "코스튬 효과", listOf(Triple("g:cos:at:pct", "모든 타입 강화 %", 0), Triple("p:elemC:pct", "파티 속성 강화 %", 1))),
+            Triple("도감", "소환수 › 도감 미션 › 누적 보너스", listOf(Triple("g:dogam:dmg:pct", "피해증가 %", 0), Triple("g:dogam:ae:pct", "모든 속성 강화 %", 0),
+                Triple("g:dogam:at:pct", "모든 타입 강화 %", 0), Triple("g:dogam:cd:pct", "치명타 피해 %", 0),
+                Triple("p:elemD:pct", "속성 강화 %", 1), Triple("p:typeD:pct", "타입 강화 %", 2))))
+        optHeader("내 스펙")
+        optBody.removeAllViews()
+        // 탭
+        optBody.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            groups.forEachIndexed { i, g ->
+                val on = i == specTab
+                addView(TextView(ui).apply {
+                    text = g.first; textSize = 13f; gravity = Gravity.CENTER
+                    setTextColor(if (on) Color.parseColor("#17181B") else Color.parseColor("#C8CACF"))
+                    typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    setPadding(0, dp(7), 0, dp(7))
+                    background = round(if (on) OPT_ACC else 0xFF1E1F22.toInt(), 8)
+                    setOnClickListener { if (!on) showSpecInput(i) }
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i < groups.size - 1) marginEnd = dp(4) })
+            }
+        })
+        val (_, where, fields) = groups[specTab]
+        optBody.addView(TextView(ui).apply { text = "$where · 적으면 바로 저장돼요"; textSize = 11f; setTextColor(Color.parseColor("#9A9DA3")); setPadding(0, dp(6), 0, dp(2)) })
+        val st = LabData.load(this).optJSONObject("spec")?.optJSONObject("st") ?: JSONObject()
+        fun cur(k: String) = if (st.has(k)) LabData.fmt(st.optDouble(k)).replace(",", "") else ""
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: Editable?) { main.removeCallbacks(specSave); main.postDelayed(specSave, 600) }
+        }
+        fun numInput(k: String) = labInput("0", cur(k)).also {
+            specEdits[k] = it
+            it.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            it.gravity = Gravity.END
+            it.addTextChangedListener(watcher)
+        }
+        for ((key, name, kind) in fields) {
+            if (kind == 0) {
+                optBody.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(TextView(ui).apply { text = name; textSize = 13f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(numInput(key), LinearLayout.LayoutParams(dp(110), -2))
+                })
+            } else {
+                optBody.addView(labLabel(name))
+                optBody.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    for (n in if (kind == 1) elems else types) addView(LinearLayout(ui).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(TextView(ui).apply { text = n; textSize = 10f; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#9A9DA3")) }, LinearLayout.LayoutParams(-1, -2))
+                        addView(numInput("$key@$n").also { it.textSize = 13f; it.gravity = Gravity.CENTER; it.setPadding(dp(2), dp(4), dp(2), dp(4)) }, LinearLayout.LayoutParams(-1, -2))
+                    }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(2) })
+                })
+            }
+        }
+        showOpt(true)
+    }
+
     private fun overlayDialog(b: android.app.AlertDialog.Builder): android.app.AlertDialog {
         val d = b.create()
         d.window?.setType(overlayType())
@@ -2040,10 +2224,6 @@ class OverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-        })
-        header.addView(headerButton("룬 모드") {
-            val on = !AppPrefs.runeMode(this); AppPrefs.setRuneMode(this, on)
-            toast(if (on) "룬 모드: 룬 비교 화면을 띄우고 [룬]을 누르세요." else "룬 모드를 껐습니다.")
         })
         header.addView(headerButton("다시읽기") { scan() })
         header.addView(headerButton("접기") { showPanel(false) })
@@ -2459,6 +2639,7 @@ class OverlayService : Service() {
         var running = false
 
         private val LAB_ACC = Color.parseColor("#B39DDB")
+        private val OPT_ACC = Color.parseColor("#80CBC4")
     }
 }
 

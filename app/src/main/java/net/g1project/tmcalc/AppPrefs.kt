@@ -21,7 +21,7 @@ object AppPrefs {
 
     private const val RUNE_MODE = "runeMode"
 
-    /** 룬 비교 모드: 켜면 레이어 버튼 [룬] → 룬 비교 화면을 읽어 바꾸면 몇 % 인지 (끄면 평소처럼 소환수 계산) */
+    /** 게임 위 버튼 최적화 모드: 룬 비교 화면이면 바꾸면 몇 %, 그 밖의 화면이면 내 스펙 입력 (끄면 성장률 계산) */
     fun runeMode(c: Context): Boolean = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(RUNE_MODE, false)
 
     fun setRuneMode(c: Context, on: Boolean) {

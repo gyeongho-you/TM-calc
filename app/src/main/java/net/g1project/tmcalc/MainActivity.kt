@@ -33,6 +33,10 @@ class MainActivity : Activity() {
     private lateinit var overlayBtn: Button
     private lateinit var a11yBtn: Button
     private lateinit var startBtn: Button
+    private lateinit var modeCalc: TextView
+    private lateinit var modeOpt: TextView
+    private lateinit var labLine: LinearLayout
+    private lateinit var labText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +58,8 @@ class MainActivity : Activity() {
                 "· 버튼은 끌어서 옮길 수 있습니다.\n" +
                 "· 잘못 읽힌 값은 결과창에서 직접 고치면 바로 다시 계산됩니다.\n" +
                 "· 화면은 '계산'을 누를 때만 한 장 찍습니다 (계속 화면 공유하지 않아 게임이 느려지지 않음).\n" +
-                "· 찍은 화면은 폰 안에서만 처리되며 어디에도 전송되지 않습니다.\n"
+                "· 찍은 화면은 폰 안에서만 처리되며 어디에도 전송되지 않습니다.\n" +
+                "· 아래에서 [최적화]를 고르면 버튼이 '최적화'가 됩니다. 룬 비교 화면에서 누르면 바꾸면 몇 %인지, 그 밖의 화면에서 누르면 내 스펙 입력 창이 뜹니다.\n"
             textSize = 14f
         })
         status = TextView(this).apply { textSize = 14f; setPadding(0, 0, 0, (16 * dp).toInt()) }
@@ -73,14 +78,57 @@ class MainActivity : Activity() {
             setOnClickListener { openA11ySettings() }
         }
         root.addView(a11yBtn, spaced())
+        root.addView(TextView(this).apply {
+            text = "게임 위 버튼"
+            textSize = 13f
+            setTextColor(Color.parseColor("#9A9DA3"))
+            setPadding(0, (18 * dp).toInt(), 0, (6 * dp).toInt())
+        })
+        fun segBtn(label: String, onClick: () -> Unit) = TextView(this).apply {
+            text = label
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(0, (11 * dp).toInt(), 0, (11 * dp).toInt())
+            setOnClickListener { onClick() }
+        }
+        modeCalc = segBtn("성장률 계산") { setMode(false) }
+        modeOpt = segBtn("최적화 (스펙 · 룬 비교)") { setMode(true) }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding((3 * dp).toInt(), (3 * dp).toInt(), (3 * dp).toInt(), (3 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.parseColor("#1E1F22")); cornerRadius = 10 * dp }
+            addView(modeCalc, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (3 * dp).toInt() })
+            addView(modeOpt, LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(-1, -2))
+        // 연구실에서 실험을 [시작]했을 때만 보이는 줄
+        labText = TextView(this).apply { textSize = 14f; setTextColor(Color.WHITE) }
+        labLine = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((12 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1F22")); cornerRadius = 10 * dp
+                setStroke((1 * dp).toInt(), Color.parseColor("#B39DDB"))
+            }
+            addView(labText, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Button(this@MainActivity).apply {
+                text = "멈추기"
+                setOnClickListener {
+                    AppPrefs.setLabActive(this@MainActivity, null)
+                    Toast.makeText(this@MainActivity, "실험을 멈췄어요.", Toast.LENGTH_SHORT).show()
+                    refresh()
+                }
+            })
+        }
+        root.addView(labLine, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (8 * dp).toInt() })
         startBtn = Button(this).apply {
-            text = "3. 계산 레이어 시작"
+            text = "3. 레이어 시작"
             setOnClickListener { startOverlay() }
         }
         root.addView(startBtn, spaced())
-        // 도감 관리 · 성장률로 추정 · 설정은 버튼 하나(메뉴)로 모은다
+        // 최적화 · 소환수 · 설정은 버튼 하나(메뉴)로 모은다
         root.addView(Button(this).apply {
-            text = "메뉴 (도감 관리 · 추정 · 성장증폭 설정)"
+            text = "메뉴"
             setOnClickListener { openMenu() }
         }, spaced())
         root.addView(Button(this).apply {
@@ -133,6 +181,21 @@ class MainActivity : Activity() {
         overlayBtn.isEnabled = !canOverlay
         a11yBtn.isEnabled = !canShot
         startBtn.isEnabled = canOverlay && canShot
+        overlayBtn.text = if (canOverlay) "✓ 다른 앱 위에 표시 권한 켜짐" else "1. 다른 앱 위에 표시 권한 허용"
+        a11yBtn.text = if (canShot) "✓ 접근성 화면 캡처 켜짐" else "2. 접근성에서 화면 캡처 켜기"
+        // 버튼 모드: 연구 중이면 고르기는 흐리게, 연구 줄을 보임
+        val lab = AppPrefs.labActive(this)
+        val opt = AppPrefs.runeMode(this)
+        val dpx = resources.displayMetrics.density
+        fun paint(v: TextView, on: Boolean, color: String) {
+            v.setTextColor(if (on) Color.parseColor("#1E1F22") else Color.parseColor("#9A9DA3"))
+            v.typeface = if (on) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            v.background = if (on) android.graphics.drawable.GradientDrawable().apply { setColor(Color.parseColor(color)); cornerRadius = 8 * dpx } else null
+        }
+        paint(modeCalc, !opt, "#F2B84B"); paint(modeOpt, opt, "#80CBC4")
+        (modeCalc.parent as View).alpha = if (lab != null) 0.4f else 1f
+        labLine.visibility = if (lab != null) View.VISIBLE else View.GONE
+        if (lab != null) labText.text = "연구 중 · " + (LabData.session(LabData.load(this), lab)?.optString("name")?.takeIf { it.isNotEmpty() } ?: "실험")
         status.text = when {
             !canOverlay -> "먼저 '다른 앱 위에 표시' 권한을 켜 주세요."
             !canShot -> "접근성 설정의 '설치된 앱'에서 '${getString(R.string.app_name)}'을(를) 켜 주세요."
@@ -160,23 +223,36 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** 게임 위 버튼: false = 성장률 계산, true = 최적화 (룬 비교 화면이면 룬 비교, 아니면 내 스펙 입력) */
+    private fun setMode(opt: Boolean) {
+        if (AppPrefs.labActive(this) != null) {
+            Toast.makeText(this, "연구 중에는 버튼이 [연구]예요. [멈추기]를 누르면 고른 모드로 돌아가요.", Toast.LENGTH_SHORT).show()
+        }
+        AppPrefs.setRuneMode(this, opt)
+        refresh()
+    }
+
     private fun openMenu() {
         AlertDialog.Builder(this)
             .setTitle("메뉴")
-            .setItems(arrayOf("도감 (보기 / 수정)", "성장률로 추정", "성장증폭 설정", "표시 설정", "저장 목록 내보내기 / 올리기", "최적화 (스펙 효율 · 연구실)",
-                "룬 비교 모드: " + if (AppPrefs.runeMode(this)) "켜짐 (끄기)" else "꺼짐 (켜기)", "읽은 룬 기록 (임시)")) { _, which ->
+            .setItems(arrayOf("최적화 · 연구실", "소환수  ›", "설정  ›", "읽은 룬 기록 (임시)")) { _, which ->
                 when (which) {
-                    0 -> startActivity(Intent(this, PetEditorActivity::class.java))
-                    1 -> openEstimate()
-                    2 -> openSettings()
-                    3 -> openDisplaySettings()
-                    4 -> openPresetFiles()
-                    5 -> openLab()
-                    7 -> openRuneLog()
-                    else -> { val on = !AppPrefs.runeMode(this); AppPrefs.setRuneMode(this, on)
-                        Toast.makeText(this, if (on) "룬 비교 모드를 켰어요. 레이어 버튼이 [룬]이 되고, 룬 비교 화면을 읽어요." else "룬 비교 모드를 껐어요.", Toast.LENGTH_LONG).show() }
+                    0 -> openLab()
+                    1 -> subMenu("소환수", arrayOf("도감 (보기 / 수정)", "성장률로 추정", "저장 목록 내보내기 / 올리기")) { w ->
+                        when (w) { 0 -> startActivity(Intent(this, PetEditorActivity::class.java)); 1 -> openEstimate(); else -> openPresetFiles() }
+                    }
+                    2 -> subMenu("설정", arrayOf("성장증폭 설정", "표시 설정")) { w -> if (w == 0) openSettings() else openDisplaySettings() }
+                    else -> openRuneLog()
                 }
             }
+            .show()
+    }
+
+    /** 하위 메뉴: [뒤로]로 메뉴로 돌아감 */
+    private fun subMenu(title: String, items: Array<String>, onPick: (Int) -> Unit) {
+        AlertDialog.Builder(this).setTitle(title)
+            .setItems(items) { _, w -> onPick(w) }
+            .setNegativeButton("뒤로") { _, _ -> openMenu() }
             .show()
     }
 

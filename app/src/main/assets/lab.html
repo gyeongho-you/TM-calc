@@ -891,7 +891,7 @@ const HELP={
 <p><b>조건이 있어야 켜지는 능력</b>("체력 50% 이하일 때" 등)은 체크해 두면, 최적화 화면에서 켬/끔을 골라 두 경우를 각각 계산해 볼 수 있어요.</p>`],
   spec:['최적화 사용법',`
 <p>내 스펙에서 <b>무엇을 올리면 이득인지</b>, 덱 소환수가 얼마나 센지 보는 곳이에요. 기본으로 <b>테이밍마스터 기본 공식</b>(실측으로 확정)을 써요. 연구실에서 만든 공식 세트를 [불러오기]하면 바꿔 쓸 수 있어요.</p>
-<p><b>1 내 스펙</b> — 보이는 값 그대로 적어요 (적은 값은 저장돼요)<br>
+<p><b>1 내 스펙</b> — 보이는 값 그대로 적어요 (적은 값은 저장돼요). 게임 위 [최적화] 버튼으로 게임을 보면서 적을 수도 있어요<br>
 · <b>① 상태창</b>: 룬 공격·피해증가·모든속성·모든타입·치명타 피해, 모든능력치, 파티 피해 증가, 성장증폭, 속성 강화(도감 제외 값), 룬 속성·타입 강화<br>
 · <b>② 무기</b>: 상태창에 안 보여요 — 무기 상세의 공격 %<br>
 · <b>③ 코스튬</b>: 모든 타입 강화, 파티 속성 강화<br>
@@ -906,7 +906,7 @@ const HELP={
 &nbsp;&nbsp;- 대상 방어: 덱 평균 실전투 공격의 몇 %인지 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%). 방어가 셀수록 센 소환수가 더 유리해요<br>
 · 소환수마다: 추가 치명 확률·추가 명중률(장착 스킬 등), 개체 속도(공속), <b>실제 데미지</b>(같은 대상 한 방 → 치명 배율 역산. 덱 전원 비치명을 적으면 소환수 세기도 실측으로)</p>
 <p><b>무엇을 올리면 이득?</b> 항목 하나를 조금 올렸을 때 덱 데미지가 몇 % 오르는지. 안 볼 항목은 [표에서 숨기기]. <b>바꿔 보기</b>로 여러 개를 한꺼번에 바꿔 볼 수 있어요.</p>
-<p><b>룬 비교</b>: 앱 메뉴에서 룬 비교 모드를 켜고 게임의 룬 비교 화면에서 [룬] 버튼 → 여기 스펙·덱으로 "바꾸면 +x%". 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어서 빼요 (실측).</p>
+<p><b>게임 위 [최적화] 버튼</b>: 앱 첫 화면에서 버튼을 [최적화]로 고르면 돼요. 룬 비교 화면에서 누르면 여기 스펙·덱으로 "바꾸면 +x%", 그 밖의 화면(도감·무기·코스튬·상태창)에서 누르면 <b>내 스펙</b> 창이 떠서 게임을 보면서 적을 수 있어요. 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어서 빼요 (실측).</p>
 <div class="ex"><b>기본 공식</b> (실측, 소환수 5마리 ±0.5%)<br>평타 = 실전투 공격 × (공격 합) × (1 + 무기%) × 타입 × 속성 × 피해<br>
 · 타입 = 1 + (기본 70 + 모든 타입 + 그 소환수 타입)/100<br>· 속성 = 1 + (상태창 속성 + 모든 속성 + 그 소환수 속성)/100<br>· 피해 = 1 + (피해증가 + 파티 피해 증가)/100<br>· 스킬 = 평타 × 스킬 배율, 전용 스킬(공격력 %)은 곱하기</div>`],
   optimize:['최적 셋팅',`
@@ -1034,7 +1034,7 @@ function vFront(c,v){
   const tab=LS.get('tmcalcFrontTab')||'spec'
   v.innerHTML=`<div class="seg" style="display:flex;margin-top:6px"><button style="flex:1" data-ft="spec" class="${tab==='spec'?'on':''}">스펙 효율</button><button style="flex:1" data-ft="rune" class="${tab==='rune'?'on':''}">룬 비교</button></div><div id="ftv"></div>`
   v.querySelectorAll('[data-ft]').forEach(b=>b.onclick=()=>{LS.set('tmcalcFrontTab',b.dataset.ft);render()})
-  if(tab==='rune'){$('#ftv').innerHTML=`<div class="card empty">룬 비교는 게임 위 레이어에서 룬 비교 화면을 읽어 바로 계산하는 기능이에요.<br>먼저 <button class="pri sm" id="goSpec">스펙 효율</button> 에서 내 스펙과 덱을 저장해 두세요. 룬 비교도 그 값을 그대로 써요.</div>`
+  if(tab==='rune'){$('#ftv').innerHTML=`<div class="card empty">룬 비교는 게임 위 버튼에서 해요. 앱 첫 화면에서 버튼을 <b>[최적화]</b>로 고르고, 게임의 룬 비교 화면에서 누르면 바로 계산해요.<br>먼저 <button class="pri sm" id="goSpec">스펙 효율</button> 에서 내 스펙과 덱을 저장해 두세요. 룬 비교도 그 값을 그대로 써요.</div>`
     $('#goSpec').onclick=()=>{LS.set('tmcalcFrontTab','spec');render()};return}
   vSpec($('#ftv'))
 }
@@ -1296,7 +1296,9 @@ function vSpec(v){
   const ss=$('#sSel');if(ss)ss.onchange=()=>saveSpec(p=>p.setId=ss.value)
   $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
   if($('#sDel'))$('#sDel').onclick=()=>{if(!confirm(`'${S.name}' 공식 세트를 지울까요? (내 스펙은 남아요)`))return;mutate(d=>{d.formulaSets=(d.formulaSets||[]).filter(x=>x.id!==S.id)});render()}
-  v.querySelectorAll('[data-sv]').forEach(e=>e.onchange=()=>saveSpec(p=>{p.st=p.st||{};const n=num(e.value);if(isFinite(n))p.st[e.dataset.sv]=n;else delete p.st[e.dataset.sv]}))
+  // 칠 때마다 저장 (게임으로 넘어갔다 와도 안 사라지게), 칸을 벗어나면 다시 계산해서 그림
+  const svPut=(e,p)=>{p.st=p.st||{};const n=num(e.value);if(isFinite(n))p.st[e.dataset.sv]=n;else delete p.st[e.dataset.sv]}
+  v.querySelectorAll('[data-sv]').forEach(e=>{e.oninput=()=>mutate(d=>{d.spec=d.spec||{};svPut(e,d.spec)});e.onchange=()=>saveSpec(p=>svPut(e,p))})
   v.querySelectorAll('[data-hide]').forEach(e=>e.onchange=()=>{saveSpec(p=>{const h=new Set(p.hide||[]);e.checked?h.add(e.dataset.hide):h.delete(e.dataset.hide);p.hide=[...h]});const d=[...$('#view').querySelectorAll('[data-hide]')][0];if(d)d.closest('details').open=true})
   const hA=$('#hAll');if(hA)hA.onclick=()=>{saveSpec(p=>p.hide=[]);const d=$('#view').querySelector('[data-hide]');if(d)d.closest('details').open=true}
   v.querySelectorAll('[data-ss]').forEach(e=>e.onchange=()=>saveSpec(p=>{p.steps=p.steps||{};const n=num(e.value);if(isFinite(n)&&n)p.steps[e.dataset.ss]=n;else delete p.steps[e.dataset.ss]}))
