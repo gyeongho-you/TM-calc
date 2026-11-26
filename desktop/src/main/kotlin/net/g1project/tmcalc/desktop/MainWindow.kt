@@ -768,7 +768,7 @@ class MainWindow(
                 for (pr in presets()) {
                     val pt = pets.db.find(pr.name)
                     val f = runCatching { 1 + growthAmp() * Calculator.scoreFactor(Calculator.abilityScore(pr.stats)) }.getOrDefault(1.0)
-                    sv.put(org.json.JSONObject().put("label", pr.label).put("memo", pr.memo).put("name", pr.name).put("level", pr.level)
+                    sv.put(org.json.JSONObject().put("label", pr.label).put("memo", pr.memo).put("name", pr.name).put("breaks", pr.breaks).put("level", pr.level)
                         .put("element", pt?.element ?: "").put("type", pt?.type ?: "").put("stats", org.json.JSONArray(pr.stats.toList()))
                         .put("combat", org.json.JSONArray(pr.stats.map { Math.round(it * f * 10) / 10.0 }))
                         .put("amp", Math.round(growthAmp() * 1000) / 10.0))

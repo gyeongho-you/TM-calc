@@ -27,7 +27,33 @@ class LabActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
-            webChromeClient = WebChromeClient()
+            // 기본 알림창은 제목이 'file:// 페이지 내용'으로 떠서, 앱 대화상자로 직접 띄움 (제목 없음)
+            webChromeClient = object : WebChromeClient() {
+                override fun onJsAlert(view: WebView, url: String?, message: String?, result: android.webkit.JsResult): Boolean {
+                    android.app.AlertDialog.Builder(this@LabActivity).setMessage(message)
+                        .setPositiveButton("확인") { _, _ -> result.confirm() }
+                        .setOnCancelListener { result.confirm() }.show()
+                    return true
+                }
+                override fun onJsConfirm(view: WebView, url: String?, message: String?, result: android.webkit.JsResult): Boolean {
+                    android.app.AlertDialog.Builder(this@LabActivity).setMessage(message)
+                        .setPositiveButton("확인") { _, _ -> result.confirm() }
+                        .setNegativeButton("취소") { _, _ -> result.cancel() }
+                        .setOnCancelListener { result.cancel() }.show()
+                    return true
+                }
+                override fun onJsPrompt(view: WebView, url: String?, message: String?, defaultValue: String?, result: android.webkit.JsPromptResult): Boolean {
+                    val input = android.widget.EditText(this@LabActivity).apply { setText(defaultValue ?: ""); setSingleLine(); selectAll() }
+                    val box = android.widget.FrameLayout(this@LabActivity).apply {
+                        val pad = (20 * resources.displayMetrics.density).toInt(); setPadding(pad, pad / 2, pad, 0); addView(input)
+                    }
+                    android.app.AlertDialog.Builder(this@LabActivity).setTitle(message).setView(box)
+                        .setPositiveButton("확인") { _, _ -> result.confirm(input.text.toString()) }
+                        .setNegativeButton("취소") { _, _ -> result.cancel() }
+                        .setOnCancelListener { result.cancel() }.show()
+                    return true
+                }
+            }
             addJavascriptInterface(Bridge(), "TMCalc")
             loadUrl("file:///android_asset/lab.html")
         }
@@ -82,7 +108,7 @@ class LabActivity : Activity() {
             val arr = org.json.JSONArray()
             for (p in AppPrefs.presets(this@LabActivity)) {
                 val pet = db.find(p.name)
-                arr.put(JSONObject().put("label", p.label).put("memo", p.memo).put("name", p.name).put("level", p.level)
+                arr.put(JSONObject().put("label", p.label).put("memo", p.memo).put("name", p.name).put("level", p.level).put("breaks", p.breaks)
                     .put("element", pet?.element ?: "").put("type", pet?.type ?: "").put("grade", pet?.grade ?: "")
                     .put("stats", org.json.JSONArray(p.stats.toList()))
                     .put("combat", combatOf(p.stats, AppPrefs.growthAmp(this@LabActivity)))
