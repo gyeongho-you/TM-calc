@@ -1391,7 +1391,10 @@ class OverlayService : Service() {
                 measureEdits.forEach { (dk, e) ->
                     val crit = dk.startsWith("c:"); val id = dk.substring(2)
                     // 1억210만처럼 뒷자리가 숨겨진 값은 범위 양 끝을 같이 넣음 (평균 = 가운데, 흔들림 = 범위)
-                    val a = e.text.toString().trim().split(Regex("[\\s/]+")).filter { it.isNotEmpty() }.flatMap { tok ->
+                    // '1억 4688만'처럼 띄어 쓴 큰 단위는 한 숫자로 붙임
+                    val toks = e.text.toString().trim().split(Regex("[\\s/]+")).filter { it.isNotEmpty() }.fold(mutableListOf<String>()) { o, t ->
+                        if (o.isNotEmpty() && Regex("[억조경]$").containsMatchIn(o.last()) && t[0].isDigit() && !Regex("[억조경]").containsMatchIn(t)) o[o.size - 1] = o.last() + t else o += t; o }
+                    val a = toks.flatMap { tok ->
                         val rn = RuneParser.num(tok)
                         if (rn != null && !rn.exact && !rn.pct) listOf(rn.lo, rn.hi) else listOfNotNull(LabData.number(tok)) }
                     if (a.isNotEmpty()) {

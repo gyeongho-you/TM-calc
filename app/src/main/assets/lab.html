@@ -175,6 +175,8 @@ function makeF(sp){
     case'pow':return(p,x)=>Math.exp(p[0]+x.reduce((s,v,i)=>s+p[i+1]*Math.log(v),0))
     case'red':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.O,p,1,x))*K/(K+x[sp.d])}
     case'red6':return(p,x)=>{const K=p[p.length-1];return(p[0]+sum(sp.Fo,p,1,x))*(1+sum(sp.P,p,1+sp.Fo.length,x,100))*K/(K+x[sp.d])}
+    case'atkdef':return(p,x)=>{const nF=sp.F.length;let a=p[0]+sum(sp.F,p,1,x);a=a*(1+p[1+nF]*x[sp.w]/100)-p[2+nF];let o=3+nF
+      for(const g of sp.g){a*=1+sum(g,p,o,x,100);o+=g.length}return a}
     case'gp':{const fn=sp.noA?new Function('c','x',`return c[${sp.k}]*${sp.body}`):new Function('c','x',`return c[${sp.k}]+c[${sp.k+1}]*${sp.body}`);return fn}
   }
   return null
@@ -228,6 +230,24 @@ function fitModels(vars,X,y,tol){
         let o=1+F.length
         const parts=g.map(grp=>{const s='(1'+grp.map((i,j)=>term(q[o+j],i)+pc(i)).join('')+')';o+=grp.length;return s})
         return '결과 = ('+coef(q[0])+F.map((i,j)=>term(q[1+j],i)).join('')+') × '+parts.join(' × ')},true,sp3)
+    }
+  }
+  // 3-2) 공격 × (1 + 공격%) − 방어, 나머지 %는 의미별 묶음(타입 / 속성 / 피해)으로 곱 — 방어를 빼는 게임용
+  if(P.length&&lin&&F.length){
+    const Wc=P.filter(i=>/공격.*%|무기/.test(vars[i].name)).slice(0,2)
+    for(const w of Wc){
+      const rest=P.filter(i=>i!==w),key=i=>/타입/.test(vars[i].name)?'t':/속성/.test(vars[i].name)?'e':'d'
+      const gs=[...new Set(rest.map(key))].map(k=>rest.filter(i=>key(i)===k))
+      const sp7={type:'atkdef',F,w,g:gs},f7=makeF(sp7)
+      const A0=X.map(x=>lin[0]+F.reduce((t,i)=>t+lin[i+1]*x[i],0)),AX=X.map((x,j)=>A0[j]*(1+x[w]/100)),mAX=AX.reduce((t,v)=>t+v,0)/n||1
+      let best=null
+      for(const fr of [0,0.3,0.5,0.7]){
+        const q0=[lin[0],...F.map(i=>lin[i+1]),1,fr*mAX,...gs.flat().map(()=>0.5)]
+        const r=lm(f7,q0,X,y);if(isFinite(r.sse)&&(!best||r.sse<best.sse))best=r}
+      if(!best)continue
+      add('공격 × (1 + 공격%) − 방어, 묶음 곱','공격 합에 공격 %를 곱하고 방어를 뺀 뒤, 타입·속성·피해 %는 묶음마다 더해서 곱함',f7,best.p,q=>{const nF=F.length;let o=3+nF
+        const parts=gs.map(grp=>{const t='(1'+grp.map((i,j)=>term(q[o+j],i)+pc(i)).join('')+')';o+=grp.length;return t})
+        return '결과 = (('+coef(q[0])+F.map((i,j)=>term(q[1+j],i)).join('')+') × (1'+term(q[1+nF],w)+pc(w)+') − '+coef(q[2+nF])+')'+(parts.length?' × '+parts.join(' × '):'')},true,sp7)
     }
   }
   // 4) 거듭제곱 (모두 곱): 값이 모두 양수일 때
@@ -601,6 +621,7 @@ function tm2Template(){
       {id:'crit',name:'치명',sys:true,items:[{id:'rate',name:'확률',unit:'pct'},{id:'dmg',name:'피해 (예전 방식)',unit:'pct'}]},
       {id:'wpn',name:'무기',reduce:false,items:[it('atkp','공격 % (상태창에 안 보임, 무기에서)','pct')]},
       {id:'elv',name:'속성 강화',reduce:false,items:[...TM2_ELEM.map(([i,n])=>it(i,n,'pct')),it('all','모든능력치','flat')]},
+      {id:'dogam',name:'도감',reduce:false,items:[it('atk','공격','flat'),it('dmg','피해증가','pct'),...TM2_ELEM.map(([i,n])=>it(i,n+' 속성 강화','pct')),it('ae','모든 속성 강화','pct'),...TM2_TYPE.map(([i,n])=>it(i,n+' 타입 강화','pct')),it('at','모든 타입 강화','pct')]},
       {id:'buff',name:'특수 버프',reduce:false,items:[it('party','파티 피해 증가','flat')]},
       {id:'base',name:'기본능력치',reduce:false,items:[it('atk','공격력','flat')]}],
     measures:[{id:'basic',name:'평타',basePct:'100',crit:'none'},{id:'skill',name:'스킬',basePct:'100',crit:'none'}]}}
@@ -609,6 +630,9 @@ function tm2CritMigrate(){for(const t of data.templates){if(!t.tm2)continue
   const R=t.groups.find(g=>g.id==='rune');if(R&&!(R.items||[]).some(i=>i.id==='cd'))R.items.push({id:'cd',name:'치명타 피해',unit:'pct',reduce:false})
   const C=t.groups.find(g=>g.id==='crit'),D=C&&(C.items||[]).find(i=>i.id==='dmg');if(D&&D.name==='피해')D.name='피해 (예전 방식)'
   t.runeMap=t.runeMap||{};for(const k of ['치명타피해','치명타 피해'])if(!t.runeMap[k]||t.runeMap[k]==='g:crit:dmg:pct')t.runeMap[k]='g:rune:cd:pct'
+  // 도감 누적 보너스 (상태창에 안 보이는 타입 강화·피해증가·속성 강화가 여기서 옴). 예전 '타입 강화(tlv)' 분류는 도감으로 바꿈
+  t.groups=t.groups.filter(g=>g.id!=='tlv')
+  if(!t.groups.some(g=>g.id==='dogam')){const it=(id,name,unit)=>({id,name,unit,reduce:false}),i=t.groups.findIndex(g=>g.id==='buff');t.groups.splice(i<0?t.groups.length:i,0,{id:'dogam',name:'도감',reduce:false,items:[it('atk','공격','flat'),it('dmg','피해증가','pct'),...TM2_ELEM.map(([i,n])=>it(i,n+' 속성 강화','pct')),it('ae','모든 속성 강화','pct'),...TM2_TYPE.map(([i,n])=>it(i,n+' 타입 강화','pct')),it('at','모든 타입 강화','pct')]})}
   // 상태창 속성 강화(화염~어둠)는 % (틀 단위만 맞춤)
   const E=t.groups.find(g=>g.id==='elv'),ids=new Set(TM2_ELEM.map(([i])=>i));if(E)(E.items||[]).forEach(i=>{if(ids.has(i.id))i.unit='pct'})}}
 /** 예전 자료의 속성 '불' → 게임 표기 '화염' */
@@ -660,7 +684,8 @@ function copyText(t){
 }
 /** 잰 값 칸: 여러 번 잰 숫자 → [숫자…] (띄어쓰기·/ 로 구분, 쉼표는 천 단위 구분) */
 /** 1억210만처럼 단위로 끝나면 그 아래가 숨겨진 값 (내림) → [최소, 최대] 둘 다 넣어 평균 = 가운데, 흔들림 = 범위 */
-function nums(text){return String(text||'').trim().split(/[\s/]+/).flatMap(tk=>{const v=num(tk);if(!isFinite(v))return[]
+function joinUnits(L){const o=[];for(const t of L){if(o.length&&/[억조경]$/.test(o[o.length-1])&&/^[0-9]/.test(t)&&!/[억조경]/.test(t))o[o.length-1]+=t;else o.push(t)}return o}
+function nums(text){return joinUnits(String(text||'').trim().split(/[\s/]+/)).flatMap(tk=>{const v=num(tk);if(!isFinite(v))return[]
   const m=String(tk).replace(/[\s,+]/g,'').match(/([0-9.]*)([만억조경])$/);if(!m)return[v]
   const u={'만':1e4,'억':1e8,'조':1e12,'경':1e16}[m[2]],d=(m[1].split('.')[1]||'').length,res=u/10**d
   return res>1?[v,v+res-1]:[v]})}
@@ -759,6 +784,7 @@ const HELP={
 <p><b>비치명 / 치명 칸</b>: 치명이 안 터진 숫자는 비치명 칸, 터진 숫자는 치명 칸. 본 것만 적고, 섞지만 않으면 돼요.</p>`],
   startState:['시작 상태란?',`
 <p>실험을 시작할 때 <b>이미 붙어 있던 양</b>이에요. 상태창에 보이는 지금 값을 그대로 적어요.</p>
+<p><b>도감</b>: 소환수 › 도감 미션 › 누적 보너스 옵션의 값 (공격, 피해증가, 속성·타입 강화). 상태창에 안 보여서 따로 적어요.<br><b>타입 강화</b>는 게임이 기본으로 약 70%를 더 붙여요 (실측: 소환수·대상과 무관). 그래서 타입 강화 1%의 효과는 생각보다 작아요.</p>
 <p><b>소환수 공통 › 성장증폭</b>: 모든 소환수에 같이 붙는 값이라 소환수 칸이 아니라 여기 있어요. 바뀌면 기록에서 고쳐요.</p>
 <p><b>치명</b>: 테이밍마스터는 치명 피해가 소환수·상대에 따라 달라서 여기 적지 않아요. 치명이 터진 데미지는 기록에서 치명 칸에 따로 적어요. 룬의 '치명타 피해'는 룬 옵션 칸에 적어요.</p>
 <p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요.</p>
@@ -784,6 +810,8 @@ const HELP={
 <b>검증용 기록 남기기</b> = 기록 일부를 일부러 안 보고 찾은 뒤, 그 기록도 맞히는지 시험해요. 맞히면 더 믿을 만해요.</p>
 <div class="ex"><b>결과 읽는 법</b><br>데미지 = (1000 + 룬) × (1 + 무기 %)<br>→ 기본 1000에 룬 고정 수치를 더하고, 무기 %만큼 곱해서 늘어난다는 뜻이에요.<br>
 "곱연산: 스킬 데미지 %" → 스킬 데미지 %는 겹칠 때 더하지 않고 곱해서 쌓인다는 뜻이에요.</div>
+<p><b>직접 공식 적기</b>: 생각한 공식을 [이름]·{맞출 숫자}로 적으면 기록과 비교하고, {} 숫자는 기록에 맞게 자동으로 맞춰요. [저장]하면 찾은 공식처럼 최적화에 써요.</p>
+<p>스펙을 올렸는데 데미지가 줄어드는 공식은 "올리면 줄어듦" 표시가 붙고 추천에서 빠져요. 같은 칸에 숫자가 섞여 흔들림이 너무 큰 기록은 자동으로 빼고 알려 줘요.</p>
 <p>찾은 후보는 자동으로 남고, [저장]하면 최적화에서 쓸 수 있어요.</p>`],
   cycle:['사이클이란?',`
 <p>평타와 스킬이 섞여 나가니까, <b>한 바퀴(사이클) 동안 들어가는 평균 데미지</b>로 비교하는 거예요.</p>
@@ -911,7 +939,7 @@ function buildSet(t,meta){const FL=gameFL(t),TV=measVars(t),fsel=(t.opt||{}).fse
   for(const m of TV){const L=FL.filter(x=>normT(x.f.target)===m.id);const x=L.find(q=>q.key===fsel[m.id])||L.find(q=>q.saved&&q.f.exact)||L.find(q=>q.saved)||L[0];if(x)forms[m.id]={spec:x.f.spec,p:x.f.p,vars:x.f.vars,formula:x.f.formula,maxRel:isNum(x.f.maxRel)?x.f.maxRel:null}}
   const ids=[...new Set(Object.values(forms).flatMap(f=>f.vars.map(v=>v.replace(/\*$/,''))).filter(v=>v.startsWith('g:')||v.startsWith('p:')))]
   if(t.useCrit!==false)for(const k of t.tm2?['g:crit:rate:pct']:['g:crit:rate:pct','g:crit:dmg:pct'])if(!ids.includes(k))ids.push(k)
-  const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elemS:pct':['상태창 속성 강화 %','elem'],'p:elemS:flat':['상태창 속성 강화','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['성장증폭 %','user'],'p:ratk':['소환수 실전투 공격','pet']}
+  const PN={'p:elem:pct':['속성 강화 %','elem'],'p:elemS:pct':['상태창 속성 강화 %','elem'],'p:typeS:pct':['상태창 타입 강화 %','type'],'p:elemS:flat':['상태창 속성 강화','elem'],'p:elem:flat':['속성 강화','elem'],'p:type:pct':['타입 강화 %','type'],'p:type:flat':['타입 강화','type'],'p:atk':['소환수 공격','pet'],'p:def':['소환수 방어','pet'],'p:spd':['소환수 순발','pet'],'p:hp':['소환수 체력','pet'],'p:amp':['성장증폭 %','user'],'p:ratk':['소환수 실전투 공격','pet']}
   const inputs=ids.map(id=>{if(PN[id])return{id,name:PN[id][0],unit:id.endsWith(':pct')||id==='p:amp'?'pct':'flat',cap:null,scope:PN[id][1]}
     const x=tv.find(q=>q.id===id);const M=vm[id]||{},name=(x?x.name:id).replace(/ 변화$/,'')
     // 어디에 붙는 값인지: 정해 둔 것 → 없으면 이름으로 짐작 (속성 = 소환수 속성별, 타입 = 소환수 타입별)
@@ -1020,14 +1048,18 @@ const petAtk=(p,st)=>{const b=petBase(p),a=ampOf(st),r=b&&isNum(a)?realAtk(b,a):
 function krNum(v){if(!isFinite(v))return'-';const n=Math.round(Math.abs(v)),sg=v<0?'-':'',jo=Math.floor(n/1e12),eok=Math.floor(n%1e12/1e8),man=Math.floor(n%1e8/1e4)
   if(n>=1e12)return sg+jo+'조'+(eok?eok+'억':'');if(n>=1e8)return sg+eok+'억'+(man?man+'만':'');if(n>=1e4)return sg+man+'만'+(n%1e4?n%1e4:'');return sg+n}
 /** 10초 예상 데미지 (실제 숫자를 맞히는 공식 세트일 때만): 소환수마다 한 바퀴 데미지 ÷ 한 바퀴 공격 수 × 10초 공격 횟수 */
+/** 속성 상성: 때리는 소환수 속성 → 강한 상대 속성 (실측: 상성이면 평타·치명 약 ×2.42, 아니면 차이 거의 없음) */
+const ADV={'화염':'바람','물':'화염','바람':'물','빛':'어둠','어둠':'빛'}
+const ADV_MUL=2.42
+function advMul(p){const sp=data.spec||{},t=sp.targetElem;if(!t||!p)return 1;return ADV[normElem(p.elem)]===t?(num(sp.advMul)>0?num(sp.advMul):ADV_MUL):1}
 function deckTen(S,st,deck,g){if(!S.abs||!deck||!deck.pets.length)return null
   const per=deck.pets.map(p=>{const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy),att=cy.nb+(num(skOf(p).mana)>0?1:0),aps=petAps(p)
-    return{name:p.name,cycle:e.r,ten:aps>0&&att>0?e.r/att*aps*10:null,est:!petSpd(p)}})
+    const am=advMul(p);return{name:p.name,cycle:e.r*am,ten:aps>0&&att>0?e.r*am/att*aps*10:null,est:!petSpd(p),adv:am>1}})
   return{per,total:per.every(x=>x.ten!=null)?per.reduce((a,x)=>a+x.ten,0):null}}
 function deckEval(S,st,deck,g){let r=0,miss=0;const per=[],P=deck.pets
   const hasPetIn=S.inputs.some(i=>scopeOf(S,i)==='pet'),atk=!hasPetIn&&P.length>0&&P.every(p=>petAtk(p,st))
   const speed=P.length>0&&P.every(p=>petAps(p)),dex=false
-  for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r
+  for(const p of P){const cy=petCycle(S,p,g),e=setEval(S,petState(S,st,p),cy);let v=e.r*advMul(p)
     if(atk)v*=petAtk(p,st)
     // 한 바퀴 = 평타 N번 + 스킬 1번 = 공격 (N+1)번 → 걸리는 시간 = (N+1) ÷ 초당 공격
     if(speed||dex)v=v/((cy.nb+(num(skOf(p).mana)>0?1:0))/(speed?petAps(p):dexSpeed(p)))
@@ -1051,7 +1083,9 @@ function ampAt(s,uptoId){let a=isNum(s.amp0)?s.amp0:(s.pet0&&isNum(s.pet0.amp)?s
   for(const r of s.records){if(r.id===uptoId)break;if(isNum(r.amp))a=r.amp;else if(r.pet&&isNum(r.pet.amp))a=r.pet.amp}return a}
 const myAmp=()=>{const L=savedPetsList();const x=L.find(q=>typeof q.amp==='number');return x?x.amp:null}
 function petAt(s,uptoId){let p=s.pet0||null;for(const r of s.records){if(r.id===uptoId)break;if(r.pet)p=r.pet}return p}
-function itemTag(name){const L=String(name||'').replace(/\s/g,''),e=ELEMS.find(x=>L.startsWith(x))||(L.startsWith('불')?'화염':null),ty=TYPES.find(x=>L.startsWith(x))
+/** 이름에 '화염속성'·'마법타입'처럼 특정 속성·타입이 들어 있으면 그 소환수에만 (앞에 '파티' 등이 붙어도). '모든'은 전부라 태그 없음 */
+function itemTag(name){const L=String(name||'').replace(/\s/g,'');if(/모든|모두/.test(L))return null
+  const e=ELEMS.find(x=>L.includes(x+'속성')||L.startsWith(x))||(/불속성/.test(L)||L.startsWith('불')?'화염':null),ty=TYPES.find(x=>L.includes(x+'타입')||L.startsWith(x))
   return e&&/속성/.test(L)?{k:'elem',v:e}:ty&&/타입/.test(L)?{k:'type',v:ty}:null}
 function petText(p){if(!p)return'안 정함'
   const st=(p.st||[]).some(isNum)?PSTAT.map(([k,l],i)=>l+' '+(isNum((p.st||[])[i])?fmt(p.st[i]):'?')).join(' '):''
@@ -1127,6 +1161,8 @@ function vSpec(v){
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
     <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
+    <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+      ${sp.targetElem?`<label class="row mut" style="gap:4px">상성 배율 ×<input type="text" inputmode="decimal" id="tAm" value="${esc(sp.advMul??'')}" placeholder="${ADV_MUL}" style="width:60px"></label><span class="mut">${esc(Object.keys(ADV).filter(k=>ADV[k]===sp.targetElem).join('·'))} 소환수가 상성</span>`:''}</div>
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
       <button class="sm" id="dNew">+ 새 덱</button>${deck?'<button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}</div>
     ${deck?`${pets.map((p,k)=>{const sk=skOf(p),cy=petCycle(S,p,g);return`<div class="card" style="background:var(--card2)" data-pt="${k}">
@@ -1139,7 +1175,7 @@ function vSpec(v){
       <div class="mut" style="margin-top:4px">스킬: ${skHas(sk)?esc(skText(sk)):'<span class="bad">도감에 스킬 정보가 없어요</span>'} <span class="mut">(앱·PC 도감 › 수정에서 적어요)</span></div>
       <div class="mut">${(()=>{const d=dexOf(p.name);return d?`도감: ${esc(d.e)} · ${esc(d.t)} · S 순발 ${fmt(d.m[2])} · `:(p.name?'도감에 없는 이름 · ':'')})()}${petAtk(p,st)?`실전투 공격 ${fmt(petAtk(p,st))} · `:''}한 바퀴 = 평타 ${cy.nb}번${num(sk.mana)>0?` + 스킬 1번 (×${num(sk.hits)||1})`:' (최대 마나를 적으면 스킬 포함)'}${ok&&base.per?` · 덱 데미지의 ${fmt(base.per[k]/base.r*100,1)}%`:''}</div></div>`}).join('')}
       ${useDeck?(S.abs?(ten?`<div class="card" style="background:var(--card2);margin-top:6px"><div class="big">10초 예상 데미지</div>
-        ${ten.per.map(x=>`<div class="row"><span style="flex:1">${esc(x.name||'(이름 없음)')}</span>${x.ten!=null?`<b>${krNum(x.ten)}</b>${x.est?' <span class="mut">(추정)</span>':''}`:`<span class="bad">도감에 없는 이름 → 공속 모름</span>`}</div>`).join('')}
+        ${ten.per.map(x=>`<div class="row"><span style="flex:1">${esc(x.name||'(이름 없음)')}${x.adv?' <span class="tag">상성</span>':''}</span>${x.ten!=null?`<b>${krNum(x.ten)}</b>${x.est?' <span class="mut">(추정)</span>':''}`:`<span class="bad">도감에 없는 이름 → 공속 모름</span>`}</div>`).join('')}
         ${ten.total!=null?`<div class="row" style="border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><b style="flex:1">덱 합계</b><b class="good">${krNum(ten.total)}</b></div>`:''}
         <div class="mut" style="margin-top:4px">실험한 대상·버프 없음·빗나감 제외(전부 맞는다고 봄) 기준 · 공속 오차 ±4%${isNum(S.err)?` · 공식 오차 ±${fmt(S.err*100,2)}%`:''}. 치명은 확률만큼 섞은 평균. (추정) = 개체 속도를 몰라서 도감 S 순발로 계산</div></div>`:''):'<div class="mut" style="margin-top:6px">10초 예상 데미지: 이 공식 세트는 실제 숫자가 아니라 비율만 맞혀요 (변화량으로 찾았거나 소환수 스펙이 없는 공식) → % 비교만 보여 줘요.</div>'):''}
       ${pets.length<3?`<div class="row" style="margin-top:6px"><button class="sm" id="pAdd">+ 소환수</button>${(BR&&TMCalc.savedPets)||window.SAVEDPETS?'<button class="sm" id="pImp">저장한 소환수에서</button>':''}</div>`:''}
@@ -1187,6 +1223,8 @@ function vSpec(v){
   // 덱
   const dk=f=>saveSpec(p=>{p.decks=p.decks||[];const D=p.decks.find(d=>d.id===(curDeck(p)||{}).id);f(p,D)})
   $('#dSel').onchange=e=>saveSpec(p=>p.deckId=e.target.value||null)
+  $('#tEl').onchange=e=>saveSpec(p=>{if(e.target.value)p.targetElem=e.target.value;else delete p.targetElem})
+  const tam=$('#tAm');if(tam)tam.onchange=()=>saveSpec(p=>{const n=num(tam.value);if(n>0)p.advMul=n;else delete p.advMul})
   $('#dNew').onclick=()=>{const n=prompt('덱 이름','덱 '+(decks.length+1));if(!n)return;saveSpec(p=>{p.decks=p.decks||[];const D={id:uid(),name:n.trim(),pets:[{name:'',elem:'',type:'',skill:{}}]};p.decks.push(D);p.deckId=D.id})}
   const dr=$('#dRen');if(dr)dr.onclick=()=>{const n=prompt('덱 이름',deck.name);if(n)dk((p,D)=>D.name=n.trim())}
   const dd=$('#dDel');if(dd)dd.onclick=()=>{if(confirm(`'${deck.name}' 덱을 지울까요?`))saveSpec(p=>{p.decks=(p.decks||[]).filter(d=>d.id!==deck.id);p.deckId=null})}
@@ -1918,7 +1956,7 @@ function influenceCard(m,R,c){
 /** 테마 실험 순서: 바로 앞 기록과 비교해 그것 '하나만' 바뀐 기록 수·크기 종류 (소환수 바꾸기는 능력치·속성·타입을 묶어 하나로) */
 const TM2_STEPS=[['g:rune:atk:flat','룬 공격'],['g:rune:dmg:pct','룬 피해증가'],['g:rune:cd:pct','룬 치명타 피해'],['g:rune:nb:pct','룬 일반공격피해'],['g:rune:sk:pct','룬 스킬공격피해'],
   ['p:elem:pct','룬 속성 강화 (소환수 속성)'],['p:type:pct','룬 타입 강화 (소환수 타입)'],['g:rune:ae:pct','룬 모든속성 강화'],['g:rune:at:pct','룬 모든타입 강화'],
-  ['p:elemS:pct','상태창 속성 강화 % (소환수 속성)'],['g:elv:all:flat','모든능력치'],['g:wpn:atkp:pct','무기 공격 %'],['g:buff:party:flat','파티 피해 증가'],['g:base:atk:flat','기본 공격력'],
+  ['p:elemS:pct','상태창 속성 강화 % (소환수 속성)'],['p:typeS:pct','상태창 타입 강화 % (소환수 타입)'],['g:elv:all:flat','모든능력치'],['g:wpn:atkp:pct','무기 공격 %'],['g:buff:party:flat','파티 피해 증가'],['g:base:atk:flat','기본 공격력'],
   ['pet','소환수 바꾸기 (능력치 다른 소환수)'],['p:amp','성장증폭']]
 function stepStatus(s){const D=sessionData(s),st={},PET=/^p:(atk|def|spd|hp|elem|type)/
   const rows=D.rows.filter(r=>!r.r.skip),ids=D.gvars.map(x=>x.id).filter(id=>id!=='p:ratk')
@@ -2080,7 +2118,7 @@ function vRecs(c,v){
 // ---------------------------------------------------------------- 공식 찾기
 /** 세션 기록 → 변수(분류별 누적 변화량, 잰 값)와 결과 */
 /** 테마: 상태창 속성 강화(분류 elv)는 룬 속성 강화와 다른 변수로 (둘 다 %라 섞이지 않게) */
-function elvTag(t,g,tag){return t&&t.tm2&&g==='elv'&&tag&&tag.k==='elem'?{k:'elemS',v:tag.v}:tag}
+function elvTag(t,g,tag){if(!(t&&t.tm2&&tag))return tag;if(g==='elv'&&tag.k==='elem')return{k:'elemS',v:tag.v};if(g==='tlv'&&tag.k==='type')return{k:'typeS',v:tag.v};return tag}
 function sessionData(s){
   const t=tpl(s.templateId)||{groups:[],measures:[]}
   const gname=id=>(t.groups.find(g=>g.id===id)||{name:'(지운 분류)'}).name
@@ -2099,8 +2137,8 @@ function sessionData(s){
   const allG=gvars,tagged=hasPet?allG.filter(x=>x.tag):[]
   if(hasPet)gvars=allG.filter(x=>!x.tag)
   const pvars=[]
-  for(const k of ['elem','elemS','type'])for(const u of ['flat','pct']){const L=tagged.filter(x=>x.tag.k===k&&x.unit===u);if(!L.length)continue
-    pvars.push({id:'p:'+k+':'+u,name:(k==='elem'?'적용 속성 강화':k==='elemS'?'적용 상태창 속성 강화':'적용 타입 강화')+(u==='pct'?' %':''),cat:'소환수',unit:u,stack:Math.max(0,...L.map(x=>x.stack||0)),known:L.every(x=>x.known),pk:k})}
+  for(const k of ['elem','elemS','type','typeS'])for(const u of ['flat','pct']){const L=tagged.filter(x=>x.tag.k===k&&x.unit===u);if(!L.length)continue
+    pvars.push({id:'p:'+k+':'+u,name:({elem:'속성 강화 (룬·코스튬 등)',elemS:'상태창 속성 강화',type:'타입 강화 (룬·코스튬 등)',typeS:'상태창 타입 강화'}[k])+(u==='pct'?' %':'')+' (소환수 '+(k.startsWith('type')?'타입':'속성')+')',cat:'소환수',unit:u,stack:Math.max(0,...L.map(x=>x.stack||0)),known:L.every(x=>x.known),pk:k})}
   PSTAT.forEach(([k,l],i)=>{if(pets.some(p=>isNum((p.st||[])[i])))pvars.push({id:'p:'+k,name:'소환수 '+l,cat:'소환수',unit:'flat',known:true,pi:i})})
   const hasAmp=isNum(s.amp0)||s.records.some(r=>isNum(r.amp))||pets.some(p=>isNum(p.amp))
   if(hasAmp)pvars.push({id:'p:amp',name:'성장증폭 %',cat:'소환수',unit:'pct',known:true,pamp:true})
@@ -2125,7 +2163,7 @@ function sessionData(s){
     const tv={};tagged.forEach(x=>{tv[x.id]=acc[x.id]||0;tv[x.id+'*']=accC[x.id]||0})
     for(const [k,d] of once){const o=k in tv?tv:v;o[k]=(o[k]||0)+d;if(o[k+'*']!=null)o[k+'*']=((1+o[k+'*']/100)*(1+d/100)-1)*100}
     for(const x of pvars){
-      if(x.pk){const tg=curP&&(x.pk!=='type'?normElem(curP.elem):curP.type),L=tagged.filter(q=>q.tag.k===x.pk&&q.unit===x.unit&&q.tag.v===tg)
+      if(x.pk){const tg=curP&&(x.pk.startsWith('type')?curP.type:normElem(curP.elem)),L=tagged.filter(q=>q.tag.k===x.pk&&q.unit===x.unit&&q.tag.v===tg)
         v[x.id]=tg?L.reduce((a,q)=>a+tv[q.id],0):NaN;if(x.unit==='pct')v[x.id+'*']=tg?(L.reduce((a,q)=>a*(1+tv[q.id+'*']/100),1)-1)*100:NaN}
       else if(x.pamp){v[x.id]=isNum(curA)?curA:NaN;v[x.id+'*']=v[x.id]}
       else if(x.preal)v[x.id]=curP?realAtk(curP.st,curA):NaN
@@ -2150,16 +2188,28 @@ function vFind(c,v){
   const TV=measVars(t)
   if(c.target&&!c.target.includes(':'))c.target='m:'+c.target
   c.target=c.target&&TV.some(x=>x.id===c.target)?c.target:(TV[0]||{}).id
-  const all=[...D.gvars,...D.mvars.filter(m=>m.id!==c.target)]
-  if(!c.use){const hasReal=D.gvars.some(x=>x.id==='p:ratk');c.use=D.gvars.filter(x=>new Set(D.rows.map(r=>r.v[x.id])).size>1&&!(hasReal&&/^p:(atk|def|spd|hp|amp)$/.test(x.id))).map(x=>x.id)}
+  const hasReal=D.gvars.some(x=>x.id==='p:ratk'),hideP=x=>hasReal&&/^p:(atk|def|spd|hp|amp)$/.test(x.id)
+  // 안 바뀐 값은 공식에서 못 가려내니 고를 목록에서 뺌 (기록에서 한 번이라도 바뀐 것만). 실전투 공격은 항상
+  const varies=x=>new Set(D.rows.map(r=>r.v[x.id]).filter(isFinite)).size>1
+  const all=[...D.gvars.filter(x=>!hideP(x)&&(varies(x)||x.id==='p:ratk')),...D.mvars.filter(m=>m.id!==c.target)]
+  const fixed=D.gvars.filter(x=>!hideP(x)&&!varies(x)&&x.id!=='p:ratk')
+  const offFor=x=>(/^m:/.test(c.target)&&/^g:(rune:cd|crit:dmg)/.test(x.id))||(/basic$/.test(c.target)&&/^g:rune:sk:/.test(x.id))||(/skill$/.test(c.target)&&/^g:rune:nb:/.test(x.id))
+  if(!c.use||c.useFor!==c.target){c.use=all.filter(x=>!/^[mc]:/.test(x.id)&&!offFor(x)).map(x=>x.id);c.useFor=c.target}
+  if(hasReal&&!c.use.includes('p:ratk'))c.use.push('p:ratk')
   v.innerHTML=`<div class="card">
     <div style="float:right">${hb('find')}</div>
     <label class="f">무엇의 공식을 찾을까요? (한 방 기준)<select id="ft">${TV.map(x=>`<option value="${x.id}"${x.id===c.target?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
     <div class="mut" style="margin-top:10px">무엇으로 계산될까요? (분류별 변화량은 세션 처음부터 더한 값)</div>
-    <div class="chips">${all.map(x=>`<button class="chip${c.use.includes(x.id)?' on':''}" data-use="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+    <div class="chips">${all.map(x=>x.id==='p:ratk'?`<span class="chip on" title="항상 넣어요">${esc(x.name)} · 항상</span>`:`<button class="chip${c.use.includes(x.id)?' on':''}" data-use="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+    ${fixed.length?`<div class="mut" style="margin-top:4px">실험 중에 안 바뀐 값 (공식에서 가려낼 수 없어 뺌): ${esc(fixed.map(x=>x.name).join(', '))}</div>`:''}
     <div class="row" style="margin-top:14px"><button class="pri" id="qk">빠른 탐색</button><button class="pri" id="dp">심도 탐색</button>
       <select id="dt">${[[15,'15초'],[30,'30초'],[60,'1분'],[180,'3분']].map(([s,l])=>`<option value="${s}"${(c.secs||30)==s?' selected':''}>${l}</option>`).join('')}</select>
       <label class="row mut" style="gap:4px"><input type="checkbox" id="hold"${c.hold!==false?' checked':''}>검증용 기록 남기기</label></div>
+    <details style="margin-top:8px"${c.manOpen?' open':''} id="manD"><summary>직접 공식 적기</summary>
+      <div class="mut" style="margin-top:4px">변수는 [이름], 맞출 숫자는 {이름} (처음 값은 {방어=500000}). × ÷ − 도 돼요. 적은 공식을 기록과 비교하고, 맞추면 [저장]으로 최적화에 쓸 수 있어요.<br>예: ([소환수 실전투 공격 (성장증폭 반영)] × {a} + [룬 옵션 공격]) × (1 + [무기 공격 % (상태창에 안 보임, 무기에서) %]/100) − {방어=500000}</div>
+      <textarea id="manF" rows="3" style="width:100%;margin-top:6px" placeholder="공식">${esc(c.manF||'')}</textarea>
+      <div class="chips" style="margin-top:4px">${all.filter(x=>!/^[mc]:/.test(x.id)).map(x=>`<button class="chip" data-ins="${esc(x.name)}">${esc(x.name)}</button>`).join('')}</div>
+      <div class="row" style="margin-top:6px"><button class="pri" id="manGo">기록과 비교</button></div></details>
     <details><summary>설명</summary><div class="mut">빠른 탐색: 자주 쓰는 공식 틀 6가지를 맞춰 보고 오차가 적은 순으로 보여 줘요 (바로 끝남).<br>
       심도 탐색: 틀 없이 변수·숫자·＋−×÷·(1+%)·max 를 조합해서 공식 자체를 찾아요. 단순하면서 오차가 적은 것을 추천해요.<br>
       두 번 이상 쌓은 % 는 더해서 쌓이는지(합연산) 곱해서 쌓이는지(곱연산, 이름에 '(곱)')도 둘 다 시험해요.<br>
@@ -2181,11 +2231,15 @@ function vFind(c,v){
   $('#hold').onchange=e=>c.hold=e.target.checked
   const prep=()=>{
     const vars=all.filter(x=>c.use.includes(x.id)),tk=c.target
-    const rows=D.rows.filter(r=>!r.r.skip&&isFinite(r.v[tk])&&vars.every(x=>isFinite(r.v[x.id])))
+    let rows=D.rows.filter(r=>!r.r.skip&&isFinite(r.v[tk])&&vars.every(x=>isFinite(r.v[x.id])))
     // 흔들림은 기록마다 비슷하다고 보고, 여러 번 잰 기록 중 가장 큰 흔들림 비율을 모든 기록에 적용 (3번만 재면 폭이 작게 잡힐 수 있어서)
-    const rel=Math.max(0,...rows.map(r=>(r.tol[tk]||0)/(Math.abs(r.v[tk])||1)))
-    const tol=rows.map(r=>rel*Math.abs(r.v[tk]))
-    return{vars,rows,X:rows.map(r=>vars.map(x=>r.v[x.id])),y:rows.map(r=>r.v[tk]),tol:tol.some(x=>x)?tol:null,
+    const rels=rows.map(r=>(r.tol[tk]||0)/(Math.abs(r.v[tk])||1)),nz=rels.filter(x=>x>0).sort((a,b)=>a-b),med=nz.length?nz[nz.length>>1]:0
+    const lim=Math.max(med*5,0.02),wild=rows.filter((r,i)=>rels[i]>lim).map(r=>r.no)
+    const rel=Math.max(0,...rels.filter(x=>x<=lim))
+    const ok=rows.filter((r,i)=>rels[i]<=lim)
+    const tol=ok.map(r=>rel*Math.abs(r.v[tk]))
+    rows=ok
+    return{vars,rows,wild,X:rows.map(r=>vars.map(x=>r.v[x.id])),y:rows.map(r=>r.v[tk]),tol:tol.some(x=>x)?tol:null,
       skipped:D.rows.filter(r=>r.r.skip).length,tname:TV.find(x=>x.id===c.target).name}
   }
   $('#qk').onclick=()=>{const P=prep();if(!P.vars.length)return alert('계산에 쓸 것을 하나 이상 골라 주세요.')
@@ -2201,6 +2255,33 @@ function vFind(c,v){
     if(unk.length)H.push(`시작 상태가 비어 있는 항목: ${unk.map(x=>x.name).join(', ')}. 세션의 [시작 상태]에 처음 값을 적으면 계수가 깔끔해지고 합연산/곱연산을 더 정확히 가려요.`)
     c.res={kind:'quick',P,models,hints:H,dropped:c.dropped};if(models.length)storeResult(c,c.res);showRes(c)}
   $('#dp').onclick=()=>runDeep(c,prep())
+  $('#manD').ontoggle=e=>c.manOpen=e.target.open
+  $('#manF').oninput=e=>c.manF=e.target.value
+  v.querySelectorAll('[data-ins]').forEach(b=>b.onclick=()=>{const ta=$('#manF'),t='['+b.dataset.ins+']',p0=ta.selectionStart??ta.value.length
+    ta.value=ta.value.slice(0,p0)+t+ta.value.slice(ta.selectionEnd??p0);c.manF=ta.value;ta.focus();ta.selectionStart=ta.selectionEnd=p0+t.length})
+  $('#manGo').onclick=()=>{
+    const src=String($('#manF').value||'').trim();c.manF=src;if(!src)return alert('공식을 적어 주세요.')
+    const pool=all.filter(x=>!/^[mc]:/.test(x.id)),nm=t=>String(t).replace(/\s/g,'')
+    const used=[],params=[],bad=[]
+    let body=src.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-')
+      .replace(/\[([^\]]+)\]/g,(_,n)=>{const v=pool.find(x=>nm(x.name)===nm(n));if(!v){bad.push(n);return'0'}let i=used.indexOf(v);if(i<0){used.push(v);i=used.length-1}return'x['+i+']'})
+      .replace(/\{([^}=]+)(?:=([^}]*))?\}/g,(_,n,d)=>{const k=n.trim();let i=params.findIndex(q=>q.n===k);if(i<0){params.push({n:k,v:isFinite(num(d))?num(d):1});i=params.length-1}return'c['+i+']'})
+    if(bad.length)return alert('이 이름의 값이 없어요: '+bad.join(', ')+'\n아래 칩을 눌러 넣으면 정확해요.')
+    if(/[^0-9a-zA-Z_.\[\]+\-*\/() ,]/.test(body.replace(/Math\.(max|min|pow|log|exp|sqrt|abs)/g,'')))return alert('계산할 수 없는 글자가 있어요. [이름], {숫자 이름}, 숫자, + − × ÷ ( ) 만 써 주세요.')
+    let fn;try{fn=new Function('c','x','return ('+body+')')}catch(e){return alert('공식을 읽지 못했어요: '+e.message)}
+    const P0=prep(),rows=P0.rows.filter(r=>used.every(v=>isFinite(r.v[v.id])))
+    if(rows.length<2)return alert('이 공식에 쓰는 값이 다 들어 있는 기록이 2개 이상 필요해요.')
+    const X=rows.map(r=>used.map(v=>r.v[v.id])),y=rows.map(r=>r.v[c.target]),tol=P0.tol?rows.map(r=>P0.tol[P0.rows.indexOf(r)]):null
+    let p=params.map(q=>q.v)
+    if(p.length){const r=lm(fn,p,X,y);if(isFinite(r.sse))p=r.p}
+    const pr=X.map(x=>fn(p,x));if(pr.some(v=>!isFinite(v)))return alert('계산 결과가 숫자가 아닌 기록이 있어요 (0으로 나누기 등).')
+    const res=pr.map((v,i)=>v-y[i]),unit=roundUnit(y)
+    let shown=src;params.forEach((q,i)=>{shown=shown.replace(new RegExp('\\{\\s*'+q.n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*(=[^}]*)?\\}','g'),coef(p[i]))})
+    const m={name:'직접 적은 공식'+(params.length?` (숫자 ${params.length}개 맞춤)`:''),k:params.length,vars:used,X,p:[...p,1],spec:{type:'gp',body:'('+body+')',k:params.length,noA:true},
+      formula:'결과 = '+shown,pr,res,predict:x=>fn(p,x)}
+    m.maxAbs=Math.max(...res.map(Math.abs));m.maxRel=Math.max(...res.map((v,i)=>Math.abs(v)/(Math.abs(y[i])||1)));m.exact=within(res,unit,tol);m.neg=monoNeg(m,used,X)
+    const P={...P0,vars:used,rows,X,y,tol}
+    c.res={kind:'manual',P,models:[m],hints:[]};storeResult(c,c.res);showRes(c)}
   if(c.res)showRes(c)
   else showPast(c)
 }
@@ -2228,7 +2309,7 @@ function showPast(c){
   o.innerHTML=F.map(f=>`<h2>지난 ${f.kind==='deep'?'심도':'빠른'} 탐색 <span class="mut">${fdate(f.time)} · 기록 ${f.records}개</span></h2>
     <div class="mut">계산에 쓴 것: ${esc(f.inputs.join(', '))}${f.records!==s.records.length?' · <span class="bad">그 뒤로 기록이 바뀌었어요. 다시 찾아 보세요.</span>':''}</div>`+
     f.candidates.map(m=>`<div class="card model${m.rank===1?' best':''}"><div class="big">${m.rank===1?'추천':'후보 '+m.rank} <span class="mut">${esc(m.name)}</span></div>
-      <div>${m.exact?'<span class="tag">반올림 안에서 완전 일치</span>':''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
+      <div>${m.exact?'<span class="tag">반올림 안에서 완전 일치</span>':''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}${m.neg&&m.neg.length?`<span class="tag bad">올리면 줄어듦: ${esc(m.neg.join(', '))}</span>`:''}</div>
       <div class="formula">${esc(m.formula)}</div>
       <div class="row"><span class="mut" style="flex:1">최대 오차 ${fmt(m.maxAbs)} (${fmt(m.maxRel*100,3)}%)</span>${pinBtns(f,m)}</div></div>`).join('')).join('')
   bindPins(c,o)
@@ -2245,6 +2326,14 @@ function bindPins(c,o){
       if(!x.saved.some(q=>q.formula===f.formula&&q.target===f.target))x.saved.push({id:uid(),time:Date.now(),...f})})
     toast('저장한 공식에 넣었어요.');showSaved(c)})
 }
+/** 올리면 데미지가 줄어드는 스펙업 항목 이름 (감소형·잴 것 제외). 기록 대부분에서 줄어들면 표시 */
+function monoNeg(m,vars,X){const out=[];if(!m||!X||!X.length)return out
+  vars.forEach((v,i)=>{if(v.reduce||/^[mc]:/.test(v.id))return
+    let neg=0,tot=0
+    for(const x of X){const b=m.predict(x);if(!isFinite(b))continue;const z=x.slice(),st=v.unit==='pct'?1:Math.max(1,Math.abs(x[i])*0.01);z[i]+=st
+      const a=m.predict(z);if(!isFinite(a))continue;tot++;if(a<b-Math.abs(b)*5e-4)neg++}
+    if(tot&&neg>tot/2)out.push(v.name)})
+  return out}
 /** 모델이 쓰는 변수 id (곱연산 누적은 id 뒤에 *) */
 function modelVarIds(m,P){
   const vs=m.vars||P.vars
@@ -2253,7 +2342,7 @@ function modelVarIds(m,P){
 /** 찾은 후보를 세션에 남긴다 (대상·탐색 종류별 마지막 결과). 내보내기 JSON 에도 들어감 */
 function storeResult(c,R){
   const f={kind:R.kind,target:c.target,targetName:R.P.tname,inputs:R.P.vars.map(v=>v.name),records:ses(c.id).records.length,used:R.P.rows.length,time:Date.now(),
-    candidates:R.models.map((m,i)=>({rank:i+1,name:R.kind==='quick'?m.name:'크기 '+m.size,formula:(m.tidy||m.formula).replace('결과',R.P.tname),
+    candidates:R.models.map((m,i)=>({rank:i+1,name:R.kind==='deep'?'크기 '+m.size:m.name,formula:(m.tidy||m.formula).replace('결과',R.P.tname),
       maxAbs:m.maxAbs,maxRel:m.maxRel,exact:!!m.exact,testAbs:m.testAbs??null,testExact:m.testExact??null,
       calc:m.spec?{spec:m.spec,p:m.p,vars:modelVarIds(m,R.P)}:null}))}
   // 의심 기록: 추천 공식과의 차이가 허용 오차와 '보통 차이(중앙값)×4' 보다 모두 큰 기록
@@ -2296,10 +2385,13 @@ function quickFit(sub,P){
     for(const m of fitModels(vars,sub.rows.map(xs),sub.y,sub.tol)){if(m.skip)continue
       m.vars=vars;m.X=P.rows.map(xs);m.comp=comp.length   // 표시·예측은 모든 기록으로
       if(comp.length)m.name+=' · 곱연산: '+comp.map(i=>P.vars[i].name).join(', ')
-      all.push(m)}
+      m.neg=monoNeg(m,vars,m.X);all.push(m)}
   }
-  all.sort((a,b)=>(b.exact-a.exact)||(a.exact&&b.exact?(a.k-b.k)||(a.comp-b.comp):0)||a.score-b.score)
-  return all.slice(0,6)
+  all.sort((a,b)=>(!!a.neg.length-!!b.neg.length)||(b.exact-a.exact)||(a.exact&&b.exact?(a.k-b.k)||(a.comp-b.comp):0)||a.score-b.score)
+  // 같은 틀(합연산/곱연산만 다른 것)이 6칸을 다 차지하지 않게: 틀마다 가장 좋은 것 먼저, 남는 칸은 나머지로
+  const base=m=>m.name.split(' · ')[0],first=[],rest=[],seenB=new Set()
+  for(const m of all)(seenB.has(base(m))?rest:first).push(m),seenB.add(base(m))
+  return[...first,...rest].slice(0,6)
 }
 function runDeep(c,P){
   if(deepRun){deepRun.stop=true;return}
@@ -2322,10 +2414,10 @@ function runDeep(c,P){
   const finish=()=>{
     if(deepRun===run)deepRun=null
     const models=[]
-    for(const e of E.front()){const m=gpModel(e,P.vars,X,y,Xt,yt,false,tol,tolT);m.errN=e.errN;models.push(m);if(m.exact)break}
+    for(const e of E.front()){const m=gpModel(e,P.vars,X,y,Xt,yt,false,tol,tolT);m.errN=e.errN;m.neg=monoNeg(m,P.vars,P.X);models.push(m);if(m.exact&&!m.neg.length)break}
     // 추천: 검증 기록까지 맞는 것 중 가장 단순한 것. 없으면 오차·단순함 점수 (검증 기록이 있으면 그 오차도 반영)
-    let rec=models.find(m=>m.exact&&m.testExact!==false)
-    const sc=m=>Math.log10(Math.max(m.errN,E.floor))+0.035*m.size+(m.testAbs!=null&&!m.testExact?0.5:0)
+    let rec=models.find(m=>m.exact&&m.testExact!==false&&!m.neg.length)
+    const sc=m=>Math.log10(Math.max(m.errN,E.floor))+0.035*m.size+(m.testAbs!=null&&!m.testExact?0.5:0)+(m.neg.length?3:0)
     if(!rec)rec=models.reduce((b,m)=>!b||sc(m)<sc(b)?m:b,null)
     const others=models.filter(m=>m!==rec).reverse().slice(0,5)
     c.res={kind:'deep',P,models:rec?[rec,...others]:[],test:te.length,checked:E.step(0).checked,secs:Math.round((Date.now()-t0)/1000)}
@@ -2347,16 +2439,17 @@ function showRes(c){
   const o=$('#out'),R=c.res,P=R.P;if(!o)return
   if(!R.models.length){o.innerHTML='<div class="card empty">맞는 공식을 못 찾았어요. 기록을 더 모으거나 시간을 늘려 보세요.</div>';return}
   const best=R.models[0]
-  const head=R.kind==='quick'?`<h2>빠른 탐색 결과 <span class="mut">오차 적은 순</span></h2>`
+  const head=R.kind==='manual'?`<h2>직접 적은 공식 <span class="mut">기록 ${P.rows.length}개와 비교</span></h2>`:R.kind==='quick'?`<h2>빠른 탐색 결과 <span class="mut">오차 적은 순</span></h2>`
     :`<h2>심도 탐색 결과 <span class="mut">${R.secs}초 · ${R.checked.toLocaleString()}개 확인${R.test?` · 검증용 ${R.test}개`:''}</span></h2>`
   const sus=R.stored&&R.stored.suspects||[]
   const susNo=R.P.rows.filter(r=>sus.includes(r.r.id)).map(r=>'#'+r.no)
-  const hint=(R.hints||[]).concat(best.exact?[]:['기록과 딱 맞는 공식은 아직 없어요. 기록을 더 모으거나, 심도 탐색 시간을 늘려 다시 찾아 보세요.'])
+  const hint=(R.hints||[]).concat(P.wild&&P.wild.length?[`⚠ 흔들림이 너무 큰 기록 #${P.wild.join(', #')}: 같은 칸에 다른 숫자가 섞였을 수 있어요 (예: '1억 4688만'이 두 숫자로). [기록]에서 고치거나 빼 주세요.`]:[])
+    .concat(best.neg&&best.neg.length?[`추천 공식도 '${best.neg.join(', ')}'을(를) 올리면 데미지가 줄어드는 모양이라 맞지 않아요. 기록을 더 모아 주세요.`]:[]).concat(best.exact?[]:['기록과 딱 맞는 공식은 아직 없어요. 기록을 더 모으거나, 심도 탐색 시간을 늘려 다시 찾아 보세요.'])
     .concat(susNo.length&&!(R.dropped&&R.dropped.length)?[`⚠ 의심 기록 ${susNo.join(', ')}: 추천 공식과 크게 어긋나요. [기록]에서 입력 실수인지 확인하고, 고치거나 [빼기] 후 다시 찾아 보세요.`]:[])
   o.innerHTML=head+(hint.length?`<div class="card"><div class="big">다음에 할 것</div><ul class="hints">${hint.map(h=>`<li>${esc(h)}</li>`).join('')}</ul></div>`:'')+
     R.models.map((m,i)=>`<div class="card model${i===0?' best':''}">
-      <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='quick'?m.name:'크기 '+m.size)}</span></div>
-      <div>${m.exact?`<span class="tag">${P.tol?'흔들림 범위 안에서 일치':'반올림 안에서 완전 일치'}</span>`:''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}</div>
+      <div class="big">${i===0?'추천':'후보 '+(i+1)} <span class="mut">${esc(R.kind==='deep'?'크기 '+m.size:m.name)}</span></div>
+      <div>${m.exact?`<span class="tag">${P.tol?'흔들림 범위 안에서 일치':'반올림 안에서 완전 일치'}</span>`:''}${m.testAbs!=null?(m.testExact?'<span class="tag">검증 기록도 맞힘</span>':'<span class="tag bad">검증 기록 어긋남</span>'):''}${m.neg&&m.neg.length?`<span class="tag bad">올리면 줄어듦: ${esc(m.neg.join(', '))}</span>`:''}</div>
       <div class="formula">${esc((m.tidy||m.formula).replace('결과',P.tname))}</div>
       ${i===0?(()=>{const sx=ses(c.id),tt=sx&&tpl(sx.templateId),mm=tt&&tt.measures.find(q=>q.id===(c.target||'').slice(2)),bp=num(mm&&(mm.basePct??mm.pct))
         return isFinite(bp)&&bp!==100?`<div class="mut">잰 공격이 ${fmt(bp)}%라서, 1배(100%) 기준 한 방은 이 값 ÷ ${fmt(bp/100,4)} 이에요. 최적화는 이 1배 기준으로 계산해요.</div>`:''})():''}
