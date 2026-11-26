@@ -70,13 +70,18 @@ object RuneParser {
      * '주 옵션' 머리글 2개 + '부 옵션' 머리글 + ('장착중' 또는 '○○의 룬') 이 모두 있어야 하고, 상자 2개 모두 공격력을 읽어야 한다.
      */
     fun isRuneCompare(lines: List<OcrLine>): Boolean {
+        if (!hasCompareMarks(lines)) return false
+        val r = parse(lines)
+        return r.size >= 2 && r.take(2).all { it.atk != null }
+    }
+
+    /** 룬 비교 화면의 글자 표시만 확인 ('주 옵션' 머리글 2개 + '부 옵션' + '장착중' 또는 '○○의 룬'). 값을 못 읽어도 화면 종류는 알 수 있게 */
+    fun hasCompareMarks(lines: List<OcrLine>): Boolean {
         val t = lines.map { it.text.replace(" ", "") }
         val heads = t.count { it.startsWith("주") && it.contains("옵") && it.length <= 5 }
         val subs = t.count { it.startsWith("부") && it.contains("옵") && it.length <= 5 }
         val mark = t.any { it.contains("장착중") } || t.count { it.contains("룬") && it.length > 2 } >= 2
-        if (heads < 2 || subs < 1 || !mark) return false
-        val r = parse(lines)
-        return r.size >= 2 && r.take(2).all { it.atk != null }
+        return heads >= 2 && subs >= 1 && mark
     }
 
     /** 위에서 아래 순서로 룬 상자들 (보통 [장착중, 바꿀 룬]) */

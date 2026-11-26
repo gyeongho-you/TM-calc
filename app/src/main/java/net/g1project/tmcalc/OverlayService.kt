@@ -215,17 +215,16 @@ class OverlayService : Service() {
                 val parsed = OcrParser.parse(lines, db)
                 // 최적화 모드: 룬 비교 화면이면 룬 비교, 그 밖의 화면이면 내 스펙 입력 창
                 if (AppPrefs.runeMode(this)) {
-                    val rs0 = RuneParser.parse(lines)
-                    if (rs0.isNotEmpty()) RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
-                    if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
-                        showRuneCompare(rs0[0], rs0[1])
-                        return@addOnSuccessListener
-                    }
-                    if (rs0.isNotEmpty()) {
-                        val miss = when {
-                            rs0.size < 2 -> "위(장착중)·아래(새 룬) 상자 ${rs0.size}개만 찾음"
-                            else -> "공격력 값을 못 읽음"
+                    // 룬 비교 화면 글자('주 옵션' 2개 + '부 옵션' + '장착중'/'○○의 룬')가 다 있을 때만 룬 비교.
+                    // 전투·도감 등 다른 화면은 숫자·Lv 글자가 룬 상자로 잘못 잡혀도 내 스펙 창
+                    if (RuneParser.hasCompareMarks(lines)) {
+                        val rs0 = RuneParser.parse(lines)
+                        RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
+                        if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
+                            showRuneCompare(rs0[0], rs0[1])
+                            return@addOnSuccessListener
                         }
+                        val miss = if (rs0.size < 2) "위(장착중)·아래(새 룬) 상자 ${rs0.size}개만 찾음" else "공격력 값을 못 읽음"
                         overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("룬 비교 화면을 못 읽었어요")
                             .setMessage(miss + "\n위 장착중 / 아래 새 룬이 다 보이게 띄우고 다시 눌러 주세요.")
                             .setPositiveButton("닫기", null)
