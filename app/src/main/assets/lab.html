@@ -860,6 +860,7 @@ const HELP={
 <p>지금 상태에서 항목 하나만 조금 올렸을 때 결과(덱 데미지)가 몇 % 오르는지예요. 위에 있을수록 같은 양 대비 이득이 커요.</p>
 <p>% 항목은 +1%, 값 항목은 지금 값의 약 1%만큼 올려서 비교해요. 올릴 양은 고칠 수 있어요. 예상 데미지가 나오는 공식이면 +○○/10초도 같이 보여요.</p>
 <p><b>표에서 숨기기</b>: 안 볼 항목을 체크하면 표에서 빠져요 (계산·바꿔 보기에는 그대로).</p>
+<p><b>합쳐 보이는 줄</b>: 같은 묶음에 더해지는 값은 어디서 올리든 효과가 같아서 한 줄로 보여요. 예: 룬 마법 타입 강화 + 도감 마법 타입 강화 → "마법 타입 강화 % (룬·도감)", 룬·도감 피해증가 + 파티 피해 증가 → "피해증가 % (룬·도감·파티)".</p>
 <div class="ex"><b>읽는 법</b><br>묶음(타입·속성·피해)이 이미 클수록 그 묶음 +1%의 효과는 작아요. 예: 파티 피해 증가 340%가 있으면 피해증가 +1%는 +0.2% 정도.<br>무기 공격 %·모든능력치·룬 공격은 공격 쪽이라 효과가 큰 편이에요.</div>`],
   statRule:['상태창 규칙',`
 <p>최적화 [내 상태]에서 값을 어떻게 정할지예요. 게임마다 한 번만 정하면 돼요.</p>
@@ -905,6 +906,7 @@ const HELP={
 &nbsp;&nbsp;- 치명 배율: 치명 ÷ 평타 (원소던전 첫 몬스터 ≈ 2.42, 센 곳 1.4~1.9). 룬·도감 치명타 피해는 여기에 더해져요<br>
 &nbsp;&nbsp;- 대상 방어: 덱 평균 실전투 공격의 몇 %인지 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%). 방어가 셀수록 센 소환수가 더 유리해요<br>
 · 소환수마다: 추가 치명 확률·추가 명중률(장착 스킬 등), 개체 속도(공속), <b>실제 데미지</b>(같은 대상 한 방 → 치명 배율 역산. 덱 전원 비치명을 적으면 소환수 세기도 실측으로)</p>
+<p><b>설정 내보내기 / 불러오기</b>: 내 스펙·덱·전투 설정과 덱 소환수별 지금 예상값을 파일로 저장해요. 다른 폰·PC에서 [설정 불러오기]로 똑같이 볼 수 있어요.</p>
 <p><b>무엇을 올리면 이득?</b> 항목 하나를 조금 올렸을 때 덱 데미지가 몇 % 오르는지. 안 볼 항목은 [표에서 숨기기]. <b>바꿔 보기</b>로 여러 개를 한꺼번에 바꿔 볼 수 있어요.</p>
 <p><b>게임 위 [최적화] 버튼</b>: 앱 첫 화면에서 버튼을 [최적화]로 고르면 돼요. 룬 비교 화면에서 누르면 여기 스펙·덱으로 "바꾸면 +x%", 그 밖의 화면(도감·무기·코스튬·상태창)에서 누르면 <b>내 스펙</b> 창이 떠서 게임을 보면서 적을 수 있어요. 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어서 빼요 (실측).</p>
 <div class="ex"><b>기본 공식</b> (실측, 소환수 5마리 ±0.5%)<br>평타 = 실전투 공격 × (공격 합) × (1 + 무기%) × 타입 × 속성 × 피해<br>
@@ -994,6 +996,13 @@ const TM2_SET=(()=>{
       I('p:elemD:pct','속성 강화 %','pct','elem','④ 도감'),I('p:typeD:pct','타입 강화 %','pct','type','④ 도감'),
       I('g:crit:rate:pct','치명 확률 (체감)','pct','user','__battle',100),I('g:hit:rate:pct','명중률 (체감)','pct','user','__battle',100),
       I('p:ratk','소환수 실전투 공격','flat','pet')],
+    // 효율 표에서 한 줄로: 같은 묶음에 더해지는 값들 (+1%의 효과가 똑같음)
+    merge:[{name:'피해증가 %',src:'룬·도감·파티',ids:['g:rune:dmg:pct','g:dogam:dmg:pct','g:buff:party:pct']},
+      {name:'모든 타입 강화 %',src:'룬·도감·코스튬',ids:['g:rune:at:pct','g:dogam:at:pct','g:cos:at:pct']},
+      {name:'모든 속성 강화 %',src:'룬·도감',ids:['g:rune:ae:pct','g:dogam:ae:pct']},
+      {name:'치명타 피해 %',src:'룬·도감',ids:['g:rune:cd:pct','g:dogam:cd:pct']},
+      {name:'속성 강화 %',src:'상태창·룬·도감·코스튬',ids:['p:elemS:pct','p:elem:pct','p:elemD:pct','p:elemC:pct']},
+      {name:'타입 강화 %',src:'룬·도감',ids:['p:type:pct','p:typeD:pct']}],
     runeMap:{...tm2Template().runeMap,'명중':'g:hit:rate:pct'},runeTable:{}}})()
 const GRP_HINT={'① 상태창':'캐릭터 상태창에 보이는 값 그대로 (속성 강화는 도감 제외 값)','② 무기':'상태창엔 안 보여요 — 장비 › 무기 상세의 공격 %','③ 코스튬':'상태창엔 안 보여요 — 코스튬 효과에서','④ 도감':'상태창엔 안 보여요 — 소환수 › 도감 미션 › 누적 보너스 옵션'}
 const allSets=()=>[...(data.formulaSets||[]),TM2_SET]
@@ -1215,8 +1224,16 @@ function vSpec(v){
   if(useAmp&&!isFinite(num(st['p:amp']))&&isNum(myAmp()))st['p:amp']=myAmp()
   const keys=[...inUser.map(i=>({k:i.id,i,name:i.name})),...inElem.flatMap(i=>(useDeck?deckEl:ELEMS).map(e=>({k:i.id+'@'+e,i,name:`${e} ${i.name}`,n:pets.filter(p=>normElem(p.elem)===e).length}))),
     ...inType.flatMap(i=>(useDeck?deckTy:TYPES).map(t=>({k:i.id+'@'+t,i,name:`${t} ${i.name}`,n:pets.filter(p=>p.type===t).length})))]
+  // 효율 표: 같은 묶음에 더해지는 값은 한 줄로 (예: 룬 마법 타입 강화 + 도감 마법 타입 강화 → '마법 타입 강화 % (룬·도감)')
+  const tkeys=(()=>{const MG=S.merge||[],out=[],by={}
+    for(const x of keys){const [id,sfx]=x.k.split('@'),m=MG.find(g=>g.ids.includes(id))
+      if(!m){out.push(x);continue}
+      const gk=m.name+'@'+(sfx||'')
+      if(by[gk]){by[gk].members.push(x.k);continue}
+      out.push(by[gk]={...x,name:`${sfx?sfx+' ':''}${m.name} (${m.src})`,members:[x.k]})}
+    return out})()
   const hid=new Set(sp.hide||[])
-  const rows=ok?keys.filter(x=>!hid.has(x.k)).map(x=>{const i=x.i,def=i.unit==='pct'?1:(()=>{const a=Math.abs(num(st[x.k])||0)*0.01;if(!a)return 100;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
+  const rows=ok?tkeys.filter(x=>!hid.has(x.k)).map(x=>{const i=x.i,def=i.unit==='pct'?1:(()=>{const a=Math.abs(num(st[x.k])||0)*0.01;if(!a)return 100;const e=10**Math.floor(Math.log10(a));return Math.round(a/e)*e})()
     const stp=isFinite(num(SS.steps[x.k]))&&num(SS.steps[x.k])?num(SS.steps[x.k]):def,s2={...st,[x.k]:(num(st[x.k])||0)+stp},gg=(evalAll(s2).r/base.r-1)*100
     return{...x,stp,g:gg,cap:i.cap!=null&&(num(st[x.k])||0)>=i.cap}}).sort((a,b)=>b.g-a.g):[]
   const mx=Math.max(...rows.map(r=>r.g),1e-9)
@@ -1225,6 +1242,7 @@ function vSpec(v){
   const decks=sp.decks||[]
   v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
       ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button>${S.builtin?'':'<button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>'}${hb('spec')}</div>
+    <div class="row" style="margin-top:4px"><span class="mut" style="flex:1">내 스펙·덱·전투 설정을 파일로</span><button class="sm" id="oExp">설정 내보내기</button><button class="sm" id="oImp">설정 불러오기</button></div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
     ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
@@ -1283,9 +1301,9 @@ function vSpec(v){
     ${base.miss?`<div class="bad">공식이 없는 공격 그룹이 있어요 — 그 공격은 빼고 계산</div>`:''}
     ${ok?`<div class="scroll"><table style="margin-top:6px"><tr><th class="l">스펙</th><th>올릴 양</th><th>데미지</th></tr>${rows.map((r,n)=>`<tr><td class="l"><b>${n+1}</b> ${esc(r.name)}${useDeck&&r.n!=null?` <span class="mut">(${r.n}마리)</span>`:''}${r.cap?' <span class="tag bad">최대</span>':''}<div style="height:6px;border-radius:3px;background:var(--acc);margin-top:3px;width:${Math.max(3,Math.max(0,r.g)/mx*100)}%"></div></td>
       <td><input type="text" data-ss="${esc(r.k)}" value="${fmt(r.stp).replace(/,/g,'')}" style="width:84px;text-align:right">${r.i.unit==='pct'?'%':''}</td><td class="${r.g>0?'good':r.g<0?'bad':''}">${r.g>=0?'+':''}${fmt(r.g,3)}%${ten&&ten.total!=null?`<div class="mut">${r.g>=0?'+':''}${krNum(ten.total*r.g/100)}/10초</div>`:''}${isNum(S.err)&&Math.abs(r.g)<S.err*100?'<div class="mut">≈ 오차 안</div>':''}</td></tr>`).join('')}</table></div>`:'<div class="mut" style="margin-top:6px">내 스펙을 적으면 계산돼요.</div>'}
-    <details style="margin-top:8px"><summary>표에서 숨기기${hid.size?` <span class="mut">(${keys.filter(x=>hid.has(x.k)).length}개 숨김)</span>`:''}</summary>
+    <details style="margin-top:8px"><summary>표에서 숨기기${hid.size?` <span class="mut">(${tkeys.filter(x=>hid.has(x.k)).length}개 숨김)</span>`:''}</summary>
       <div class="mut" style="margin-top:4px">체크한 스펙은 표에 안 보여요 (계산·바꿔 보기에는 그대로).</div>
-      <div class="grid" style="margin-top:6px">${keys.map(x=>`<label class="row" style="gap:6px"><input type="checkbox" data-hide="${esc(x.k)}"${hid.has(x.k)?' checked':''}>${esc(x.name)}</label>`).join('')}</div>
+      <div class="grid" style="margin-top:6px">${tkeys.map(x=>`<label class="row" style="gap:6px"><input type="checkbox" data-hide="${esc(x.k)}"${hid.has(x.k)?' checked':''}>${esc(x.name)}</label>`).join('')}</div>
       ${hid.size?'<button class="sm" id="hAll" style="margin-top:6px">모두 보이기</button>':''}</details></div>
   <details class="card"><summary style="font-size:16px;font-weight:600;color:var(--fg)">바꿔 보기 <span class="mut" style="font-weight:400">(이걸 바꾸면 몇 %?)</span></summary>
     ${SS.wi.map((w,k)=>{const s2={...st};for(const r of w.rows||[]){const d=num(r.d);if(r.id&&isFinite(d))s2[r.id]=(num(s2[r.id])||0)+d}const gg=ok?(evalAll(s2).r/base.r-1)*100:NaN
@@ -1295,6 +1313,13 @@ function vSpec(v){
     <button class="sm" id="wAdd" style="margin-top:6px">+ 바꿔 보기</button></details>`
   const ss=$('#sSel');if(ss)ss.onchange=()=>saveSpec(p=>p.setId=ss.value)
   $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  $('#oImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  $('#oExp').onclick=()=>{const d=new Date(),p2=n=>String(n).padStart(2,'0')
+    // 내 스펙·덱·전투 설정 + 쓰는 공식 세트(내장이 아니면 통째로) + 덱 소환수별 지금 예상 (다른 폰·PC에서 같은 계산을 다시 보기 위해)
+    const pred=S.builtin&&ok?pets.map(p=>{const z=petState(S,st,p),h=setEval(S,z,{mode:'cycle',list:[{group:'basic',count:'1',crit:'none',pct:''}]}).r*advMul(p)
+      return{name:p.label||p.name,elem:p.elem,type:p.type,hit:h,critMul:tm2CritMul(z),crit:h*tm2CritMul(z),adv:advMul(p),inputs:z}}):[]
+    saveJson(`최적화설정_${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.json`,
+      {kind:'tmcalc-opt-spec',v:1,exported:d.toISOString(),set:{id:S.id,name:S.name,builtin:!!S.builtin},formulaSet:S.builtin?null:S,spec:JSON.parse(JSON.stringify(data.spec||{})),amp:myAmp(),pred})}
   if($('#sDel'))$('#sDel').onclick=()=>{if(!confirm(`'${S.name}' 공식 세트를 지울까요? (내 스펙은 남아요)`))return;mutate(d=>{d.formulaSets=(d.formulaSets||[]).filter(x=>x.id!==S.id)});render()}
   // 칠 때마다 저장 (게임으로 넘어갔다 와도 안 사라지게), 칸을 벗어나면 다시 계산해서 그림
   const svPut=(e,p)=>{p.st=p.st||{};const n=num(e.value);if(isFinite(n))p.st[e.dataset.sv]=n;else delete p.st[e.dataset.sv]}
@@ -1606,6 +1631,11 @@ function importText(text){
         else d.templates.push({...o.template,id:uid(),name:o.template.name+' (불러옴)'})})
       toast('틀을 불러왔어요.');nav=[{v:'front'},{v:'home'}];render();return
     }
+    if(o.kind==='tmcalc-opt-spec'&&o.spec){
+      if(!confirm('지금 내 스펙·덱·전투 설정을 불러온 것으로 바꿀까요? (지금 값은 사라져요)'))return
+      mutate(d=>{d.spec=o.spec
+        if(o.formulaSet&&o.formulaSet.forms){d.formulaSets=d.formulaSets||[];if(!d.formulaSets.some(x=>x.id===o.formulaSet.id))d.formulaSets.push(o.formulaSet)}})
+      toast('최적화 설정을 불러왔어요.');nav=[{v:'front'}];render();return}
     if(o.kind==='tmcalc-formula-set'&&o.forms){
       const S2={...o,id:uid()};mutate(d=>{d.formulaSets=d.formulaSets||[];d.formulaSets.push(S2);d.spec=d.spec||{};d.spec.setId=S2.id})
       toast(`공식 세트 '${o.name}'을(를) 불러왔어요.`);nav=[{v:'front'}];render();return}
