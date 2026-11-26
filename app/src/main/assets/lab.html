@@ -977,16 +977,16 @@ const TM2_SET=(()=>{
     memo:'실측으로 확정한 기본 공식. 룬·도감·코스튬·상태창 값을 보이는 그대로 적어요. 소환수는 저장한 소환수에서 불러와 원래 능력치·성장증폭으로 실전투를 계산해요. 예상 데미지는 원소던전 첫 몬스터 기준이고, 다른 대상은 % 비교만 그대로예요.',
     abs:true,err:null,useCrit:true,measures:[{id:'basic',name:'평타',basePct:100},{id:'skill',name:'스킬',basePct:100}],forms:{'m:basic':F,'m:skill':F},
     inputs:[
-      I('g:rune:atk:flat','공격','flat','user','룬 (합계)'),I('g:rune:dmg:pct','피해증가 %','pct','user','룬 (합계)'),I('g:rune:ae:pct','모든속성 강화 %','pct','user','룬 (합계)'),I('g:rune:at:pct','모든타입 강화 %','pct','user','룬 (합계)'),
-      I('p:elem:pct','속성 강화 %','pct','elem','룬 (합계)'),I('p:type:pct','타입 강화 %','pct','type','룬 (합계)'),
-      I('g:dogam:dmg:pct','피해증가 %','pct','user','도감 (누적 보너스)'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','도감 (누적 보너스)'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','도감 (누적 보너스)'),
-      I('p:elemD:pct','속성 강화 %','pct','elem','도감 (누적 보너스)'),I('p:typeD:pct','타입 강화 %','pct','type','도감 (누적 보너스)'),
-      I('g:cos:at:pct','모든 타입 강화 %','pct','user','코스튬'),I('p:elemC:pct','파티 속성 강화 %','pct','elem','코스튬'),
-      I('g:elv:all:flat','모든능력치','flat','user','상태창 · 무기'),I('g:buff:party:pct','파티 피해 증가 %','pct','user','상태창 · 무기'),I('g:wpn:atkp:pct','무기 공격 %','pct','user','상태창 · 무기'),
-      I('g:crit:rate:pct','치명 확률','pct','user','상태창 · 무기',100),
-      I('p:elemS:pct','속성 강화 % (도감 제외)','pct','elem','상태창 · 무기'),
+      I('g:rune:atk:flat','룬 공격','flat','user','① 상태창'),I('g:rune:dmg:pct','룬 피해증가 %','pct','user','① 상태창'),I('g:rune:ae:pct','룬 모든속성 강화 %','pct','user','① 상태창'),I('g:rune:at:pct','룬 모든타입 강화 %','pct','user','① 상태창'),
+      I('g:elv:all:flat','모든능력치','flat','user','① 상태창'),I('g:buff:party:pct','파티 피해 증가 %','pct','user','① 상태창'),I('g:crit:rate:pct','치명 확률','pct','user','① 상태창',100),
+      I('p:elemS:pct','속성 강화 %','pct','elem','① 상태창'),I('p:elem:pct','룬 속성 강화 %','pct','elem','① 상태창'),I('p:type:pct','룬 타입 강화 %','pct','type','① 상태창'),
+      I('g:wpn:atkp:pct','공격 %','pct','user','② 무기'),
+      I('g:cos:at:pct','모든 타입 강화 %','pct','user','③ 코스튬'),I('p:elemC:pct','파티 속성 강화 %','pct','elem','③ 코스튬'),
+      I('g:dogam:dmg:pct','피해증가 %','pct','user','④ 도감'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','④ 도감'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','④ 도감'),
+      I('p:elemD:pct','속성 강화 %','pct','elem','④ 도감'),I('p:typeD:pct','타입 강화 %','pct','type','④ 도감'),
       I('p:ratk','소환수 실전투 공격','flat','pet')],
     runeMap:tm2Template().runeMap,runeTable:{}}})()
+const GRP_HINT={'① 상태창':'캐릭터 상태창에 보이는 값 그대로 (속성 강화는 도감 제외 값)','② 무기':'상태창엔 안 보여요 — 장비 › 무기 상세의 공격 %','③ 코스튬':'상태창엔 안 보여요 — 코스튬 효과에서','④ 도감':'상태창엔 안 보여요 — 소환수 › 도감 미션 › 누적 보너스 옵션'}
 const allSets=()=>[...(data.formulaSets||[]),TM2_SET]
 const activeSet=()=>{const L=allSets();return L.find(s=>s.id===(data.spec||{}).setId)||L[0]||null}
 function specState(){const sp=data.spec||{};return{st:{...(sp.st||{})},cyc:sp.cyc||{mode:'cycle',time:'10',list:[]},steps:sp.steps||{},wi:sp.wi||[]}}
@@ -1190,7 +1190,7 @@ function vSpec(v){
   const inUser=S.inputs.filter(i=>scopeOf(S,i)==='user'),inElem=S.inputs.filter(i=>scopeOf(S,i)==='elem'),inType=S.inputs.filter(i=>scopeOf(S,i)==='type'),inPet=S.inputs.filter(i=>scopeOf(S,i)==='pet'&&i.id!=='p:ratk')
   // 성장증폭: 공식에 실전투·성장증폭이 있거나, 덱 비중을 실전투 공격으로 볼 때 → 내 스펙에서 바꿔 보기
   const useAmp=S.inputs.some(i=>i.id==='p:amp'||i.id==='p:ratk')||(useDeck&&!S.inputs.some(i=>scopeOf(S,i)==='pet'))
-  if(useAmp&&!inUser.some(i=>i.id==='p:amp'))inUser.push({id:'p:amp',name:'성장증폭 %',unit:'pct',cap:100,scope:'user'})
+  if(useAmp&&!inUser.some(i=>i.id==='p:amp'))inUser.push({id:'p:amp',name:'성장증폭 %',unit:'pct',cap:100,scope:'user',grp:S.builtin?'① 상태창':undefined})
   const needBase=S.inputs.some(i=>i.id==='p:ratk')||(useDeck&&!S.inputs.some(i=>scopeOf(S,i)==='pet')),hasBaseIn=['p:atk','p:def','p:spd','p:hp'].every(k=>inPet.some(i=>i.id===k))
   const evalAll=s=>useDeck?deckEval(S,s,deck,g):setEval(S,s,cyc)
   const base=evalAll(st),ok=base.r>0&&isFinite(base.r),byTime=!useDeck&&cyc.mode==='time'
@@ -1212,10 +1212,11 @@ function vSpec(v){
       ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button>${S.builtin?'':'<button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>'}${hb('spec')}</div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
-    ${(()=>{const EL=i=>`<div class="mut" style="margin-top:8px">${esc(i.name)} (속성마다)</div><div class="grid">${ELEMS.map(e=>inp(i.id+'@'+e,e,i)).join('')}</div>`,TY=i=>`<div class="mut" style="margin-top:8px">${esc(i.name)} (타입마다)</div><div class="grid">${TYPES.map(t=>inp(i.id+'@'+t,t,i)).join('')}</div>`
-      const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))]
+    ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
+      const row=(i,L)=>`<div class="mut" style="margin-top:8px">${esc(i.name)}</div><div style="display:grid;grid-template-columns:repeat(${L.length},minmax(0,1fr));gap:4px">${L.map(e=>sm(i.id+'@'+e,e,i)).join('')}</div>`
+      const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))].sort((x,y)=>(x?1:0)-(y?1:0)||x.localeCompare(y))
       return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn)
-        return`${gn?`<div class="mut" style="margin-top:12px"><b>${esc(gn)}</b></div>`:''}${u.length?`<div class="grid" style="margin-top:${gn?4:8}px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(EL).join('')}${inType.filter(i=>(i.grp||'')===gn).map(TY).join('')}`}).join('')})()}
+        return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}</div>`}).join('')})()}
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
     <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
