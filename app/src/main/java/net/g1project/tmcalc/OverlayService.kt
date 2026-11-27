@@ -1873,6 +1873,13 @@ class OverlayService : Service() {
                 val decks = res.optJSONArray("decks") ?: org.json.JSONArray()
                 val btns = ArrayList<Pair<String, () -> Unit>>()
                 btns += "내 스펙" to { showSpecInput() }
+                val presets = res.optJSONArray("presets") ?: org.json.JSONArray()
+                if (presets.length() > 0) btns += "프리셋" to {
+                    val names = (0 until presets.length()).map { presets.getJSONObject(it).optString("name") }
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("프리셋 (캐릭터) 고르기").setItems(names.toTypedArray()) { _, w ->
+                        engine?.evaluateJavascript("runeSetPreset(${JSONObject.quote(presets.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
+                    })
+                }
                 if (decks.length() > 1) btns += "덱" to {
                     val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
                     overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
@@ -1895,7 +1902,7 @@ class OverlayService : Service() {
                 line("새 룬으로 바꾸면 덱 데미지", 12f, Color.parseColor("#9A9DA3"))
                 line("${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict", 22f, col, true)
                 line("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}", 12f)
-                line("공식: ${res.optString("set")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}", 11f, Color.parseColor("#9A9DA3"))
+                line("${if (res.isNull("preset")) "지금 값" else "프리셋: " + res.optString("preset")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")} · 공식: ${res.optString("set")}", 11f, Color.parseColor("#9A9DA3"))
                 val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
                 for (i in 0 until rows.length()) {
                     val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
