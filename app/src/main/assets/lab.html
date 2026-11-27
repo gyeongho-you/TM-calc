@@ -1174,9 +1174,12 @@ function defEl(qn){qn=Math.min(1,Math.max(0.391,qn));for(let i=0;i<DEF_PT.length
 const defLv=qn=>qn>=0.8?'약':qn>=0.47?'중':'강'
 const curPlace=sp=>{const L=(sp&&sp.defPlaces)||[];return L.find(x=>x.id===sp.defPlace)||L[0]||null}
 /** 직접 측정 기준: 잰 소환수를 지금 스펙으로 예측(방어 없음) ↔ 실측 → 남는 비율·방어 세기 */
+/** 잰 소환수를 그때 스펙으로 예측 (방어 없음): 비치명·치명 한 방, 게임 공격 */
+function defSnap(S,st,pet){const z={...petState(S,st,pet),'g:hit:rate:pct':100},am=advMul(pet),one=c=>setEval(S,z,{mode:'cycle',list:[{group:'basic',count:'1',crit:c,pct:''}]}).r*am
+  const nd=one('none'),cd=one('always'),A=petGameAtk(z);return nd>0&&cd>0&&A>0?{nd,cd,A}:null}
 function defRef(S,st0){const P=curPlace(data.spec||{});if(!S.builtin||!P||!P.pet||!(num(P.c)>0)||!(num(P.n)>0))return null
-  const z={...petState(S,st0,P.pet),'g:hit:rate:pct':100},am=advMul(P.pet),one=c=>setEval(S,z,{mode:'cycle',list:[{group:'basic',count:'1',crit:c,pct:''}]}).r*am
-  const nd=one('none'),cd=one('always'),A=petGameAtk(z);if(!(nd>0&&cd>0&&A>0))return null
+  const sn=P.snap&&P.snap.nd>0?P.snap:defSnap(S,st0,P.pet);if(!sn)return null
+  const {nd,cd,A}=sn
   const q=num(P.c)/num(P.n),full=cd/nd,qn=Math.min(1,q/full)
   return{rn:Math.min(1,num(P.n)/nd),rc:Math.min(1,num(P.c)/cd),A,e:defEl(qn),q,full,qn,lv:defLv(qn),P}}
 /** 공격 묶음 하나의 기대 데미지 (방어 반영). 직접 측정: 공격력이 다르면 실측 민감도만큼 남는 비율을 옮김, 치명타 피해를 바꾸면 그만큼 배율에 더함 */
@@ -1294,7 +1297,7 @@ function defBox(S,sp,pets){const dm=defMode(),PL=sp.defPlaces||[],P=curPlace(sp)
       ${ref?`<div style="margin-top:6px;font-size:13px">치명 ÷ 비치명 <b>${fmt(ref.q,2)}</b> <span class="mut">(방어 없음 ${fmt(ref.full,2)})</span> · 방어 세기 <b>${ref.lv}</b><br>들어가는 비율 비치명 <b>${fmt(ref.rn*100,1)}%</b> · 치명 <b>${fmt(ref.rc*100,1)}%</b><br>공격력 1% 올리면 비치명 <b>+${fmt(ref.e[0],2)}%</b> · 치명 <b>+${fmt(ref.e[1],2)}%</b></div>`
         :`<div class="mut" style="font-size:12px;margin-top:4px">${P.pet?'그 곳에서 친 치명·비치명 한 방씩을 적어 주세요. 그 전에는 방어 없음으로 계산해요.':'덱에서 소환수를 골라 주세요.'}</div>`}`
       :'<div class="mut" style="font-size:12px;margin-top:4px">[+ 장소]로 자주 가는 곳(필드, 던전 ○층 …)을 만들어요.</div>'}
-      <div class="mut" style="font-size:12px;margin-top:4px">같은 소환수로 비슷한 때 친 치명 한 방, 비치명 한 방이면 돼요. <b>버프(피해 증가·공격력 증가 등)가 없는 상태</b>에서 재 주세요. 방어 세기는 둘의 비율로만 정해서 정확하고, 덱의 다른 소환수는 공격력 차이만큼 자동으로 맞춰요. 스펙이 크게 오르면 다시 재 주세요.</div></div>`}
+      <div class="mut" style="font-size:12px;margin-top:4px">같은 소환수로 비슷한 때 친 치명 한 방, 비치명 한 방이면 돼요. <b>버프(피해 증가·공격력 증가 등)가 없는 상태</b>에서 재 주세요. 방어 세기는 둘의 비율로만 정해서 정확하고, 덱의 다른 소환수는 공격력 차이만큼 자동으로 맞춰요. 적을 때의 스펙을 같이 저장해서, 나중에 룬·스펙을 바꾸거나 덱을 바꿔도 이 장소 기준은 그대로예요. 스펙이 크게 오르면 다시 재 주세요.</div></div>`}
   return h+'</div>'}
 function bindDef(v,pets){
   v.querySelectorAll('[data-dm]').forEach(b=>b.onclick=()=>saveSpec(p=>setDefMode(p,b.dataset.dm,pets)))
@@ -1304,8 +1307,10 @@ function bindDef(v,pets){
     const id=uid(),pet=pets[0]?JSON.parse(JSON.stringify(pets[0])):null;saveSpec(p=>{p.defPlaces=p.defPlaces||[];p.defPlaces.push({id,name,pet});p.defPlace=id})}
   const rn=$('#dfRen');if(rn)rn.onclick=()=>{const P=curPlace(data.spec||{});const name=(prompt('장소 이름',P.name)||'').trim();if(name)pl(x=>x.name=name)}
   const dl=$('#dfDel');if(dl)dl.onclick=()=>{const P=curPlace(data.spec||{});if(confirm(`'${P.name}' 장소를 지울까요?`))saveSpec(p=>{p.defPlaces=(p.defPlaces||[]).filter(x=>x.id!==P.id);delete p.defPlace})}
-  const pt=$('#dfPet');if(pt)pt.onchange=()=>{const k=+pt.value;if(k>=0&&pets[k])pl(x=>x.pet=JSON.parse(JSON.stringify(pets[k])))}
-  for(const [id,key] of [['#dfC','c'],['#dfN','n']]){const e=$(id);if(e)e.onchange=()=>pl(x=>{const n=num(e.value);if(n>0)x[key]=n;else delete x[key]})}}
+  // 소환수를 바꾸면 적은 데미지는 그 소환수 것이 아니라서 비움
+  const pt=$('#dfPet');if(pt)pt.onchange=()=>{const k=+pt.value;if(k>=0&&pets[k])pl(x=>{x.pet=JSON.parse(JSON.stringify(pets[k]));delete x.c;delete x.n;delete x.snap})}
+  // 데미지를 적을 때 그때 스펙의 예측을 같이 저장 (나중에 룬·스펙을 바꿔도 이 장소 기준은 그대로)
+  for(const [id,key] of [['#dfC','c'],['#dfN','n']]){const e=$(id);if(e)e.onchange=()=>pl(x=>{const n=num(e.value);if(n>0)x[key]=n;else delete x[key];const S=activeSet(),sn=S&&x.pet?defSnap(S,specState().st,x.pet):null;if(sn)x.snap=sn;else delete x.snap})}}
 function vSpec(v){
   const S=activeSet(),sets=allSets(),SS=specState(),sp=data.spec||{}
   if(!S){v.innerHTML=`<div class="card"><div class="big">공식 세트가 없어요</div><div class="mut" style="margin-top:6px">공식 세트 = 데미지 계산식 묶음. 파일을 받았으면 [불러오기], 직접 찾았으면 🔬 연구실 › ⚙ 게임 설정 › [공식 세트 만들기].</div>
