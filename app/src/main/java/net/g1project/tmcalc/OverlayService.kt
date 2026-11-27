@@ -219,7 +219,6 @@ class OverlayService : Service() {
                     // 전투·도감 등 다른 화면은 숫자·Lv 글자가 룬 상자로 잘못 잡혀도 내 스펙 창
                     if (RuneParser.hasCompareMarks(lines)) {
                         val rs0 = RuneParser.parse(lines)
-                        RuneLog.add(this, rs0.take(2)) // 임시: 수치 공식 찾기용 데이터 모으기 (정식 배포 전 삭제)
                         if (rs0.size >= 2 && rs0.take(2).all { it.atk != null }) {
                             showRuneCompare(rs0[0], rs0[1])
                             return@addOnSuccessListener
@@ -1659,7 +1658,6 @@ class OverlayService : Service() {
                         .setPositiveButton("닫기", null))
                     return@ocrLines
                 }
-                RuneLog.add(this, runes.take(2)) // 임시: 수치 공식 찾기용 (정식 배포 전 삭제)
                 labApplyRune(tid, runes[0], runes[1])
             }
         }
@@ -1901,6 +1899,7 @@ class OverlayService : Service() {
                 val col = Color.parseColor(when { g > 0.05 -> "#81C784"; g < -0.05 -> "#E57373"; else -> "#9A9DA3" })
                 line("새 룬으로 바꾸면 덱 데미지", 12f, Color.parseColor("#9A9DA3"))
                 line("${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict", 22f, col, true)
+                line("방어: ${res.optString("def", "없음")} 기준", 11f, Color.parseColor("#9A9DA3"))
                 line("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}", 12f)
                 line("${if (res.isNull("preset")) "지금 값" else "프리셋: " + res.optString("preset")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")} · 공식: ${res.optString("set")}", 11f, Color.parseColor("#9A9DA3"))
                 val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
@@ -1985,6 +1984,10 @@ class OverlayService : Service() {
     private lateinit var optBody: LinearLayout
     private var specTab = 0
     private val specEdits = LinkedHashMap<String, EditText>()
+    /** 이 창에서 실제로 고친 칸만 저장 (안 고친 칸이 다른 값으로 덮어쓰지 않게) */
+    private val specDirty = HashSet<String>()
+    /** 창을 그릴 때의 프리셋 id: 그사이 앱에서 프리셋을 바꿨으면 이 창 값은 버림 */
+    private var specPresetAtRender: String = ""
     private val specSave = Runnable { flushSpec() }
 
     private fun optOpen() = optPanel?.visibility == View.VISIBLE
@@ -1995,11 +1998,8 @@ class OverlayService : Service() {
         val p = optParams ?: return
         if (!show) flushSpec()
         v.visibility = if (show) View.VISIBLE else View.GONE
-        // 칸에 적으려면 창이 포커스를 받아야 한다. 닫으면 게임에 돌려준다
-        p.flags = if (show) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        runCatching { wm.updateViewLayout(v, p) }
-        if (!show) getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0)
+        // 열어 둬도 게임은 그대로 조작되게: 포커스는 칸을 누를 때만 가져가고, 창 밖을 누르면 돌려준다
+        setOptFocusable(false)
         updateBubble()
     }
 
@@ -2014,7 +2014,7 @@ class OverlayService : Service() {
         }
         val params = WindowManager.LayoutParams(
             minOf(dm.widthPixels - dp(16), dp(400)), ViewGroup.LayoutParams.WRAP_CONTENT, overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -2049,9 +2049,21 @@ class OverlayService : Service() {
             val want = if (optBody.height > maxH) maxH else ViewGroup.LayoutParams.WRAP_CONTENT
             if (scroll.layoutParams.height != want) scroll.layoutParams = scroll.layoutParams.apply { height = want }
         }
+        box.setOnTouchListener { _, ev -> if (ev.action == MotionEvent.ACTION_OUTSIDE) { flushSpec(); setOptFocusable(false) }; false }
         optPanel = box; optParams = params
         wm.addView(box, params)
         bringBubbleToFront()
+    }
+
+    private var optFocusable = false
+    private fun setOptFocusable(on: Boolean) {
+        val v = optPanel ?: return
+        val p = optParams ?: return
+        if (optFocusable == on && ((p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0) == on) return
+        optFocusable = on
+        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv() else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        runCatching { wm.updateViewLayout(v, p) }
+        if (!on) { getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0); v.findFocus()?.clearFocus() }
     }
 
     private fun optHeader(title: String, btns: List<Pair<String, () -> Unit>> = emptyList()) {
@@ -2064,10 +2076,13 @@ class OverlayService : Service() {
     /** 적은 값을 최적화 › 내 스펙(spec.st)에 저장. 칠 때마다 잠깐 뒤에, 탭을 바꾸거나 닫을 때 바로 */
     private fun flushSpec() {
         main.removeCallbacks(specSave)
-        if (specEdits.isEmpty()) return
-        val vals = specEdits.map { (k, e) -> k to e.text.toString().trim() }
+        if (specEdits.isEmpty() || specDirty.isEmpty()) return
+        val vals = specEdits.filterKeys { it in specDirty }.map { (k, e) -> k to e.text.toString().trim() }
+        specDirty.clear()
         LabData.update(this) { d ->
             val sp = d.optJSONObject("spec") ?: JSONObject().also { d.put("spec", it) }
+            // 앱에서 다른 프리셋으로 바꿨으면 이 창(예전 프리셋 값)으로 덮어쓰지 않음
+            if (sp.optString("presetId") != specPresetAtRender) return@update
             val s2 = sp.optJSONObject("st") ?: JSONObject().also { sp.put("st", it) }
             for ((k, t) in vals) {
                 val n = if (t.isEmpty()) null else LabData.number(t)
@@ -2083,9 +2098,11 @@ class OverlayService : Service() {
     private fun showSpecInput(tab: Int = specTab) {
         flushSpec()
         specEdits.clear()
+        specDirty.clear()
         specTab = tab.coerceIn(0, 4)
+        specPresetAtRender = LabData.load(this).optJSONObject("spec")?.optString("presetId").orEmpty()
         if (optPanel == null) buildOpt()
-        val elems = listOf("화염", "물", "바람", "빛", "어둠")
+        val elems = listOf("화염", "물", "바람", "어둠", "빛")
         val types = listOf("야수", "마법", "자연", "던전", "수중", "비행")
         val grades = listOf("광휘", "초월", "신화", "전설", "영웅", "유일", "희귀", "일반")
         // (탭 이름, 어디서 보는지, 칸들) — 칸: (키, 이름, 0 = 한 칸 / 1 = 속성마다 / 2 = 타입마다)
@@ -2102,7 +2119,13 @@ class OverlayService : Service() {
                 Triple("g:dogam:at:pct", "모든 타입 강화 %", 0), Triple("g:dogam:cd:pct", "치명타 피해 %", 0),
                 Triple("p:elemD:pct", "속성 강화 %", 1), Triple("p:typeD:pct", "타입 강화 %", 2))),
             Triple("코어", "상태창에 안 보이는 값 · 적힌 경로에서 그대로", listOf(Triple("g:core:at:pct", "소환 › 스킬 — 모든 타입 증가 %", 0), Triple("core:n", "소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수", 3))))
-        optHeader("내 스펙")
+        // 지금 프리셋(캐릭터) 표시 + 바꾸기 (앱 최적화 프리셋과 같은 데이터)
+        val lab = LabData.load(this)
+        val presets = lab.optJSONArray("specPresets") ?: org.json.JSONArray()
+        val curId = lab.optJSONObject("spec")?.optString("presetId").orEmpty()
+        val curName = (0 until presets.length()).map { presets.getJSONObject(it) }.firstOrNull { it.optString("id") == curId }?.optString("name")
+        optHeader(if (curName != null) "내 스펙 · $curName" else "내 스펙",
+            if (presets.length() > 0) listOf("프리셋 ▾" to { pickSpecPreset() }) else emptyList())
         optBody.removeAllViews()
         // 탭
         optBody.addView(LinearLayout(ui).apply {
@@ -2132,7 +2155,19 @@ class OverlayService : Service() {
             specEdits[k] = it
             it.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             it.gravity = Gravity.END
+            it.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: Editable?) { specDirty += k }
+            })
             it.addTextChangedListener(watcher)
+            it.setOnTouchListener { e, ev ->
+                if (ev.action == MotionEvent.ACTION_DOWN && !optFocusable) {
+                    setOptFocusable(true)
+                    e.post { e.requestFocus(); getSystemService(InputMethodManager::class.java).showSoftInput(e, 0) }
+                }
+                false
+            }
         }
         // 소제목(kind < 0)마다 둥근 칸으로 나눠서 구별이 쉽게
         var sec: LinearLayout = optBody
@@ -2162,7 +2197,47 @@ class OverlayService : Service() {
                 })
             }
         }
+        // 키보드 [다음]은 화면에서 읽는 순서대로 (같은 줄 오른쪽 칸 먼저: 화염 → 물 → 바람 …, 줄 끝이면 다음 줄)
+        val order = specEdits.values.toList()
+        order.forEachIndexed { idx, e ->
+            val last = idx == order.size - 1
+            e.imeOptions = if (last) EditorInfo.IME_ACTION_DONE else EditorInfo.IME_ACTION_NEXT
+            e.setOnEditorActionListener { _, action, _ ->
+                if (action == EditorInfo.IME_ACTION_NEXT && !last) { order[idx + 1].requestFocus(); true }
+                else if (action == EditorInfo.IME_ACTION_DONE) { flushSpec(); setOptFocusable(false); true }
+                else false
+            }
+        }
         showOpt(true)
+    }
+
+    /** 게임 위 내 스펙 창에서 프리셋 바꾸기: 지금 값은 지금 프리셋에 먼저 저장하고, 고른 프리셋 값을 불러옴 */
+    private fun pickSpecPreset() {
+        flushSpec()
+        val lab = LabData.load(this)
+        val presets = lab.optJSONArray("specPresets") ?: return
+        val curId = lab.optJSONObject("spec")?.optString("presetId").orEmpty()
+        val list = (0 until presets.length()).map { presets.getJSONObject(it) }
+        val names = list.map { (if (it.optString("id") == curId) "✓ " else "") + it.optString("name") }
+        overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("프리셋 (캐릭터) 고르기").setItems(names.toTypedArray()) { _, w ->
+            val target = list[w].optString("id")
+            if (target == curId) return@setItems
+            LabData.update(this) { d ->
+                val arr = d.optJSONArray("specPresets") ?: return@update
+                val sp = d.optJSONObject("spec") ?: JSONObject()
+                val cur = sp.optString("presetId")
+                for (i in 0 until arr.length()) {
+                    val q = arr.getJSONObject(i)
+                    if (cur.isNotEmpty() && q.optString("id") == cur) q.put("spec", JSONObject(sp.toString()))
+                }
+                for (i in 0 until arr.length()) {
+                    val q = arr.getJSONObject(i)
+                    if (q.optString("id") == target) d.put("spec", JSONObject((q.optJSONObject("spec") ?: JSONObject()).toString()).put("presetId", target))
+                }
+            }
+            toast("'${list[w].optString("name")}' 프리셋으로 바꿨어요.")
+            showSpecInput()
+        }.setNegativeButton("닫기", null))
     }
 
     private fun overlayDialog(b: android.app.AlertDialog.Builder): android.app.AlertDialog {
