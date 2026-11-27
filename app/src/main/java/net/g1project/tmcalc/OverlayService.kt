@@ -2079,7 +2079,7 @@ class OverlayService : Service() {
         specTab = tab.coerceIn(0, 4)
         if (optPanel == null) buildOpt()
         val elems = listOf("화염", "물", "바람", "빛", "어둠")
-        val types = listOf("야수", "마법", "자연", "수중", "던전", "비행")
+        val types = listOf("야수", "마법", "자연", "던전", "수중", "비행")
         val grades = listOf("광휘", "초월", "신화", "전설", "영웅", "유일", "희귀", "일반")
         // (탭 이름, 어디서 보는지, 칸들) — 칸: (키, 이름, 0 = 한 칸 / 1 = 속성마다 / 2 = 타입마다)
         val groups = listOf(
@@ -2092,7 +2092,7 @@ class OverlayService : Service() {
             Triple("도감", "소환수 › 도감 미션 › 누적 보너스", listOf(Triple("g:dogam:atk:flat", "기본 능력치 공격 (+800 같은 값)", 0), Triple("g:dogam:dmg:pct", "피해증가 %", 0), Triple("g:dogam:ae:pct", "모든 속성 강화 %", 0),
                 Triple("g:dogam:at:pct", "모든 타입 강화 %", 0), Triple("g:dogam:cd:pct", "치명타 피해 %", 0),
                 Triple("p:elemD:pct", "속성 강화 %", 1), Triple("p:typeD:pct", "타입 강화 %", 2))),
-            Triple("코어", "상점 소환 모든 타입 · 소환수 › 훈련소 › 스킬 코어 등급별 개수", listOf(Triple("g:core:at:pct", "상점 소환 모든 타입 %", 0), Triple("core:n", "훈련소 스킬 코어 보유 개수", 3))))
+            Triple("코어", "상태창에 안 보이는 값 · 적힌 경로에서 그대로", listOf(Triple("g:core:at:pct", "소환 › 스킬 — 모든 타입 증가 %", 0), Triple("core:n", "소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수", 3))))
         optHeader("내 스펙")
         optBody.removeAllViews()
         // 탭

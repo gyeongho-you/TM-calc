@@ -604,7 +604,7 @@ function scoreFactor(sc){const x=(sc-1700)/100;let y=0;for(let k=COMBAT_COEF.len
 /** 소환수 실전투 공격 (캐릭터 배율 뺀 값) = 공격 × (1 + 성장증폭 × u(총능)). 총능 1480~1920 밖이면 계산 안 함 */
 function realAtk(st,ampPct){if(!st||![0,1,2,3].every(i=>isNum(st[i]))||!isNum(ampPct))return NaN
   const sc=abilityScore(st);if(sc<1480||sc>1920)return NaN;return st[0]*(1+Math.min(1,Math.max(0,ampPct/100))*scoreFactor(sc))}
-const TM2_ELEM=[['e1','화염'],['e2','물'],['e3','바람'],['e4','빛'],['e5','어둠']],TM2_TYPE=[['t1','야수'],['t2','마법'],['t3','자연'],['t4','수중'],['t5','던전'],['t6','비행']]
+const TM2_ELEM=[['e1','화염'],['e2','물'],['e3','바람'],['e4','빛'],['e5','어둠']],TM2_TYPE=[['t1','야수'],['t2','마법'],['t3','자연'],['t5','던전'],['t4','수중'],['t6','비행']]
 function tm2Template(){
   const it=(id,name,unit)=>({id,name,unit,reduce:false})
   const rune=[it('atk','공격','flat'),it('dmg','피해증가','pct'),it('nb','일반공격피해','pct'),it('sk','스킬공격피해','pct'),it('ae','모든속성 강화','pct'),it('at','모든타입 강화','pct'),it('cd','치명타 피해','pct'),
@@ -667,8 +667,14 @@ function migrateV2(){
   data.v=2
 }
 /** 고치기 전에 항상 새로 읽는다 (게임 위 [연구] 창이 그 사이에 기록을 넣었을 수 있음) */
+/** 프리셋 자동 저장: 지금 쓰는 프리셋에 내 스펙·덱·전투 설정을 그대로 복사 */
+const sp0pid=()=>(data.spec||{}).presetId
+function syncPreset(d){const sp=d.spec,id=sp&&sp.presetId;if(!id)return false
+  const q=(d.specPresets||[]).find(x=>x.id===id);if(!q){delete sp.presetId;return true}
+  const a=JSON.stringify(sp);if(JSON.stringify(q.spec)===a)return false
+  q.spec=JSON.parse(a);q.time=Date.now();return true}
 function mutate(fn){
-  loadData();fn(data)
+  loadData();fn(data);syncPreset(data)
   const s=JSON.stringify(data)
   if(BR)TMCalc.save(s);else try{localStorage.setItem('tmcalcLab',s)}catch(e){}
 }
@@ -788,7 +794,7 @@ const HELP={
 <p><b>상태창</b>: 룬 옵션 합계, 속성 강화(도감 제외 값), 모든능력치, 파티 피해 증가 등<br>
 <b>도감</b>: 소환수 › 도감 미션 › 누적 보너스 옵션 (공격, 피해증가, 속성·타입 강화) — 상태창에 안 보여서 따로<br>
 <b>무기 공격 %</b>: 무기 상세에서 · <b>성장증폭</b>: 소환수 공통 (표 맨 아래)</p>
-<p><b>타입 강화</b>에는 상태창에 안 보이는 값이 두 개 더 붙어요: 상점 소환 모든 타입, 소환수 › 훈련소 › 스킬 코어 보유효과의 모든 타입. 그래서 타입 강화 1%의 효과는 생각보다 작아요.</p>
+<p><b>타입 강화</b>에는 상태창에 안 보이는 값이 두 개 더 붙어요: 소환 › 스킬의 모든 타입 증가, 소환수 › 훈련소 › 스킬 코어 보유효과의 모든 타입. 그래서 타입 강화 1%의 효과는 생각보다 작아요.</p>
 <p><b>치명</b>: 치명 피해는 대상·공격력에 따라 달라서 여기 적지 않아요. 치명이 터진 데미지는 기록에서 치명 칸에 따로 적어요.</p>
 <p>기록에는 "바꾼 양"만 적기 때문에, 처음 값을 모르면 공식 계수가 지저분하게 나오고 합연산/곱연산을 가리기 어려워져요. 모르는 칸은 비워 두면 그 항목만 바꾼 양으로 계산해요.</p>`],
   record:['기록하는 법',`
@@ -906,11 +912,12 @@ const HELP={
 &nbsp;&nbsp;- 치명 ÷ 비치명: 기본 3.50 + 룬·도감 치명타 피해 (실측, 원소던전 첫 몬스터). 공격·속성·타입·피해를 바꿔도 그대로예요. 다른 대상에서 잰 값이 있으면 적어요<br>
 &nbsp;&nbsp;- 대상 방어: 덱 평균 실전투 공격의 몇 %인지 (원소던전 첫 몬스터 ≈ 0, 센 던전 80~90%). 방어가 셀수록 센 소환수가 더 유리해요<br>
 · 소환수마다: 추가 치명 확률·추가 명중률(장착 스킬 등), 개체 속도(공속), <b>실제 데미지</b>(같은 대상 한 방 → 치명 배율 역산. 덱 전원 비치명을 적으면 소환수 세기도 실측으로)</p>
-<p><b>설정 내보내기 / 불러오기</b>: 내 스펙·덱·전투 설정과 덱 소환수별 지금 예상값을 파일로 저장해요. 다른 폰·PC에서 [설정 불러오기]로 똑같이 볼 수 있어요.</p>
+<p><b>프리셋</b>: 캐릭터마다 내 스펙·덱·전투 설정을 따로 둬요. [+ 새로]로 지금 값을 이름 붙여 만들고, 그 뒤로는 고칠 때마다 자동 저장돼요. 다른 캐릭터는 목록에서 고르기만 하면 바뀌어요. 잠깐 시험해 볼 땐 "바꿔 보기"를 쓰세요.</p>
+<p><b>설정 내보내기 / 불러오기</b>: 지금 고른 프리셋(내 스펙·덱·전투 설정)과 소환수별 예상값을 파일로 저장해요. [설정 불러오기]하면 새 프리셋으로 추가돼요.</p>
 <p><b>무엇을 올리면 이득?</b> 항목 하나를 조금 올렸을 때 덱 데미지가 몇 % 오르는지. 안 볼 항목은 [표에서 숨기기]. <b>바꿔 보기</b>로 여러 개를 한꺼번에 바꿔 볼 수 있어요.</p>
 <p><b>게임 위 [최적화] 버튼</b>: 앱 첫 화면에서 버튼을 [최적화]로 고르면 돼요. 룬 비교 화면에서 누르면 여기 스펙·덱으로 "바꾸면 +x%", 그 밖의 화면(도감·무기·코스튬·상태창)에서 누르면 <b>내 스펙</b> 창이 떠서 게임을 보면서 적을 수 있어요. 일반공격피해·스킬공격피해는 소환수 데미지에 효과가 없어서 빼요 (실측).</p>
 <div class="ex"><b>기본 공식</b> (실측, 소환수 5마리 ±0.5%)<br>평타 = 실전투 공격 × (룬 공격 + 모든능력치 + 도감 기본 공격) × (1 + 무기%) × 타입 × 속성 × 피해 — 앞의 세 개가 게임의 소환수 전투능력치 공격력이에요<br>· 치명 = 평타 × (3.50 + 룬·도감 치명타 피해)<br>
-· 타입 = 1 + (상점 소환 + 훈련소 스킬 코어 보유효과 + 모든 타입 + 그 소환수 타입)/100<br>· 속성 = 1 + (상태창 속성 + 모든 속성 + 그 소환수 속성)/100<br>· 피해 = 1 + (피해증가 + 파티 피해 증가)/100<br>· 스킬 = 평타 × 스킬 배율, 전용 스킬(공격력 %)은 곱하기</div>`],
+· 타입 = 1 + (소환 › 스킬 모든 타입 + 훈련소 스킬 코어 보유효과 + 모든 타입 + 그 소환수 타입)/100<br>· 속성 = 1 + (상태창 속성 + 모든 속성 + 그 소환수 속성)/100<br>· 피해 = 1 + (피해증가 + 파티 피해 증가)/100<br>· 스킬 = 평타 × 스킬 배율, 전용 스킬(공격력 %)은 곱하기</div>`],
   optimize:['최적 셋팅',`
 <p>틀에 등록한 아이템들 중 <b>칸 제한 안에서 가장 센 조합</b>을 찾아 줘요. 1~3등까지 보여 줘요.</p>
 <p>지금 낀 것은 시작 상태의 "낀 아이템" + 기록의 끼기/빼기로 자동으로 계산해요.</p>
@@ -1001,7 +1008,7 @@ const TM2_SET=(()=>{
       I('g:cos:at:pct','모든 속성 % (타입에 더해져요)','pct','user','③ 코스튬'),I('p:elemC:pct','파티 속성 강화 %','pct','elem','③ 코스튬'),
       I('g:dogam:atk:flat','기본 능력치 공격 (+800 같은 값)','flat','user','④ 도감'),I('g:dogam:dmg:pct','피해증가 %','pct','user','④ 도감'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','④ 도감'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','④ 도감'),I('g:dogam:cd:pct','치명타 피해 %','pct','user','④ 도감'),
       I('p:elemD:pct','속성 강화 %','pct','elem','④ 도감'),I('p:typeD:pct','타입 강화 %','pct','type','④ 도감'),
-      I('g:core:at:pct','상점 소환 모든 타입 %','pct','user','⑤ 스킬 코어'),I('g:train:at:pct','훈련소 스킬 코어 보유효과 모든 타입 %','pct','user','⑤ 스킬 코어'),
+      I('g:core:at:pct','소환 › 스킬 — 모든 타입 증가 %','pct','user','⑤ 스킬 코어'),I('g:train:at:pct','훈련소 스킬 코어 보유효과 모든 타입 %','pct','user','⑤ 스킬 코어'),
       I('g:crit:rate:pct','치명 확률 (체감)','pct','user','__battle',100),I('g:hit:rate:pct','명중률 (체감)','pct','user','__battle',100),
       I('p:ratk','소환수 실전투 공격','flat','pet')],
     // 효율 표에서 한 줄로: 같은 묶음에 더해지는 값들 (+1%의 효과가 똑같음)
@@ -1012,7 +1019,7 @@ const TM2_SET=(()=>{
       {name:'속성 강화 %',src:'상태창·룬·도감·코스튬',ids:['p:elemS:pct','p:elem:pct','p:elemD:pct','p:elemC:pct']},
       {name:'타입 강화 %',src:'룬·도감',ids:['p:type:pct','p:typeD:pct']}],
     runeMap:{...tm2Template().runeMap,'명중':'g:hit:rate:pct'},runeTable:{}}})()
-const GRP_HINT={'⑤ 스킬 코어':'상태창에 안 보여요 — 상점 소환 모든 타입, 소환수 › 훈련소 › 스킬 코어 등급별 개수 (보유효과 자동 계산)','① 상태창':'캐릭터 상태창에 보이는 값 그대로 (속성 강화는 도감 제외 값)','② 무기':'상태창엔 안 보여요 — 장비 › 무기 상세의 공격 %','③ 코스튬':'상태창엔 안 보여요 — 코스튬 효과에서','④ 도감':'상태창엔 안 보여요 — 소환수 › 도감 미션 › 누적 보너스 옵션'}
+const GRP_HINT={'⑤ 스킬 코어':'상태창에 안 보이는 값이에요. 게임에서 적힌 경로로 가서 숫자를 그대로 적어요','① 상태창':'캐릭터 상태창에 보이는 값 그대로 (속성 강화는 도감 제외 값)','② 무기':'상태창엔 안 보여요 — 장비 › 무기 상세의 공격 %','③ 코스튬':'상태창엔 안 보여요 — 코스튬 효과에서','④ 도감':'상태창엔 안 보여요 — 소환수 › 도감 미션 › 누적 보너스 옵션'}
 const allSets=()=>[...(data.formulaSets||[]),TM2_SET]
 const activeSet=()=>{const L=allSets();return L.find(s=>s.id===(data.spec||{}).setId)||L[0]||null}
 const BATTLE_DEF={'g:crit:rate:pct':30,'g:hit:rate:pct':90}
@@ -1054,6 +1061,8 @@ function setEval(S,st,cyc){
   if(S.builtin){const h=num(st['g:hit:rate:pct']);if(isFinite(h))tot*=Math.min(1,Math.max(0,h/100))}
   return{r:byTime?tot/T:tot,miss}}
 function vFront(c,v){
+  // 게임 위 내 스펙 창에서 고친 값도 지금 프리셋에 자동 저장
+  {const q=(data.specPresets||[]).find(x=>x.id===(data.spec||{}).presetId);if(q&&JSON.stringify(q.spec)!==JSON.stringify(data.spec))mutate(()=>{})}
   $('#title').textContent='최적화'
   $('#hdr').innerHTML='<button class="sm" id="toLab" title="공식을 찾는 곳">🔬 연구실</button>'
   $('#toLab').onclick=()=>go({v:'home'})
@@ -1065,7 +1074,7 @@ function vFront(c,v){
   vSpec($('#ftv'))
 }
 // TM2 덱: 속성·타입 목록 (게임 표기 '화염', 예전 자료의 '불' 도 화염으로)
-const ELEMS=['화염','물','바람','빛','어둠'],TYPES=['야수','마법','자연','수중','던전','비행']
+const ELEMS=['화염','물','바람','빛','어둠'],TYPES=['야수','마법','자연','던전','수중','비행']
 const normElem=e=>e==='불'?'화염':e
 const scopeOf=(S,i)=>i.scope||'user'
 const SCOPES=[['user','내 스펙 (공통)'],['elem','소환수 속성별'],['type','소환수 타입별'],['pet','소환수 자기 스펙']]
@@ -1259,6 +1268,7 @@ function vSpec(v){
   const decks=sp.decks||[]
   v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
       ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button>${S.builtin?'':'<button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>'}${hb('spec')}</div>
+    <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap"><span class="mut">프리셋</span><select id="pSel" style="flex:1;min-width:120px">${sp.presetId?'':`<option value="">${(data.specPresets||[]).length?'지금 값 (프리셋 아님)':'프리셋 없음'}</option>`}${(data.specPresets||[]).map(q=>`<option value="${q.id}"${sp.presetId===q.id?' selected':''}>${esc(q.name)}</option>`).join('')}</select><button class="sm" id="pNew">+ 새로</button>${sp.presetId?'<button class="sm" id="pRen">이름</button><button class="sm danger" id="pDel" title="이 프리셋 지우기">✕</button>':''}</div>
     <div class="row" style="margin-top:4px"><span class="mut" style="flex:1">내 스펙·덱·전투 설정을 파일로</span><button class="sm" id="oExp">설정 내보내기</button><button class="sm" id="oImp">설정 불러오기</button></div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
@@ -1266,9 +1276,9 @@ function vSpec(v){
       const row=(i,L)=>`<div class="mut" style="margin-top:8px">${esc(i.name)}</div><div style="display:grid;grid-template-columns:repeat(${L.length},minmax(0,1fr));gap:4px">${L.map(e=>sm(i.id+'@'+e,e,i)).join('')}</div>`
       const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))].filter(g=>g!=='__battle').sort((x,y)=>(x?1:0)-(y?1:0)||x.localeCompare(y))
       return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn&&i.id!=='g:train:at:pct')
-        return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}${gn==='⑤ 스킬 코어'&&inUser.some(i=>i.id==='g:train:at:pct')?`<div class="mut" style="margin-top:8px">훈련소 스킬 코어 보유 개수 (등급별)</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${TRAIN_GR.map(([g,v])=>sm('core:n@'+g,`${g} (${v}%)`,{})).join('')}</div><div class="mut" style="margin-top:4px">보유효과 모든 타입 = <b>${fmt(trainSum(SS.st)??TRAIN_DEF)}%</b></div>`:''}</div>`}).join('')})()}
+        return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}${gn==='⑤ 스킬 코어'&&inUser.some(i=>i.id==='g:train:at:pct')?`<div class="mut" style="margin-top:8px">소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${TRAIN_GR.map(([g,v])=>sm('core:n@'+g,`${g} (${v}%)`,{})).join('')}</div><div class="mut" style="margin-top:4px">보유효과 모든 타입 = <b>${fmt(trainSum(SS.st)??TRAIN_DEF)}%</b></div>`:''}</div>`}).join('')})()}
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
-    <div class="mut" style="margin-top:6px">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></details>
+    <div class="row" style="margin-top:6px;gap:6px;align-items:flex-start"><div class="mut" style="flex:1">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div><button class="sm danger" id="sReset">초기화</button></div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
     <div class="mut" style="margin-top:8px"><b>전투 설정</b> — 던전·대상마다 다른 값. 치명 30%·명중 90%가 기본, [직접 입력]을 켜면 체감 값으로</div><div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
       ${inUser.some(i=>i.grp==='__battle')?`<label class="row mut" style="gap:4px"><input type="checkbox" id="bCus"${sp.battleCustom?' checked':''}>직접 입력</label>${inUser.filter(i=>i.grp==='__battle').map(i=>`<label class="row mut" style="gap:4px">${esc(i.name.replace(' (체감)',''))}<input type="text" inputmode="decimal" data-sv="${esc(i.id)}" value="${esc(st[i.id]??'')}" style="width:50px"${sp.battleCustom?'':' disabled'}>%</label>`).join('')}`:''}
@@ -1331,13 +1341,36 @@ function vSpec(v){
   const ss=$('#sSel');if(ss)ss.onchange=()=>saveSpec(p=>p.setId=ss.value)
   $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
   $('#oImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  // 내 스펙 초기화: 확인 창(예/아니오) 뒤에 칸을 전부 비움 (덱·전투 설정·프리셋 목록은 그대로, 지금 프리셋에는 자동 저장돼요)
+  $('#sReset').onclick=()=>{const m=document.createElement('div');m.className='hmask'
+    m.innerHTML=`<div class="hbox"><h3>초기화</h3><div>초기화 하시겠습니까?<br>초기화된 데이터는 복구되지 않습니다.</div><div class="row" style="margin-top:12px;justify-content:flex-end"><button id="rsN">아니오</button><button class="danger" id="rsY">예</button></div></div>`
+    document.body.appendChild(m)
+    m.onclick=ev=>{if(ev.target===m)m.remove()}
+    m.querySelector('#rsN').onclick=()=>m.remove()
+    m.querySelector('#rsY').onclick=()=>{m.remove();saveSpec(p=>{p.st={};delete p.steps});toast('내 스펙을 비웠어요.')}}
+  // 프리셋: 캐릭터마다 내 스펙·덱·전투 설정. 고른 프리셋에 고칠 때마다 자동 저장 (mutate → syncPreset)
+  $('#pSel').onchange=e=>{const q=(data.specPresets||[]).find(x=>x.id===e.target.value);if(!q)return
+    if(!sp.presetId&&!confirm(`지금 값은 프리셋에 없어서 바꾸면 사라져요. '${q.name}'(으)로 바꿀까요? (남기려면 취소 → [+ 새로])`)){render();return}
+    deckDraft=null;mutate(d=>{d.spec=JSON.parse(JSON.stringify({...q.spec,presetId:q.id}))});toast(`'${q.name}'`);render()}
+  $('#pNew').onclick=()=>{const name=(prompt('새 프리셋 이름 (예: 본캐, 부캐) — 지금 값을 복사해서 만들어요','')||'').trim();if(!name)return
+    if((data.specPresets||[]).some(q=>q.name===name))return alert(`'${name}' 프리셋이 이미 있어요.`)
+    const id=uid();mutate(d=>{d.spec={...(d.spec||{}),presetId:id};d.specPresets=d.specPresets||[];d.specPresets.push({id,name,time:Date.now(),spec:JSON.parse(JSON.stringify(d.spec))})})
+    toast(`'${name}' 프리셋을 만들었어요. 이제 고치면 자동 저장돼요.`);render()}
+  const pr=$('#pRen');if(pr)pr.onclick=()=>{const q=(data.specPresets||[]).find(x=>x.id===sp.presetId);if(!q)return
+    const name=(prompt('프리셋 이름',q.name)||'').trim();if(!name||name===q.name)return
+    if((data.specPresets||[]).some(x=>x.name===name))return alert(`'${name}' 프리셋이 이미 있어요.`)
+    mutate(d=>{const x=d.specPresets.find(y=>y.id===q.id);if(x)x.name=name});render()}
+  const pd=$('#pDel');if(pd)pd.onclick=()=>{const q=(data.specPresets||[]).find(x=>x.id===sp.presetId);if(!q)return
+    if(!confirm(`'${q.name}' 프리셋을 지울까요? (화면의 지금 값은 그대로)`))return
+    mutate(d=>{d.specPresets=(d.specPresets||[]).filter(x=>x.id!==q.id);if(d.spec)delete d.spec.presetId});render()}
   $('#oExp').onclick=()=>{const d=new Date(),p2=n=>String(n).padStart(2,'0')
     // 내 스펙·덱·전투 설정 + 쓰는 공식 세트(내장이 아니면 통째로) + 덱 소환수별 지금 예상 (다른 폰·PC에서 같은 계산을 다시 보기 위해)
     const pred=S.builtin&&ok?pets.map(p=>{const z=petState(S,st,p),h=setEval(S,{...z,'g:hit:rate:pct':100},{mode:'cycle',list:[{group:'basic',count:'1',crit:'none',pct:''}]}).r*advMul(p)
       const c=setEval(S,{...z,'g:hit:rate:pct':100},{mode:'cycle',list:[{group:'basic',count:'1',crit:'always',pct:''}]}).r*advMul(p)
       return{name:p.label||p.name,elem:p.elem,type:p.type,hit:h,critMul:h>0?c/h:null,crit:c,adv:advMul(p),inputs:z}}):[]
-    saveJson(`최적화설정_${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.json`,
-      {kind:'tmcalc-opt-spec',v:1,exported:d.toISOString(),set:{id:S.id,name:S.name,builtin:!!S.builtin},formulaSet:S.builtin?null:S,spec:JSON.parse(JSON.stringify(data.spec||{})),amp:myAmp(),pred})}
+    const pn=((data.specPresets||[]).find(q=>q.id===sp.presetId)||{}).name
+    saveJson(`최적화설정_${pn?fname(pn)+'_':''}${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.json`,
+      {kind:'tmcalc-opt-spec',v:1,exported:d.toISOString(),presetName:pn||null,set:{id:S.id,name:S.name,builtin:!!S.builtin},formulaSet:S.builtin?null:S,spec:JSON.parse(JSON.stringify(data.spec||{})),amp:myAmp(),pred})}
   if($('#sDel'))$('#sDel').onclick=()=>{if(!confirm(`'${S.name}' 공식 세트를 지울까요? (내 스펙은 남아요)`))return;mutate(d=>{d.formulaSets=(d.formulaSets||[]).filter(x=>x.id!==S.id)});render()}
   // 칠 때마다 저장 (게임으로 넘어갔다 와도 안 사라지게), 칸을 벗어나면 다시 계산해서 그림
   const svPut=(e,p)=>{p.st=p.st||{};const n=num(e.value);if(isFinite(n))p.st[e.dataset.sv]=n;else delete p.st[e.dataset.sv]}
@@ -1650,10 +1683,13 @@ function importText(text){
       toast('틀을 불러왔어요.');nav=[{v:'front'},{v:'home'}];render();return
     }
     if(o.kind==='tmcalc-opt-spec'&&o.spec){
-      if(!confirm('지금 내 스펙·덱·전투 설정을 불러온 것으로 바꿀까요? (지금 값은 사라져요)'))return
-      mutate(d=>{d.spec=o.spec
+      // 불러온 설정은 새 프리셋으로 만들어서 고름 (지금 프리셋은 그대로)
+      let nm=o.presetName||'불러온 설정';const names=new Set((data.specPresets||[]).map(q=>q.name));if(names.has(nm)){let k=2;while(names.has(`${nm} (${k})`))k++;nm=`${nm} (${k})`}
+      if(!sp0pid()&&!confirm(`'${nm}' 프리셋으로 불러와요. 지금 값은 프리셋에 없어서 화면에서 사라져요. 계속할까요?`))return
+      const id=uid();deckDraft=null
+      mutate(d=>{d.spec=JSON.parse(JSON.stringify({...o.spec,presetId:id}));d.specPresets=d.specPresets||[];d.specPresets.push({id,name:nm,time:Date.now(),spec:JSON.parse(JSON.stringify(d.spec))})
         if(o.formulaSet&&o.formulaSet.forms){d.formulaSets=d.formulaSets||[];if(!d.formulaSets.some(x=>x.id===o.formulaSet.id))d.formulaSets.push(o.formulaSet)}})
-      toast('최적화 설정을 불러왔어요.');nav=[{v:'front'}];render();return}
+      toast(`'${nm}' 프리셋으로 불러왔어요.`);nav=[{v:'front'}];render();return}
     if(o.kind==='tmcalc-formula-set'&&o.forms){
       const S2={...o,id:uid()};mutate(d=>{d.formulaSets=d.formulaSets||[];d.formulaSets.push(S2);d.spec=d.spec||{};d.spec.setId=S2.id})
       toast(`공식 세트 '${o.name}'을(를) 불러왔어요.`);nav=[{v:'front'}];render();return}
