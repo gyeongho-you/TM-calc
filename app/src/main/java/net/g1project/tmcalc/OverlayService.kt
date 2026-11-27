@@ -929,6 +929,12 @@ class OverlayService : Service() {
         updateBubble()
     }
 
+    private val HELP_CALC = "계산 창" to "소환수 정보 화면에서 버튼을 누르면 성장률·등급을 계산해요.\n\n· 강 ▾ : 강화 단계를 바꿔 보기\n· 저장 : 저장 목록에 넣기 (최적화 › 덱에서 불러와 씀)\n· 기준 / 비교 : 두 소환수 나란히 비교\n· 👁 누르는 동안 반투명, 제목 줄을 끌면 이동"
+    private val HELP_SPEC = "내 스펙 창" to "게임 상태창·무기·코스튬·도감을 보면서 같은 값을 적는 창이에요.\n\n· 탭: 상태창 / 무기 / 코스튬 / 도감 / 코어 (게임 화면 순서)\n· 적으면 바로 지금 프리셋에 저장\n· 프리셋 ▾ : 캐릭터 바꾸기\n· 창을 띄운 채 게임 조작 가능 (칸을 누를 때만 키보드)"
+    private val HELP_RUNE = "룬 비교 창" to "게임의 룬 비교 화면(장착중 + 새 룬)에서 최적화 버튼을 누르면, 바꿨을 때 덱 데미지가 몇 % 바뀌는지 보여 줘요.\n\n· 방어 탭 : 어디서 싸우는 기준인지 (고르면 저장)\n· +0.8% ~ +1.2% 처럼 범위 : 1.2만처럼 잘린 수치 때문. 0을 넘나들면 비슷함\n· 내 스펙 / 프리셋 / 덱 : 계산에 쓰는 값 고치기·바꾸기\n\n▶ 내 스펙·덱은 앱 › 메뉴 › 최적화에서 먼저 적어 두세요."
+    private val HELP_DEF = "방어 기준" to "· 방어 없음 : 원소던전 첫타 기준 (공격력 계열 가치를 실제보다 낮게 봄)\n· 원소던전 : 칠수록 오르는 방어 반영\n· 직접 측정 : 자주 가는 곳 기준, 가장 정확\n\n▶ 직접 측정 데미지 적는 곳: 앱 › 최적화 › 2 덱 › 전투 설정 › 방어 › [직접 측정] → 장소를 만들고 덱 소환수 하나의 치명·비치명 한 방씩 (버프 없이)"
+    private val HELP_LAB = "연구 창" to "연구실에서 실험을 시작했을 때만 나오는 창이에요.\n\n· 룬 읽기 : 룬 비교 화면을 읽어 바뀐 값을 줄로\n· 데미지 찍기 : 1초 간격으로 화면을 찍어 데미지 숫자 기록\n· 시작 상태 저장 : 지금 상태창 값을 처음 값으로\n· 창을 띄운 채 게임 조작 가능 (글자 칸을 누를 때만 키보드)\n\n▶ 실험 시작·멈추기: 앱 › 메뉴 › 최적화 · 연구실 › 🔬 연구실"
+
     private var labFocusable = false
     private fun setLabFocusable(on: Boolean) {
         val v = labPanel ?: return
@@ -997,6 +1003,7 @@ class OverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
         header.addView(labTitle)
+        header.addView(helpButton(HELP_LAB.first, HELP_LAB.second))
         header.addView(headerButton("접기") { showLab(false) })
         header.setOnTouchListener(DragListener(params, box, onTap = {}, onLongPress = {}))
         box.addView(header)
@@ -1915,7 +1922,7 @@ class OverlayService : Service() {
                         engine?.evaluateJavascript("runeSetDeck(${JSONObject.quote(decks.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
                     })
                 }
-                optHeader(if (res.isNull("preset")) "룬 비교" else "룬 비교 · ${res.optString("preset")}", btns)
+                optHeader(if (res.isNull("preset")) "룬 비교" else "룬 비교 · ${res.optString("preset")}", btns, HELP_RUNE)
                 fun line(t: String, size: Float = 13f, color: Int = Color.WHITE, bold: Boolean = false) = optBody.addView(TextView(ui).apply {
                     text = t; textSize = size; setTextColor(color); if (bold) typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(2), 0, dp(2))
                 })
@@ -1947,6 +1954,8 @@ class OverlayService : Service() {
                             setOnClickListener { if (!on) engine?.evaluateJavascript("runeSetDef('$m')") { showRuneCompare(a, b) } }
                         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if (m != "zero") leftMargin = dp(6) })
                     }
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(helpButton(HELP_DEF.first, HELP_DEF.second))
                 })
                 if (dm == "meas") {
                     val places = res.optJSONArray("places") ?: org.json.JSONArray()
@@ -2138,10 +2147,11 @@ class OverlayService : Service() {
         if (!on) { getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0); v.findFocus()?.clearFocus() }
     }
 
-    private fun optHeader(title: String, btns: List<Pair<String, () -> Unit>> = emptyList()) {
+    private fun optHeader(title: String, btns: List<Pair<String, () -> Unit>> = emptyList(), help: Pair<String, String>? = null) {
         optTitle.text = title
         optBtns.removeAllViews()
         for ((l, f) in btns) optBtns.addView(headerButton(l, f))
+        help?.let { (t, b) -> optBtns.addView(helpButton(t, b)) }
         optBtns.addView(headerButton("접기") { showOpt(false) })
     }
 
@@ -2197,7 +2207,7 @@ class OverlayService : Service() {
         val curId = lab.optJSONObject("spec")?.optString("presetId").orEmpty()
         val curName = (0 until presets.length()).map { presets.getJSONObject(it) }.firstOrNull { it.optString("id") == curId }?.optString("name")
         optHeader(if (curName != null) "내 스펙 · $curName" else "내 스펙",
-            if (presets.length() > 0) listOf("프리셋 ▾" to { pickSpecPreset() }) else emptyList())
+            if (presets.length() > 0) listOf("프리셋 ▾" to { pickSpecPreset() }) else emptyList(), HELP_SPEC)
         optBody.removeAllViews()
         // 탭
         optBody.addView(LinearLayout(ui).apply {
@@ -2391,6 +2401,7 @@ class OverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         header.addView(headerButton("다시읽기") { scan() })
+        header.addView(helpButton(HELP_CALC.first, HELP_CALC.second))
         header.addView(headerButton("접기") { showPanel(false) })
         header.setOnTouchListener(DragListener(panelParams, panel, onTap = {}, onLongPress = {}))
         panel.addView(header)
@@ -2616,6 +2627,15 @@ class OverlayService : Service() {
         setPadding(dp(2), 0, dp(2), 0)
         addView(TextView(ui).apply { text = label; textSize = 10f; setTextColor(Color.parseColor("#9A9DA3")) })
         addView(v, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    /** 도움말 ? (누르면 짧은 설명 창) */
+    private fun helpButton(title: String, body: String) = TextView(ui).apply {
+        text = "?"; textSize = 12f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+        setTextColor(Color.parseColor("#80CBC4"))
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.parseColor("#80CBC4")) }
+        layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginStart = dp(6) }
+        setOnClickListener { overlayDialog(android.app.AlertDialog.Builder(ui).setTitle(title).setMessage(body).setPositiveButton("확인", null)) }
     }
 
     private fun headerButton(label: String, onClick: () -> Unit) = TextView(ui).apply {

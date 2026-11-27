@@ -72,18 +72,25 @@ class MainActivity : Activity() {
         }
         // 버튼 사이 간격
         fun spaced() = LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * dp).toInt() }
+        // 도움말 ? (제목 줄 오른쪽)
+        fun helpRow(label: String, title: String, body: String) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, (18 * dp).toInt(), 0, (6 * dp).toInt())
+            addView(TextView(this@MainActivity).apply { text = label; textSize = 13f; setTextColor(Color.parseColor("#9A9DA3")) }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(TextView(this@MainActivity).apply {
+                text = "?"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#80CBC4")); typeface = android.graphics.Typeface.DEFAULT_BOLD
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setStroke((2 * dp).toInt(), Color.parseColor("#80CBC4")) }
+                setOnClickListener { AlertDialog.Builder(this@MainActivity).setTitle(title).setMessage(body).setPositiveButton("확인", null).show() }
+            }, LinearLayout.LayoutParams((26 * dp).toInt(), (26 * dp).toInt()))
+        }
+        root.addView(helpRow("권한", "권한", "· 다른 앱 위에 표시 : 게임 위에 버튼·창을 띄우려면 필요\n· 접근성 화면 캡처 : 버튼을 누를 때 게임 화면 글자를 읽으려면 필요 (누를 때만 한 장, 폰 밖으로 안 보냄)\n\n켜져 있으면 ✓ 표시."))
         root.addView(overlayBtn, spaced())
         a11yBtn = Button(this).apply {
             text = "2. 접근성에서 화면 캡처 켜기"
             setOnClickListener { openA11ySettings() }
         }
         root.addView(a11yBtn, spaced())
-        root.addView(TextView(this).apply {
-            text = "게임 위 버튼"
-            textSize = 13f
-            setTextColor(Color.parseColor("#9A9DA3"))
-            setPadding(0, (18 * dp).toInt(), 0, (6 * dp).toInt())
-        })
+        root.addView(helpRow("게임 위 버튼", "게임 위 버튼", "· 성장률 계산 : 소환수 정보 화면에서 누르면 성장률·등급 계산\n· 최적화 : 룬 비교 화면에서 누르면 \"바꾸면 +x%\", 그 밖의 화면에서 누르면 내 스펙 입력 창\n\n▶ 최적화를 쓰려면 앱 › 메뉴 › 최적화에서 내 스펙·덱을 먼저 적어 두세요."))
         fun segBtn(label: String, onClick: () -> Unit) = TextView(this).apply {
             text = label
             textSize = 15f

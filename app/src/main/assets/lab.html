@@ -761,6 +761,11 @@ const fdate=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${S
 
 // ---------------------------------------------------------------- 도움말 (? 버튼)
 const HELP={
+  opt_preset:['프리셋',`<ul><li>캐릭터마다 내 스펙·덱·전투 설정을 따로 저장해요</li><li><b>+ 새로</b>: 지금 값을 복사해서 만들고, 그 뒤로는 고칠 때마다 자동 저장</li><li>게임 위 내 스펙·룬 비교 창에서도 프리셋을 바꿀 수 있어요</li></ul>`],
+  opt_deck:['덱',`<ul><li>소환수 최대 3마리. <b>+ 새 덱</b> → 저장한 소환수 고르기</li><li>덱은 평소엔 보기만, <b>[수정]</b> → 고친 뒤 <b>[저장]</b></li></ul><div class="ex">저장한 소환수: 게임 위 계산 창의 [저장]으로 만들어요<br>스킬 정보(마나·배율): 앱 › 메뉴 › 소환수 › 도감 › 수정</div>`],
+  opt_battle:['전투 설정',`<ul><li><b>대상 속성</b>: 상성이면 그 소환수 ×2.42</li><li><b>치명 확률·명중</b>: 기본 30%·90%. [직접 입력]을 켜면 체감값</li><li><b>치명 ÷ 비치명</b>: 비우면 3.50 + 치명타 피해</li><li><b>방어</b>: 원소던전·직접 측정 장소마다 치명 확률·명중을 따로 적을 수 있어요 (비우면 여기 값)</li></ul>`],
+  opt_def:['방어',`<ul><li><b>방어 없음</b>: 원소던전 첫타 기준 (공격력 계열 가치를 실제보다 낮게 봐요)</li><li><b>원소던전</b>: 칠수록 오르는 방어를 타마다 계산</li><li><b>직접 측정</b>: 자주 가는 곳 기준, 가장 정확해요</li></ul><div class="ex">직접 측정 하는 법<br>① [직접 측정] → 장소 이름 정하기 (처음엔 '기본')<br>② 덱 소환수 하나를 고르고, 그 곳에서 친 <b>치명 한 방, 비치명 한 방</b>을 적기 (버프 없이)<br>③ 치명 확률·명중은 그 곳 체감값 (비우면 전투 설정 값)<br>적을 때 스펙을 같이 저장해서, 나중에 룬을 바꿔도 장소 기준은 그대로예요.</div>`],
+  opt_dmg:['예상 데미지',`<ul><li><b>평균 DPS (1분)</b>: 오래 싸울 때 초당 데미지</li><li><b>실전투 시간</b>: 적은 초 동안 실제로 치는 횟수 (그 안에 스킬이 안 나오면 0)</li><li>막대: 보라 평타 · 노랑 스킬</li><li>방어 기준을 따라 계산해요</li></ul>`],
   start:['연구실 사용법',`
 <p>게임의 숨은 데미지 계산식을 <b>직접 실험해서 알아내는</b> 곳이에요. 테이밍마스터는 실측으로 확정한 <b>기본 공식</b>이 최적화에 이미 들어 있어서, 연구실은 더 깊게 확인하고 싶을 때 써요.</p>
 <p><b>맨 위 🎮 게임</b>: 목록 맨 아래 <b>＋ 게임 추가</b><br>
@@ -1293,7 +1298,7 @@ function setDefMode(p,m,pets){if(m==='zero'){delete p.defMode;return}p.defMode=m
 const DEF_WARN='직접 측정으로 맞춘 비율과 효율이 상이할 수 있습니다. 정확한 효율은 직접 측정을 이용해 주세요.'
 /** 전투 설정 › 방어: 없음 / 원소던전 / 직접 측정 (장소마다 저장) */
 function defBox(S,sp,pets){const dm=defMode(),PL=sp.defPlaces||[],P=curPlace(sp)
-  let h=`<div style="margin-top:8px"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="mut">방어</span><div class="seg" style="display:flex"><button class="sm${dm==='zero'?' on':''}" data-dm="zero">없음</button><button class="sm${dm==='elem'?' on':''}" data-dm="elem">원소던전</button><button class="sm${dm==='meas'?' on':''}" data-dm="meas">직접 측정</button></div></div>`
+  let h=`<div style="margin-top:8px"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="mut">방어</span>${hb('opt_def')}<div class="seg" style="display:flex"><button class="sm${dm==='zero'?' on':''}" data-dm="zero">없음</button><button class="sm${dm==='elem'?' on':''}" data-dm="elem">원소던전</button><button class="sm${dm==='meas'?' on':''}" data-dm="meas">직접 측정</button></div></div>`
   if(dm==='zero')h+='<div class="mut" style="font-size:12px;margin-top:2px">원소던전 첫타처럼 방어가 없는 기준이에요.</div><div style="font-size:12px;margin-top:2px;color:#f2b84b">⚠ 직접 측정으로 맞춘 비율과 효율이 상이할 수 있습니다. 정확한 효율은 직접 측정을 이용해 주세요.</div>'
   const bt=(idc,idh,c,hh,pc)=>`<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><label class="row mut" style="gap:4px">치명 확률<input type="text" inputmode="decimal" id="${idc}" value="${esc(c??'')}" placeholder="${pc}" style="width:50px">%</label><label class="row mut" style="gap:4px">명중<input type="text" inputmode="decimal" id="${idh}" value="${esc(hh??'')}" placeholder="${BATTLE_DEF['g:hit:rate:pct']}" style="width:50px">%</label><span class="mut" style="font-size:12px">비우면 ${pc===ELEM_CRIT?'실측 86% · ':''}전투 설정 값</span></div>`
   if(dm==='elem')h+='<div class="mut" style="font-size:12px;margin-top:2px">원소던전은 칠수록 레벨(방어)이 올라요. 덱 공속·예상 데미지의 전투 시간으로 타마다 계산해요 (실측 식). 오래 칠수록 공격력이 % 옵션보다 유리해져요.</div>'+bt('efC','efH',sp.elemCrit,sp.elemHit,ELEM_CRIT)
@@ -1362,7 +1367,7 @@ function vSpec(v){
   v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
       ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button>${S.builtin?'':'<button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>'}${hb('spec')}</div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
-  <div class="card" style="padding:8px 12px"><div><b>프리셋</b> <span class="mut">캐릭터마다 따로 · 고치면 자동 저장</span></div>
+  <div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1"><b>프리셋</b> <span class="mut">캐릭터마다 따로 · 고치면 자동 저장</span></span>${hb('opt_preset')}</div>
     <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap"><select id="pSel" style="flex:1;min-width:120px">${sp.presetId?'':`<option value="">${(data.specPresets||[]).length?'지금 값 (프리셋 아님)':'프리셋 없음'}</option>`}${(data.specPresets||[]).map(q=>`<option value="${q.id}"${sp.presetId===q.id?' selected':''}>${esc(q.name)}</option>`).join('')}</select><button class="sm" id="pNew">+ 새로</button>${sp.presetId?'<button class="sm" id="pRen">이름</button><button class="sm danger" id="pDel" title="이 프리셋 지우기">✕</button>':''}</div><div class="mut" style="font-size:12px;margin-top:4px">입력은 실시간으로 저장됩니다.</div></div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
     ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
@@ -1383,13 +1388,13 @@ function vSpec(v){
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
     <div class="row" style="margin-top:6px;gap:6px;align-items:flex-start"><div class="mut" style="flex:1">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
-    <div class="mut" style="margin-top:8px"><b>전투 설정</b> — 던전·대상마다 다른 값. 치명 30%·명중 90%가 기본, [직접 입력]을 켜면 체감 값으로</div><div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
+    <div class="row" style="margin-top:8px"><span class="mut" style="flex:1"><b>전투 설정</b> — 던전·대상마다 다른 값. 치명 30%·명중 90%가 기본, [직접 입력]을 켜면 체감 값으로</span>${hb('opt_battle')}</div><div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
       ${inUser.some(i=>i.grp==='__battle')?`<label class="row mut" style="gap:4px"><input type="checkbox" id="bCus"${sp.battleCustom?' checked':''}>직접 입력</label>${inUser.filter(i=>i.grp==='__battle').map(i=>`<label class="row mut" style="gap:4px">${esc(i.name.replace(' (체감)',''))}<input type="text" inputmode="decimal" data-sv="${esc(i.id)}" value="${esc(st[i.id]??'')}" style="width:50px"${sp.battleCustom?'':' disabled'}>%</label>`).join('')}`:''}
       ${S.builtin?`<label class="row mut" style="gap:4px" title="같은 대상 첫타 치명 ÷ 비치명을 지금 스펙에서 잰 값. 비우면 3.50 + 룬·도감 치명타 피해. 치명타 피해를 바꿔 보면 그만큼 더해요">치명 ÷ 비치명 ×<input type="text" inputmode="decimal" id="tCb" value="${esc(sp.critBase??'')}" placeholder="${fmt(TM2_CRITB+tm2Cd(st),2)}" style="width:50px"></label>`:''}
       ${sp.targetElem?`<label class="row mut" style="gap:4px">상성 배율 ×<input type="text" inputmode="decimal" id="tAm" value="${esc(sp.advMul??'')}" placeholder="${ADV_MUL}" style="width:60px"></label><span class="mut">${esc(Object.keys(ADV).filter(k=>ADV[k]===sp.targetElem).join('·'))} 소환수가 상성</span>`:''}</div>
     ${S.builtin?defBox(S,sp,pets):''}
     <div class="row" style="margin-top:8px"><select id="dSel" style="flex:1"><option value="">${decks.length?'덱 고르기':'저장한 덱 없음'}</option>${decks.map(d=>`<option value="${d.id}"${deck&&d.id===deck.id?' selected':''}>${esc(d.name)} (${d.pets.length})</option>`).join('')}</select>
-      ${editing?'<button class="sm pri" id="dSave">저장</button><button class="sm" id="dCancel">취소</button>':`<button class="sm" id="dNew">+ 새 덱</button>${deck?'<button class="sm" id="dEdit">수정</button><button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}`}</div>
+      ${editing?'<button class="sm pri" id="dSave">저장</button><button class="sm" id="dCancel">취소</button>':`<button class="sm" id="dNew">+ 새 덱</button>${hb('opt_deck')}${deck?'<button class="sm" id="dEdit">수정</button><button class="sm" id="dRen">이름</button><button class="sm danger" id="dDel">✕</button>':''}`}</div>
     ${editing?'<div class="mut good" style="margin-top:6px">덱 수정 중 — [저장]을 눌러야 반영돼요.</div>':''}
     ${deck?`${pets.map((p,k)=>{const sk=skOf(p),cy=petCycle(S,p,g);return`<div class="card" style="background:var(--card2)" data-pt="${k}">
       ${p.label||p.level?`<div class="mut" style="margin-bottom:4px">${esc([p.label&&p.label!==p.name?p.label:'',p.level?'Lv.'+p.level:'',isNum(p.breaks)?'+'+p.breaks+'강':''].filter(Boolean).join(' · '))}${p.memo?` · 📝 ${esc(p.memo)}`:''}</div>`:''}
@@ -1403,7 +1408,7 @@ function vSpec(v){
       ${useDeck?(S.abs?(ten?(()=>{const mx=Math.max(...ten.per.map(x=>x.ten||0),1),avg=ten.mode==='avg'
         const bar=x=>x.ten==null?'<span class="bad">도감에 없는 이름 → 공속 모름</span>':`<div style="display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--line);margin-top:3px"><div style="width:${x.basic/mx*100}%;background:var(--acc)"></div><div style="width:${x.skill/mx*100}%;background:#f2b84b"></div></div>`
         return`<div class="card" style="background:var(--card2);margin-top:6px">
-        <div><b>예상 데미지</b></div>
+        <div class="row"><b style="flex:1">예상 데미지</b>${hb('opt_dmg')}</div>
         <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
           <div class="seg" style="display:flex"><button class="sm${avg?' on':''}" id="dmA">평균 DPS (1분)</button><button class="sm${avg?'':' on'}" id="dmT">실전투 시간</button></div>
           ${avg?'':`<label class="row mut" style="gap:4px"><input type="text" inputmode="decimal" id="dmS" value="${esc(String(ten.T))}" style="width:50px">초</label>`}</div>
