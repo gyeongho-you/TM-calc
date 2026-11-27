@@ -2076,10 +2076,11 @@ class OverlayService : Service() {
     private fun showSpecInput(tab: Int = specTab) {
         flushSpec()
         specEdits.clear()
-        specTab = tab.coerceIn(0, 3)
+        specTab = tab.coerceIn(0, 4)
         if (optPanel == null) buildOpt()
         val elems = listOf("화염", "물", "바람", "빛", "어둠")
         val types = listOf("야수", "마법", "자연", "수중", "던전", "비행")
+        val grades = listOf("광휘", "초월", "신화", "전설", "영웅", "유일", "희귀", "일반")
         // (탭 이름, 어디서 보는지, 칸들) — 칸: (키, 이름, 0 = 한 칸 / 1 = 속성마다 / 2 = 타입마다)
         val groups = listOf(
             Triple("상태창", "캐릭터 상태창에 보이는 값", listOf(Triple("g:rune:atk:flat", "룬 공격", 0), Triple("g:rune:dmg:pct", "룬 피해증가 %", 0), Triple("g:rune:ae:pct", "룬 모든속성 강화 %", 0),
@@ -2087,10 +2088,11 @@ class OverlayService : Service() {
                 Triple("g:buff:party:pct", "파티 피해 증가 %", 0), Triple("p:amp", "성장증폭 %", 0),
                 Triple("p:elemS:pct", "속성 강화 % (도감 제외)", 1), Triple("p:elem:pct", "룬 속성 강화 %", 1), Triple("p:type:pct", "룬 타입 강화 %", 2))),
             Triple("무기", "무기 상세 (상태창에 안 보여요)", listOf(Triple("g:wpn:atkp:pct", "공격 %", 0))),
-            Triple("코스튬", "코스튬 효과", listOf(Triple("g:cos:at:pct", "모든 타입 강화 %", 0), Triple("p:elemC:pct", "파티 속성 강화 %", 1))),
-            Triple("도감", "소환수 › 도감 미션 › 누적 보너스", listOf(Triple("g:dogam:dmg:pct", "피해증가 %", 0), Triple("g:dogam:ae:pct", "모든 속성 강화 %", 0),
+            Triple("코스튬", "코스튬 효과", listOf(Triple("g:cos:at:pct", "모든 속성 % (타입에 더해짐)", 0), Triple("p:elemC:pct", "파티 속성 강화 %", 1))),
+            Triple("도감", "소환수 › 도감 미션 › 누적 보너스", listOf(Triple("g:dogam:atk:flat", "기본 능력치 공격 (+800 같은 값)", 0), Triple("g:dogam:dmg:pct", "피해증가 %", 0), Triple("g:dogam:ae:pct", "모든 속성 강화 %", 0),
                 Triple("g:dogam:at:pct", "모든 타입 강화 %", 0), Triple("g:dogam:cd:pct", "치명타 피해 %", 0),
-                Triple("p:elemD:pct", "속성 강화 %", 1), Triple("p:typeD:pct", "타입 강화 %", 2))))
+                Triple("p:elemD:pct", "속성 강화 %", 1), Triple("p:typeD:pct", "타입 강화 %", 2))),
+            Triple("코어", "상점 소환 모든 타입 · 소환수 › 훈련소 › 스킬 코어 등급별 개수", listOf(Triple("g:core:at:pct", "상점 소환 모든 타입 %", 0), Triple("core:n", "훈련소 스킬 코어 보유 개수", 3))))
         optHeader("내 스펙")
         optBody.removeAllViews()
         // 탭
@@ -2135,7 +2137,7 @@ class OverlayService : Service() {
                 optBody.addView(labLabel(name))
                 optBody.addView(LinearLayout(ui).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    for (n in if (kind == 1) elems else types) addView(LinearLayout(ui).apply {
+                    for (n in when (kind) { 1 -> elems; 3 -> grades; else -> types }) addView(LinearLayout(ui).apply {
                         orientation = LinearLayout.VERTICAL
                         addView(TextView(ui).apply { text = n; textSize = 10f; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#9A9DA3")) }, LinearLayout.LayoutParams(-1, -2))
                         addView(numInput("$key@$n").also { it.textSize = 13f; it.gravity = Gravity.CENTER; it.setPadding(dp(2), dp(4), dp(2), dp(4)) }, LinearLayout.LayoutParams(-1, -2))
