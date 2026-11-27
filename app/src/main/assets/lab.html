@@ -1268,9 +1268,10 @@ function vSpec(v){
   const decks=sp.decks||[]
   v.innerHTML=`<div class="card" style="padding:8px 12px"><div class="row"><span style="flex:1">공식: <b>${esc(S.name)}</b> <span class="mut">${esc([S.ver,S.by&&('by '+S.by)].filter(Boolean).join(' · '))}</span></span>
       ${sets.length>1?`<select id="sSel" style="max-width:150px">${sets.map(x=>`<option value="${x.id}"${x.id===S.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<button class="sm" id="sImp">불러오기</button>${S.builtin?'':'<button class="sm danger" id="sDel" title="이 공식 세트 지우기">✕</button>'}${hb('spec')}</div>
-    <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap"><span class="mut">프리셋</span><select id="pSel" style="flex:1;min-width:120px">${sp.presetId?'':`<option value="">${(data.specPresets||[]).length?'지금 값 (프리셋 아님)':'프리셋 없음'}</option>`}${(data.specPresets||[]).map(q=>`<option value="${q.id}"${sp.presetId===q.id?' selected':''}>${esc(q.name)}</option>`).join('')}</select><button class="sm" id="pNew">+ 새로</button>${sp.presetId?'<button class="sm" id="pRen">이름</button><button class="sm danger" id="pDel" title="이 프리셋 지우기">✕</button>':''}</div>
     <div class="row" style="margin-top:4px"><span class="mut" style="flex:1">내 스펙·덱·전투 설정을 파일로</span><button class="sm" id="oExp">설정 내보내기</button><button class="sm" id="oImp">설정 불러오기</button></div>
     ${S.memo?`<div class="mut">${esc(S.memo)}</div>`:''}</div>
+  <div class="card" style="padding:8px 12px"><div><b>프리셋</b> <span class="mut">캐릭터마다 따로 · 고치면 자동 저장</span></div>
+    <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap"><select id="pSel" style="flex:1;min-width:120px">${sp.presetId?'':`<option value="">${(data.specPresets||[]).length?'지금 값 (프리셋 아님)':'프리셋 없음'}</option>`}${(data.specPresets||[]).map(q=>`<option value="${q.id}"${sp.presetId===q.id?' selected':''}>${esc(q.name)}</option>`).join('')}</select><button class="sm" id="pNew">+ 새로</button>${sp.presetId?'<button class="sm" id="pRen">이름</button><button class="sm danger" id="pDel" title="이 프리셋 지우기">✕</button>':''}</div></div>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">1 내 스펙 <span class="mut" style="font-weight:400">(공식에 들어가는 값만)</span></summary>
     ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
       const row=(i,L)=>`<div class="mut" style="margin-top:8px">${esc(i.name)}</div><div style="display:grid;grid-template-columns:repeat(${L.length},minmax(0,1fr));gap:4px">${L.map(e=>sm(i.id+'@'+e,e,i)).join('')}</div>`
@@ -1278,7 +1279,7 @@ function vSpec(v){
       return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn&&i.id!=='g:train:at:pct')
         return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}${gn==='⑤ 스킬 코어'&&inUser.some(i=>i.id==='g:train:at:pct')?`<div class="mut" style="margin-top:8px">소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${TRAIN_GR.map(([g,v])=>sm('core:n@'+g,`${g} (${v}%)`,{})).join('')}</div><div class="mut" style="margin-top:4px">보유효과 모든 타입 = <b>${fmt(trainSum(SS.st)??TRAIN_DEF)}%</b></div>`:''}</div>`}).join('')})()}
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
-    <div class="row" style="margin-top:6px;gap:6px;align-items:flex-start"><div class="mut" style="flex:1">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div><button class="sm danger" id="sReset">초기화</button></div></details>
+    <div class="row" style="margin-top:6px;gap:6px;align-items:flex-start"><div class="mut" style="flex:1">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
     <div class="mut" style="margin-top:8px"><b>전투 설정</b> — 던전·대상마다 다른 값. 치명 30%·명중 90%가 기본, [직접 입력]을 켜면 체감 값으로</div><div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap"><label class="row mut" style="gap:4px">대상 속성<select id="tEl"><option value="">모름 · 상성 없음</option>${ELEMS.map(e=>`<option${sp.targetElem===e?' selected':''}>${e}</option>`).join('')}</select></label>
       ${inUser.some(i=>i.grp==='__battle')?`<label class="row mut" style="gap:4px"><input type="checkbox" id="bCus"${sp.battleCustom?' checked':''}>직접 입력</label>${inUser.filter(i=>i.grp==='__battle').map(i=>`<label class="row mut" style="gap:4px">${esc(i.name.replace(' (체감)',''))}<input type="text" inputmode="decimal" data-sv="${esc(i.id)}" value="${esc(st[i.id]??'')}" style="width:50px"${sp.battleCustom?'':' disabled'}>%</label>`).join('')}`:''}
@@ -1340,14 +1341,15 @@ function vSpec(v){
     <button class="sm" id="wAdd" style="margin-top:6px">+ 바꿔 보기</button></details>`
   const ss=$('#sSel');if(ss)ss.onchange=()=>saveSpec(p=>p.setId=ss.value)
   $('#sImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
+  v.insertAdjacentHTML('beforeend','<div class="row" style="justify-content:flex-end;margin:16px 0 8px"><button class="sm danger" id="sReset">최적화 초기화</button></div>')
   $('#oImp').onclick=()=>BR?TMCalc.pickFile():$('#file').click()
-  // 내 스펙 초기화: 확인 창(예/아니오) 뒤에 칸을 전부 비움 (덱·전투 설정·프리셋 목록은 그대로, 지금 프리셋에는 자동 저장돼요)
+  // 최적화 초기화: 확인 창(예/아니오) 뒤에 내 스펙·덱·전투 설정을 전부 비움 (프리셋 목록은 그대로, 지금 프리셋에는 자동 저장돼요)
   $('#sReset').onclick=()=>{const m=document.createElement('div');m.className='hmask'
     m.innerHTML=`<div class="hbox"><h3>초기화</h3><div>초기화 하시겠습니까?<br>초기화된 데이터는 복구되지 않습니다.</div><div class="row" style="margin-top:12px;justify-content:flex-end"><button id="rsN">아니오</button><button class="danger" id="rsY">예</button></div></div>`
     document.body.appendChild(m)
     m.onclick=ev=>{if(ev.target===m)m.remove()}
     m.querySelector('#rsN').onclick=()=>m.remove()
-    m.querySelector('#rsY').onclick=()=>{m.remove();saveSpec(p=>{p.st={};delete p.steps});toast('내 스펙을 비웠어요.')}}
+    m.querySelector('#rsY').onclick=()=>{m.remove();deckDraft=null;mutate(d=>{const o=d.spec||{};d.spec={};if(o.setId)d.spec.setId=o.setId;if(o.presetId)d.spec.presetId=o.presetId});toast('최적화 값을 모두 비웠어요.');render()}}
   // 프리셋: 캐릭터마다 내 스펙·덱·전투 설정. 고른 프리셋에 고칠 때마다 자동 저장 (mutate → syncPreset)
   $('#pSel').onchange=e=>{const q=(data.specPresets||[]).find(x=>x.id===e.target.value);if(!q)return
     if(!sp.presetId&&!confirm(`지금 값은 프리셋에 없어서 바꾸면 사라져요. '${q.name}'(으)로 바꿀까요? (남기려면 취소 → [+ 새로])`)){render();return}
