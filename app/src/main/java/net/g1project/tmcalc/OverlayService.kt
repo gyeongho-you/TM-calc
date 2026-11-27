@@ -2083,10 +2083,12 @@ class OverlayService : Service() {
         val grades = listOf("광휘", "초월", "신화", "전설", "영웅", "유일", "희귀", "일반")
         // (탭 이름, 어디서 보는지, 칸들) — 칸: (키, 이름, 0 = 한 칸 / 1 = 속성마다 / 2 = 타입마다)
         val groups = listOf(
-            Triple("상태창", "캐릭터 상태창에 보이는 값", listOf(Triple("g:rune:atk:flat", "룬 공격", 0), Triple("g:rune:dmg:pct", "룬 피해증가 %", 0), Triple("g:rune:ae:pct", "룬 모든속성 강화 %", 0),
-                Triple("g:rune:at:pct", "룬 모든타입 강화 %", 0), Triple("g:rune:cd:pct", "룬 치명타 피해 %", 0), Triple("g:elv:all:flat", "모든능력치", 0),
-                Triple("g:buff:party:pct", "파티 피해 증가 %", 0), Triple("p:amp", "성장증폭 %", 0),
-                Triple("p:elemS:pct", "속성 강화 % (도감 제외)", 1), Triple("p:elem:pct", "룬 속성 강화 %", 1), Triple("p:type:pct", "룬 타입 강화 %", 2))),
+            Triple("상태창", "캐릭터 상태창에 보이는 값 (게임 화면 순서)", listOf(Triple("", "속성 강화", -1),
+                Triple("p:elemS:pct", "속성 강화 % (도감 제외)", 1), Triple("g:elv:all:flat", "모든능력치", 0),
+                Triple("", "특수 버프", -1), Triple("g:buff:party:pct", "파티 피해 증가 %", 0), Triple("p:amp", "성장증폭 %", 0),
+                Triple("", "룬 옵션", -1), Triple("g:rune:atk:flat", "룬 공격", 0), Triple("g:rune:dmg:pct", "룬 피해증가 %", 0), Triple("g:rune:ae:pct", "룬 모든속성 강화 %", 0),
+                Triple("g:rune:at:pct", "룬 모든타입 강화 %", 0), Triple("g:rune:cd:pct", "룬 치명타 피해 %", 0),
+                Triple("p:elem:pct", "룬 속성 강화 %", 1), Triple("p:type:pct", "룬 타입 강화 %", 2))),
             Triple("무기", "무기 상세 (상태창에 안 보여요)", listOf(Triple("g:wpn:atkp:pct", "공격 %", 0))),
             Triple("코스튬", "코스튬 효과", listOf(Triple("g:cos:at:pct", "모든 속성 % (타입에 더해짐)", 0), Triple("p:elemC:pct", "파티 속성 강화 %", 1))),
             Triple("도감", "소환수 › 도감 미션 › 누적 보너스", listOf(Triple("g:dogam:atk:flat", "기본 능력치 공격 (+800 같은 값)", 0), Triple("g:dogam:dmg:pct", "피해증가 %", 0), Triple("g:dogam:ae:pct", "모든 속성 강화 %", 0),
@@ -2125,17 +2127,25 @@ class OverlayService : Service() {
             it.gravity = Gravity.END
             it.addTextChangedListener(watcher)
         }
+        // 소제목(kind < 0)마다 둥근 칸으로 나눠서 구별이 쉽게
+        var sec: LinearLayout = optBody
         for ((key, name, kind) in fields) {
+            if (kind < 0) {
+                sec = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; background = round(0xFF1E1F22.toInt(), 10); setPadding(dp(10), dp(6), dp(10), dp(8)) }
+                sec.addView(sec, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                sec.addView(TextView(ui).apply { text = name; textSize = 13f; typeface = Typeface.DEFAULT_BOLD; setTextColor(OPT_ACC); setPadding(0, 0, 0, dp(2)) })
+                continue
+            }
             if (kind == 0) {
-                optBody.addView(LinearLayout(ui).apply {
+                sec.addView(LinearLayout(ui).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                     addView(TextView(ui).apply { text = name; textSize = 13f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(0, -2, 1f))
                     addView(numInput(key), LinearLayout.LayoutParams(dp(110), -2))
                 })
             } else {
-                optBody.addView(labLabel(name))
-                optBody.addView(LinearLayout(ui).apply {
+                sec.addView(labLabel(name))
+                sec.addView(LinearLayout(ui).apply {
                     orientation = LinearLayout.HORIZONTAL
                     for (n in when (kind) { 1 -> elems; 3 -> grades; else -> types }) addView(LinearLayout(ui).apply {
                         orientation = LinearLayout.VERTICAL

@@ -1001,9 +1001,12 @@ const TM2_SET=(()=>{
     memo:'실측으로 확정한 기본 공식. 룬·도감·코스튬·상태창 값을 보이는 그대로 적어요. 소환수는 저장한 소환수에서 불러와 원래 능력치·성장증폭으로 실전투를 계산해요. 예상 데미지는 원소던전 첫 몬스터 기준이고, 다른 대상은 % 비교만 그대로예요.',
     abs:true,err:null,useCrit:true,measures:[{id:'basic',name:'평타',basePct:100},{id:'skill',name:'스킬',basePct:100}],forms:{'m:basic':F,'m:skill':F},
     inputs:[
-      I('g:rune:atk:flat','룬 공격','flat','user','① 상태창'),I('g:rune:dmg:pct','룬 피해증가 %','pct','user','① 상태창'),I('g:rune:ae:pct','룬 모든속성 강화 %','pct','user','① 상태창'),I('g:rune:at:pct','룬 모든타입 강화 %','pct','user','① 상태창'),
-      I('g:rune:cd:pct','룬 치명타 피해 %','pct','user','① 상태창'),I('g:elv:all:flat','모든능력치','flat','user','① 상태창'),I('g:buff:party:pct','파티 피해 증가 %','pct','user','① 상태창'),
-      I('p:elemS:pct','속성 강화 %','pct','elem','① 상태창'),I('p:elem:pct','룬 속성 강화 %','pct','elem','① 상태창'),I('p:type:pct','룬 타입 강화 %','pct','type','① 상태창'),
+      // ① 상태창은 게임 화면 순서대로: 속성 강화 → 특수 버프 → 룬 옵션
+      {...I('p:elemS:pct','속성 강화 %','pct','elem','① 상태창'),sub:'속성 강화'},{...I('g:elv:all:flat','모든능력치','flat','user','① 상태창'),sub:'속성 강화'},
+      {...I('g:buff:party:pct','파티 피해 증가 %','pct','user','① 상태창'),sub:'특수 버프'},
+      {...I('g:rune:atk:flat','룬 공격','flat','user','① 상태창'),sub:'룬 옵션'},{...I('g:rune:dmg:pct','룬 피해증가 %','pct','user','① 상태창'),sub:'룬 옵션'},{...I('g:rune:ae:pct','룬 모든속성 강화 %','pct','user','① 상태창'),sub:'룬 옵션'},
+      {...I('g:rune:at:pct','룬 모든타입 강화 %','pct','user','① 상태창'),sub:'룬 옵션'},{...I('g:rune:cd:pct','룬 치명타 피해 %','pct','user','① 상태창'),sub:'룬 옵션'},
+      {...I('p:elem:pct','룬 속성 강화 %','pct','elem','① 상태창'),sub:'룬 옵션'},{...I('p:type:pct','룬 타입 강화 %','pct','type','① 상태창'),sub:'룬 옵션'},
       I('g:wpn:atkp:pct','공격 %','pct','user','② 무기'),
       I('g:cos:at:pct','모든 속성 % (타입에 더해져요)','pct','user','③ 코스튬'),I('p:elemC:pct','파티 속성 강화 %','pct','elem','③ 코스튬'),
       I('g:dogam:atk:flat','기본 능력치 공격 (+800 같은 값)','flat','user','④ 도감'),I('g:dogam:dmg:pct','피해증가 %','pct','user','④ 도감'),I('g:dogam:ae:pct','모든 속성 강화 %','pct','user','④ 도감'),I('g:dogam:at:pct','모든 타입 강화 %','pct','user','④ 도감'),I('g:dogam:cd:pct','치명타 피해 %','pct','user','④ 도감'),
@@ -1240,7 +1243,7 @@ function vSpec(v){
   const inUser=S.inputs.filter(i=>scopeOf(S,i)==='user'),inElem=S.inputs.filter(i=>scopeOf(S,i)==='elem'),inType=S.inputs.filter(i=>scopeOf(S,i)==='type'),inPet=S.inputs.filter(i=>scopeOf(S,i)==='pet'&&i.id!=='p:ratk')
   // 성장증폭: 공식에 실전투·성장증폭이 있거나, 덱 비중을 실전투 공격으로 볼 때 → 내 스펙에서 바꿔 보기
   const useAmp=S.inputs.some(i=>i.id==='p:amp'||i.id==='p:ratk')||(useDeck&&!S.inputs.some(i=>scopeOf(S,i)==='pet'))
-  if(useAmp&&!inUser.some(i=>i.id==='p:amp'))inUser.push({id:'p:amp',name:'성장증폭 %',unit:'pct',cap:100,scope:'user',grp:S.builtin?'① 상태창':undefined})
+  if(useAmp&&!inUser.some(i=>i.id==='p:amp'))inUser.push({id:'p:amp',name:'성장증폭 %',unit:'pct',cap:100,scope:'user',grp:S.builtin?'① 상태창':undefined,sub:S.builtin?'특수 버프':undefined})
   const needBase=S.inputs.some(i=>i.id==='p:ratk')||(useDeck&&!S.inputs.some(i=>scopeOf(S,i)==='pet')),hasBaseIn=['p:atk','p:def','p:spd','p:hp'].every(k=>inPet.some(i=>i.id===k))
   const evalAll=s=>useDeck?deckEval(S,s,deck,g):setEval(S,s,cyc)
   const base=evalAll(st),ok=base.r>0&&isFinite(base.r),byTime=!useDeck&&cyc.mode==='time'
@@ -1276,8 +1279,18 @@ function vSpec(v){
     ${(()=>{const sm=(k,label,i)=>`<label class="f" style="font-size:12px;min-width:0">${esc(label)}<input type="text" inputmode="decimal" data-sv="${esc(k)}" value="${esc(st[k]??'')}" placeholder="0" style="padding:6px 4px;min-width:0"></label>`
       const row=(i,L)=>`<div class="mut" style="margin-top:8px">${esc(i.name)}</div><div style="display:grid;grid-template-columns:repeat(${L.length},minmax(0,1fr));gap:4px">${L.map(e=>sm(i.id+'@'+e,e,i)).join('')}</div>`
       const gs=[...new Set([...inUser,...inElem,...inType].map(i=>i.grp||''))].filter(g=>g!=='__battle').sort((x,y)=>(x?1:0)-(y?1:0)||x.localeCompare(y))
-      return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn&&i.id!=='g:train:at:pct')
-        return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn).map(i=>row(i,TYPES)).join('')}${gn==='⑤ 스킬 코어'&&inUser.some(i=>i.id==='g:train:at:pct')?`<div class="mut" style="margin-top:8px">소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${TRAIN_GR.map(([g,v])=>sm('core:n@'+g,`${g} (${v}%)`,{})).join('')}</div><div class="mut" style="margin-top:4px">보유효과 모든 타입 = <b>${fmt(trainSum(SS.st)??TRAIN_DEF)}%</b></div>`:''}</div>`}).join('')})()}
+      const subBody=gn=>{const all=[...S.inputs.filter(i=>(i.grp||'')===gn&&(i.sub)),...inUser.filter(i=>(i.grp||'')===gn&&i.sub&&!S.inputs.includes(i))]
+        const isU=i=>inUser.includes(i),isE=i=>inElem.includes(i),isT=i=>inType.includes(i)
+        const order=[...new Set(all.map(i=>i.sub))],am=all.find(i=>i.id==='p:amp');let h=''
+        for(const sb of order){const L=all.filter(i=>i.sub===sb&&(isU(i)||isE(i)||isT(i))).sort((a,b)=>(a.id==='p:amp')-(b.id==='p:amp'));if(!L.length)continue
+          // 묶음마다 테두리 칸으로 나눠서 구별이 쉽게
+          h+=`<div style="margin-top:8px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:6px 10px 10px"><div style="font-size:13px;font-weight:700;color:var(--acc)">${esc(sb)}</div>`;let buf=[]
+          const flush=()=>{if(buf.length)h+=`<div class="grid" style="margin-top:4px">${buf.map(i=>inp(i.id,i.name,i)).join('')}</div>`;buf=[]}
+          for(const i of L){if(isU(i))buf.push(i);else{flush();h+=row(i,isE(i)?ELEMS:TYPES)}}flush();h+='</div>'}
+        return h}
+      return gs.map(gn=>{const u=inUser.filter(i=>(i.grp||'')===gn&&i.id!=='g:train:at:pct'&&!i.sub)
+        const hasSub=inUser.concat(inElem,inType).some(i=>(i.grp||'')===gn&&i.sub)
+        return`<div style="${gn?'margin-top:14px;padding-top:10px;border-top:1px solid var(--line)':''}">${gn?`<div><b>${esc(gn)}</b></div>${GRP_HINT[gn]?`<div class="mut" style="font-size:12px">${esc(GRP_HINT[gn])}</div>`:''}`:''}${hasSub?subBody(gn):''}${u.length?`<div class="grid" style="margin-top:6px">${u.map(i=>inp(i.id,i.name,i)).join('')}</div>`:''}${inElem.filter(i=>(i.grp||'')===gn&&!i.sub).map(i=>row(i,ELEMS)).join('')}${inType.filter(i=>(i.grp||'')===gn&&!i.sub).map(i=>row(i,TYPES)).join('')}${gn==='⑤ 스킬 코어'&&inUser.some(i=>i.id==='g:train:at:pct')?`<div class="mut" style="margin-top:8px">소환수 › 훈련소 › 스킬 코어 — 등급별 보유 개수</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${TRAIN_GR.map(([g,v])=>sm('core:n@'+g,`${g} (${v}%)`,{})).join('')}</div><div class="mut" style="margin-top:4px">보유효과 모든 타입 = <b>${fmt(trainSum(SS.st)??TRAIN_DEF)}%</b></div>`:''}</div>`}).join('')})()}
     ${useAmp?`<div class="mut" style="margin-top:6px">성장증폭: 모든 소환수에 같이 적용 (실전투 공격 = 원래 능력치 × 성장증폭으로 다시 계산).${isNum(myAmp())?' 처음 값은 앱 설정 '+fmt(myAmp())+'%.':''}</div>`:''}
     <div class="row" style="margin-top:6px;gap:6px;align-items:flex-start"><div class="mut" style="flex:1">상태창에 보이는 값 그대로. 적은 값은 저장돼요. 공식에 없는 다른 스펙은 그대로라고 보고 계산해요.</div></div></details>
   <details class="card" open><summary style="font-size:16px;font-weight:600;color:var(--fg)">2 덱 <span class="mut" style="font-weight:400">(소환수 최대 3마리 · 마나로 스킬 자동)</span></summary>
