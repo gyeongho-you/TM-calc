@@ -924,18 +924,47 @@ class OverlayService : Service() {
         val v = labPanel ?: return
         val p = labParams ?: return
         v.visibility = if (show) View.VISIBLE else View.GONE
-        // 글자를 입력하려면 창이 포커스를 받아야 한다. 닫으면 다시 게임에 돌려준다 (창 밖 터치는 늘 게임으로)
-        p.flags = if (show) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        runCatching { wm.updateViewLayout(v, p) }
-        if (!show) getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0)
+        // 띄운 채 게임 조작: 평소엔 포커스를 안 잡고, 글자 칸을 누를 때만 잡음 (창 밖을 누르면 다시 게임으로)
+        labFocusable = true; setLabFocusable(false)
         updateBubble()
+    }
+
+    private var labFocusable = false
+    private fun setLabFocusable(on: Boolean) {
+        val v = labPanel ?: return
+        val p = labParams ?: return
+        if (labFocusable == on && ((p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0) == on) return
+        labFocusable = on
+        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv() else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        runCatching { wm.updateViewLayout(v, p) }
+        if (!on) { getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(v.windowToken, 0); v.findFocus()?.clearFocus() }
+    }
+
+    /** 누른 곳에 있는 글자 칸 (보이는 것만) */
+    private fun editAt(g: ViewGroup, x: Float, y: Float): EditText? {
+        val r = android.graphics.Rect()
+        for (i in g.childCount - 1 downTo 0) {
+            val c = g.getChildAt(i)
+            if (c.visibility != View.VISIBLE || !c.getGlobalVisibleRect(r) || !r.contains(x.toInt(), y.toInt())) continue
+            if (c is EditText && c.isEnabled) return c
+            if (c is ViewGroup) editAt(c, x, y)?.let { return it }
+        }
+        return null
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun buildLab() {
         val dm = resources.displayMetrics
-        val box = LinearLayout(ui).apply {
+        // 글자 칸을 누를 때만 포커스를 잡아 키보드를 띄움 (그 밖에는 게임이 그대로 눌림)
+        val box = object : LinearLayout(ui) {
+            override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+                if (ev.action == MotionEvent.ACTION_DOWN && !labFocusable) editAt(this, ev.rawX, ev.rawY)?.let { e ->
+                    setLabFocusable(true)
+                    e.post { e.requestFocus(); getSystemService(InputMethodManager::class.java).showSoftInput(e, 0) }
+                }
+                return false
+            }
+        }.apply {
             orientation = LinearLayout.VERTICAL
             background = round(0xFF2B2D31.toInt(), 14)
             setPadding(dp(12), dp(8), dp(12), dp(10))
@@ -943,7 +972,7 @@ class OverlayService : Service() {
         }
         val params = WindowManager.LayoutParams(
             minOf(dm.widthPixels - dp(16), dp(420)), ViewGroup.LayoutParams.WRAP_CONTENT, overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -951,6 +980,8 @@ class OverlayService : Service() {
             y = dp(40)
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
+        // 창 밖(게임)을 누르면 키보드를 내리고 게임에 돌려줌. 적던 글자는 칸에 그대로 남음
+        box.setOnTouchListener { _, ev -> if (ev.action == MotionEvent.ACTION_OUTSIDE) setLabFocusable(false); false }
         val header = LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
