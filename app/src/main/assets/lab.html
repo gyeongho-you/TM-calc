@@ -1276,23 +1276,28 @@ function bindPet(root,p,redraw){const q=k=>root.querySelector(k)
   q('.ppt').onchange=e=>p.type=e.target.value
   root.querySelectorAll('.pps').forEach(i=>i.oninput=()=>{p.st=p.st||[null,null,null,null];const n=num(i.value);p.st[+i.getAttribute('pix')]=isFinite(n)?n:null})
   const pi=q('.ppi');if(pi)pi.onclick=()=>pickSaved(x=>{Object.assign(p,{name:x.name,elem:normElem(x.element)||'',type:x.type||'',st:(x.stats||[]).slice(0,4).map(Number)});redraw()})}
+/** 방어 기준 바꾸기 (프리셋에 저장돼서 다음에도 그대로). 직접 측정인데 장소가 없으면 '기본' 장소를 만들어 바로 적을 수 있게 */
+function setDefMode(p,m,pets){if(m==='zero'){delete p.defMode;return}p.defMode=m
+  if(m==='meas'&&!(p.defPlaces||[]).length){const id=uid(),q=(pets||[])[0];p.defPlaces=[{id,name:'기본',pet:q?JSON.parse(JSON.stringify(q)):null}];p.defPlace=id}}
+const DEF_WARN='직접 측정으로 맞춘 비율과 효율이 상이할 수 있습니다. 정확한 효율은 직접 측정을 이용해 주세요.'
 /** 전투 설정 › 방어: 없음 / 원소던전 / 직접 측정 (장소마다 저장) */
 function defBox(S,sp,pets){const dm=defMode(),PL=sp.defPlaces||[],P=curPlace(sp)
   let h=`<div style="margin-top:8px"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="mut">방어</span><div class="seg" style="display:flex"><button class="sm${dm==='zero'?' on':''}" data-dm="zero">없음</button><button class="sm${dm==='elem'?' on':''}" data-dm="elem">원소던전</button><button class="sm${dm==='meas'?' on':''}" data-dm="meas">직접 측정</button></div></div>`
-  if(dm==='zero')h+='<div class="mut" style="font-size:12px;margin-top:2px">원소던전 첫타처럼 방어가 없는 기준이에요.</div>'
+  if(dm==='zero')h+='<div class="mut" style="font-size:12px;margin-top:2px">원소던전 첫타처럼 방어가 없는 기준이에요.</div><div style="font-size:12px;margin-top:2px;color:#f2b84b">⚠ 직접 측정으로 맞춘 비율과 효율이 상이할 수 있습니다. 정확한 효율은 직접 측정을 이용해 주세요.</div>'
   if(dm==='elem')h+='<div class="mut" style="font-size:12px;margin-top:2px">원소던전은 칠수록 레벨(방어)이 올라요. 덱 공속·예상 데미지의 전투 시간으로 타마다 계산해요 (실측 식). 오래 칠수록 공격력이 % 옵션보다 유리해져요.</div>'
   if(dm==='meas'){const ref=defRef(S,specState().st)
     h+=`<div style="margin-top:6px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:6px 10px 8px">
       <div class="row" style="gap:4px;flex-wrap:wrap"><span class="mut">장소</span><select id="dfP" style="flex:1;min-width:100px">${PL.length?PL.map(x=>`<option value="${x.id}"${P&&P.id===x.id?' selected':''}>${esc(x.name)}</option>`).join(''):'<option value="">장소 없음</option>'}</select><button class="sm" id="dfNew">+ 장소</button>${P?'<button class="sm" id="dfRen">이름</button><button class="sm danger" id="dfDel">✕</button>':''}</div>
       ${P?`<div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px"><span class="mut">소환수</span><select id="dfPet" style="flex:1;min-width:120px">${P.pet&&!pets.some(q=>q.name===P.pet.name&&(q.label||'')===(P.pet.label||''))?`<option value="-1" selected>${esc(P.pet.label||P.pet.name)} (덱에 없음)</option>`:''}${pets.length?'':'<option value="">덱이 없어요</option>'}${pets.map((q,k)=>`<option value="${k}"${P.pet&&q.name===P.pet.name&&(q.label||'')===(P.pet.label||'')?' selected':''}>${esc(q.label||q.name||'(이름 없음)')}</option>`).join('')}</select></div>
-      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><label class="row mut" style="gap:4px">치명<input type="text" id="dfC" value="${esc(P.c!=null?krNum(P.c):'')}" placeholder="예: 45억" style="width:100px"></label><label class="row mut" style="gap:4px">비치명<input type="text" id="dfN" value="${esc(P.n!=null?krNum(P.n):'')}" placeholder="예: 21억5000만" style="width:100px"></label></div>
+      <div class="mut" style="margin-top:6px">그 곳에서 이 소환수가 친 데미지 <b>(버프 없이)</b></div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:2px"><label class="row mut" style="gap:4px">치명<input type="text" id="dfC" value="${esc(P.c!=null?krNum(P.c):'')}" placeholder="예: 45억" style="width:100px"></label><label class="row mut" style="gap:4px">비치명<input type="text" id="dfN" value="${esc(P.n!=null?krNum(P.n):'')}" placeholder="예: 21억5000만" style="width:100px"></label></div>
       ${ref?`<div style="margin-top:6px;font-size:13px">치명 ÷ 비치명 <b>${fmt(ref.q,2)}</b> <span class="mut">(방어 없음 ${fmt(ref.full,2)})</span> · 방어 세기 <b>${ref.lv}</b><br>들어가는 비율 비치명 <b>${fmt(ref.rn*100,1)}%</b> · 치명 <b>${fmt(ref.rc*100,1)}%</b><br>공격력 1% 올리면 비치명 <b>+${fmt(ref.e[0],2)}%</b> · 치명 <b>+${fmt(ref.e[1],2)}%</b></div>`
         :`<div class="mut" style="font-size:12px;margin-top:4px">${P.pet?'그 곳에서 친 치명·비치명 한 방씩을 적어 주세요. 그 전에는 방어 없음으로 계산해요.':'덱에서 소환수를 골라 주세요.'}</div>`}`
       :'<div class="mut" style="font-size:12px;margin-top:4px">[+ 장소]로 자주 가는 곳(필드, 던전 ○층 …)을 만들어요.</div>'}
-      <div class="mut" style="font-size:12px;margin-top:4px">같은 소환수로 비슷한 때 친 치명 한 방, 비치명 한 방이면 돼요. 방어 세기는 둘의 비율로만 정해서 정확하고, 덱의 다른 소환수는 공격력 차이만큼 자동으로 맞춰요. 스펙이 크게 오르면 다시 재 주세요.</div></div>`}
+      <div class="mut" style="font-size:12px;margin-top:4px">같은 소환수로 비슷한 때 친 치명 한 방, 비치명 한 방이면 돼요. <b>버프(피해 증가·공격력 증가 등)가 없는 상태</b>에서 재 주세요. 방어 세기는 둘의 비율로만 정해서 정확하고, 덱의 다른 소환수는 공격력 차이만큼 자동으로 맞춰요. 스펙이 크게 오르면 다시 재 주세요.</div></div>`}
   return h+'</div>'}
 function bindDef(v,pets){
-  v.querySelectorAll('[data-dm]').forEach(b=>b.onclick=()=>saveSpec(p=>{if(b.dataset.dm==='zero')delete p.defMode;else p.defMode=b.dataset.dm}))
+  v.querySelectorAll('[data-dm]').forEach(b=>b.onclick=()=>saveSpec(p=>setDefMode(p,b.dataset.dm,pets)))
   const pl=f=>saveSpec(p=>{const P=curPlace(p);if(P)f(P,p)})
   const sel=$('#dfP');if(sel)sel.onchange=()=>saveSpec(p=>p.defPlace=sel.value)
   const nw=$('#dfNew');if(nw)nw.onclick=()=>{const name=(prompt('장소 이름 (예: 필드, 던전 30층)','')||'').trim();if(!name)return
@@ -1410,6 +1415,7 @@ function vSpec(v){
         ${S.useCrit?`<label class="f">치명<select class="ckr">${[['none','안 터짐'],['can','확률대로'],['always','항상']].map(([q,l])=>`<option value="${q}"${(e.crit||'can')===q?' selected':''}>${l}</option>`).join('')}</select></label>`:''}</div></div>`).join('')||'<div class="mut" style="margin-top:6px">공격이 없으면 첫 공격 그룹 한 방으로 계산해요.</div>'}
     <button class="sm" id="cAdd" style="margin-top:6px">+ 공격</button></details>`}
   <div class="card"><div class="big">무엇을 올리면 이득?</div>
+    ${S.builtin&&defMode()==='zero'?`<div style="font-size:12px;color:#f2b84b;margin:2px 0 4px">⚠ 방어 없음 기준 · ${DEF_WARN}</div>`:''}
     <div class="mut">지금 상태에서 하나씩 '올릴 양'만큼 올렸을 때 ${useDeck?'덱 전체':byTime?'초당':'한 바퀴'} 데미지가 몇 % 오르나 (올릴 양은 고칠 수 있어요)</div>
     ${S.useCrit&&isFinite(num(st['g:crit:dmg:pct']))&&num(st['g:crit:dmg:pct'])<100?'<div class="bad" style="margin-top:6px">치명 피해는 배율 %로 적어요 (1.5배 = 150).</div>':''}
     ${base.miss?`<div class="bad">공식이 없는 공격 그룹이 있어요 — 그 공격은 빼고 계산</div>`:''}
@@ -1576,8 +1582,11 @@ window.runeCompare=function(aJ,bJ){loadData()
   const g2=(evalAll(s2).r/base.r-1)*100
   const pr=(data.specPresets||[]).find(q=>q.id===sp.presetId)
   return JSON.stringify({set:S.name,preset:pr?pr.name:null,presets:(data.specPresets||[]).map(q=>({id:q.id,name:q.name})),deck:useDeck?deck.name:null,decks:(sp.decks||[]).map(d=>({id:d.id,name:d.name,n:d.pets.length})),deckId:deck&&deck.id,
-    def:(()=>{const dm=S.builtin?defMode():'zero';if(dm==='elem')return'원소던전';if(dm==='meas'){const r=defRef(S,st);return r?`${r.P.name} (${r.lv})`:'없음 (직접 측정 안 적음)'}return'없음'})(),
+    defMode:S.builtin?defMode():'zero',places:(sp.defPlaces||[]).map(x=>({id:x.id,name:x.name})),placeId:(curPlace(sp)||{}).id||null,warn:S.builtin&&defMode()==='zero'?DEF_WARN:null,
+    def:(()=>{const dm=S.builtin?defMode():'zero';if(dm==='elem')return'원소던전 (칠수록 레벨이 오름)';if(dm==='meas'){const r=defRef(S,st),P=curPlace(sp);return r?`직접 측정 · ${r.P.name} (방어 세기 ${r.lv})`:`직접 측정${P?' · '+P.name:''} (아직 안 적어서 방어 없음으로)`}return'없음 (원소던전 첫타)'})(),
     a:{name:a.name,grade:a.grade,level:a.level},b:{name:b.name,grade:b.grade,level:b.level},g:g2,rows})}
+/** 게임 위 결과 창에서 방어 기준 바꾸기 (m = zero/elem/meas, place = 직접 측정 장소 id) */
+window.runeSetDef=function(m,place){mutate(d=>{d.spec=d.spec||{};setDefMode(d.spec,m,(curDeck(d.spec)||{pets:[]}).pets);if(m==='meas'&&place)d.spec.defPlace=place});return 'ok'}
 /** 게임 위 결과 창에서 덱 바꾸기 */
 window.runeSetDeck=function(id){mutate(d=>{d.spec=d.spec||{};d.spec.deckId=id});return 'ok'}
 /** 게임 위 결과 창에서 프리셋(캐릭터) 바꾸기: 지금 값은 지금 프리셋에 먼저 저장 */

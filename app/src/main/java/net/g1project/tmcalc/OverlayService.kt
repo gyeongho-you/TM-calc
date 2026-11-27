@@ -1878,13 +1878,27 @@ class OverlayService : Service() {
                         engine?.evaluateJavascript("runeSetPreset(${JSONObject.quote(presets.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
                     })
                 }
+                // 방어 기준 바꾸기: 고르면 저장돼서 다음에도 그 기준으로
+                btns += "방어" to {
+                    val places = res.optJSONArray("places") ?: org.json.JSONArray()
+                    val labels = ArrayList<String>(); val acts = ArrayList<String>()
+                    labels += "없음 (원소던전 첫타)"; acts += "runeSetDef('zero')"
+                    labels += "원소던전"; acts += "runeSetDef('elem')"
+                    if (places.length() == 0) { labels += "직접 측정"; acts += "runeSetDef('meas')" }
+                    for (i in 0 until places.length()) places.getJSONObject(i).let { pl ->
+                        labels += "직접 측정 · ${pl.optString("name")}"; acts += "runeSetDef('meas',${JSONObject.quote(pl.optString("id"))})"
+                    }
+                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("방어 기준").setItems(labels.toTypedArray()) { _, w ->
+                        engine?.evaluateJavascript(acts[w]) { showRuneCompare(a, b) }
+                    })
+                }
                 if (decks.length() > 1) btns += "덱" to {
                     val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
                     overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
                         engine?.evaluateJavascript("runeSetDeck(${JSONObject.quote(decks.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
                     })
                 }
-                optHeader("룬 비교", btns)
+                optHeader(if (res.isNull("preset")) "룬 비교" else "룬 비교 · ${res.optString("preset")}", btns)
                 fun line(t: String, size: Float = 13f, color: Int = Color.WHITE, bold: Boolean = false) = optBody.addView(TextView(ui).apply {
                     text = t; textSize = size; setTextColor(color); if (bold) typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(2), 0, dp(2))
                 })
@@ -1897,11 +1911,15 @@ class OverlayService : Service() {
                 val ra = res.optJSONObject("a"); val rb = res.optJSONObject("b")
                 val verdict = when { g > 0.05 -> "바꾸기 추천"; g < -0.05 -> "바꾸지 마세요"; else -> "비슷함" }
                 val col = Color.parseColor(when { g > 0.05 -> "#81C784"; g < -0.05 -> "#E57373"; else -> "#9A9DA3" })
+                // 무엇으로 비교했는지 먼저 (프리셋 · 덱 · 방어)
+                line("프리셋: ${if (res.isNull("preset")) "없음 (지금 값)" else res.optString("preset")}  ·  덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}", 12f, Color.parseColor("#80CBC4"), true)
+                line("방어: ${res.optString("def", "없음")}", 12f, Color.parseColor("#80CBC4"), true)
+                if (!res.isNull("warn") && res.optString("warn").isNotEmpty()) line("⚠ " + res.optString("warn"), 11f, Color.parseColor("#F2B84B"))
+                if (res.optString("defMode") == "meas" && res.optString("def").contains("아직 안 적어서")) line("데미지는 앱 › 최적화 › 덱 › 전투 설정 › 방어 [직접 측정]에 적어요 (버프 없이).", 11f, Color.parseColor("#F2B84B"))
                 line("새 룬으로 바꾸면 덱 데미지", 12f, Color.parseColor("#9A9DA3"))
                 line("${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict", 22f, col, true)
-                line("방어: ${res.optString("def", "없음")} 기준", 11f, Color.parseColor("#9A9DA3"))
                 line("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}", 12f)
-                line("${if (res.isNull("preset")) "지금 값" else "프리셋: " + res.optString("preset")} · 덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")} · 공식: ${res.optString("set")}", 11f, Color.parseColor("#9A9DA3"))
+                line("공식: ${res.optString("set")}", 11f, Color.parseColor("#9A9DA3"))
                 val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
                 for (i in 0 until rows.length()) {
                     val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
