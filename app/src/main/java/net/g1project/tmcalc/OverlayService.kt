@@ -1878,20 +1878,6 @@ class OverlayService : Service() {
                         engine?.evaluateJavascript("runeSetPreset(${JSONObject.quote(presets.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
                     })
                 }
-                // 방어 기준 바꾸기: 고르면 저장돼서 다음에도 그 기준으로
-                btns += "방어" to {
-                    val places = res.optJSONArray("places") ?: org.json.JSONArray()
-                    val labels = ArrayList<String>(); val acts = ArrayList<String>()
-                    labels += "없음 (원소던전 첫타)"; acts += "runeSetDef('zero')"
-                    labels += "원소던전"; acts += "runeSetDef('elem')"
-                    if (places.length() == 0) { labels += "직접 측정"; acts += "runeSetDef('meas')" }
-                    for (i in 0 until places.length()) places.getJSONObject(i).let { pl ->
-                        labels += "직접 측정 · ${pl.optString("name")}"; acts += "runeSetDef('meas',${JSONObject.quote(pl.optString("id"))})"
-                    }
-                    overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("방어 기준").setItems(labels.toTypedArray()) { _, w ->
-                        engine?.evaluateJavascript(acts[w]) { showRuneCompare(a, b) }
-                    })
-                }
                 if (decks.length() > 1) btns += "덱" to {
                     val names = (0 until decks.length()).map { decks.getJSONObject(it).let { d -> "${d.optString("name")} (${d.optInt("n")}마리)" } }
                     overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("덱 고르기").setItems(names.toTypedArray()) { _, w ->
@@ -1909,25 +1895,62 @@ class OverlayService : Service() {
                 val g = res.optDouble("g")
                 val fmtV = { v: Double, p: Boolean -> LabData.fmt(Math.round(v * 100) / 100.0) + if (p) "%" else "" }
                 val ra = res.optJSONObject("a"); val rb = res.optJSONObject("b")
-                val verdict = when { g > 0.05 -> "바꾸기 추천"; g < -0.05 -> "바꾸지 마세요"; else -> "비슷함" }
-                val col = Color.parseColor(when { g > 0.05 -> "#81C784"; g < -0.05 -> "#E57373"; else -> "#9A9DA3" })
+                // 만 단위(1.2만)로 잘린 값이 있으면 범위: 0을 넘나들면 비슷함
+                val est = res.optBoolean("est"); val gLo = res.optDouble("gLo", g); val gHi = res.optDouble("gHi", g)
+                val cross = est && gLo < 0 && gHi > 0
+                val verdict = when { cross -> "비슷함"; (if (est) gLo else g) > 0.05 -> "바꾸기 추천"; (if (est) gHi else g) < -0.05 -> "바꾸지 마세요"; else -> "비슷함" }
+                val col = Color.parseColor(when (verdict) { "바꾸기 추천" -> "#81C784"; "바꾸지 마세요" -> "#E57373"; else -> "#9A9DA3" })
+                val pf = { v: Double -> (if (v >= 0) "+" else "−") + String.format(java.util.Locale.US, "%.2f", Math.abs(v)) + "%" }
                 // 무엇으로 비교했는지 먼저 (프리셋 · 덱 · 방어)
                 line("프리셋: ${if (res.isNull("preset")) "없음 (지금 값)" else res.optString("preset")}  ·  덱: ${if (res.isNull("deck")) "없음" else res.optString("deck")}", 12f, Color.parseColor("#80CBC4"), true)
-                line("방어: ${res.optString("def", "없음")}", 12f, Color.parseColor("#80CBC4"), true)
+                // 방어 기준 탭 세 칸 (누르면 바로 다시 계산 + 저장 → 다음에도 그 탭)
+                val dm = res.optString("defMode", "zero")
+                optBody.addView(LinearLayout(ui).apply {
+                    orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, dp(2))
+                    for ((m, t) in listOf("zero" to "방어 없음", "elem" to "원소던전", "meas" to "직접 측정")) {
+                        val on = m == dm
+                        addView(TextView(ui).apply {
+                            text = t; textSize = 12f; gravity = Gravity.CENTER; setPadding(dp(2), dp(8), dp(2), dp(8))
+                            setTextColor(Color.parseColor(if (on) "#17181B" else "#C8CACF")); if (on) typeface = Typeface.DEFAULT_BOLD
+                            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(Color.parseColor(if (on) "#80CBC4" else "#1E1F22")); setStroke(dp(2), Color.parseColor(if (on) "#80CBC4" else "#3A3D43")) }
+                            setOnClickListener { if (!on) engine?.evaluateJavascript("runeSetDef('$m')") { showRuneCompare(a, b) } }
+                        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if (m != "zero") leftMargin = dp(6) })
+                    }
+                })
+                if (dm == "meas") {
+                    val places = res.optJSONArray("places") ?: org.json.JSONArray()
+                    val pid = res.optString("placeId")
+                    val cur = (0 until places.length()).map { places.getJSONObject(it) }.firstOrNull { it.optString("id") == pid }
+                    optBody.addView(TextView(ui).apply {
+                        text = "장소: ${cur?.optString("name") ?: "없음"}   ▾"; textSize = 13f; setTextColor(Color.WHITE); setPadding(dp(10), dp(8), dp(10), dp(8))
+                        background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.parseColor("#1E1F22")); setStroke(dp(1), Color.parseColor("#3A3D43")) }
+                        setOnClickListener {
+                            if (places.length() == 0) { toast("앱 › 최적화 › 덱 › 전투 설정 › 방어에서 장소를 만들어요."); return@setOnClickListener }
+                            val names = (0 until places.length()).map { places.getJSONObject(it).optString("name") }
+                            overlayDialog(android.app.AlertDialog.Builder(ui).setTitle("장소 고르기").setItems(names.toTypedArray()) { _, w ->
+                                engine?.evaluateJavascript("runeSetDef('meas',${JSONObject.quote(places.getJSONObject(w).optString("id"))})") { showRuneCompare(a, b) }
+                            })
+                        }
+                    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+                }
+                line(res.optString("def", "없음"), 12f, Color.parseColor("#80CBC4"))
                 if (!res.isNull("warn") && res.optString("warn").isNotEmpty()) line("⚠ " + res.optString("warn"), 11f, Color.parseColor("#F2B84B"))
                 if (res.optString("defMode") == "meas" && res.optString("def").contains("아직 안 적어서")) line("데미지는 앱 › 최적화 › 덱 › 전투 설정 › 방어 [직접 측정]에 적어요 (버프 없이).", 11f, Color.parseColor("#F2B84B"))
                 line("새 룬으로 바꾸면 덱 데미지", 12f, Color.parseColor("#9A9DA3"))
-                line("${if (g >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.2f", g)}%  $verdict", 22f, col, true)
+                if (est && Math.abs(gHi - gLo) >= 0.01) line("${pf(gLo)} ~ ${pf(gHi)}  $verdict", 20f, col, true)
+                else line("${pf(g)}  $verdict", 22f, col, true)
+                if (cross) line("만 단위 오차 안이라 바꿔도 거의 같아요", 11f, Color.parseColor("#9A9DA3"))
                 line("${ra?.optString("name")} [${ra?.optString("grade")}] Lv.${ra?.opt("level")} → [${rb?.optString("grade")}] Lv.${rb?.opt("level")}", 12f)
                 line("공식: ${res.optString("set")}", 11f, Color.parseColor("#9A9DA3"))
                 val rows = res.optJSONArray("rows") ?: org.json.JSONArray()
                 for (i in 0 until rows.length()) {
                     val r = rows.getJSONObject(i); val p = r.optBoolean("pct"); val d = r.optDouble("d")
                     val sb = StringBuilder("${r.optString("label")}: ${fmtV(r.optDouble("old"), p)} → ${fmtV(r.optDouble("new"), p)} (${if (d >= 0) "+" else ""}${fmtV(d, p)})")
-                    if (r.optBoolean("est")) sb.append(" ≈추정")
+                    if (r.optBoolean("est")) sb.append(" ≈추정 (범위 ${if (r.optDouble("dLo") >= 0) "+" else ""}${fmtV(r.optDouble("dLo"), p)} ~ ${if (r.optDouble("dHi") >= 0) "+" else ""}${fmtV(r.optDouble("dHi"), p)})")
                     r.optString("why").takeIf { it.isNotEmpty() }?.let { sb.append(" · $it") }
                     line(sb.toString(), 12f)
                 }
+                res.optString("coef").takeIf { it.isNotEmpty() }?.let { line(it, 11f, Color.parseColor("#F2B84B")) }
                 showOpt(true)
             }
         }
