@@ -2132,7 +2132,7 @@ class OverlayService : Service() {
         for ((key, name, kind) in fields) {
             if (kind < 0) {
                 sec = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; background = round(0xFF1E1F22.toInt(), 10); setPadding(dp(10), dp(6), dp(10), dp(8)) }
-                sec.addView(sec, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                optBody.addView(sec, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
                 sec.addView(TextView(ui).apply { text = name; textSize = 13f; typeface = Typeface.DEFAULT_BOLD; setTextColor(OPT_ACC); setPadding(0, 0, 0, dp(2)) })
                 continue
             }
